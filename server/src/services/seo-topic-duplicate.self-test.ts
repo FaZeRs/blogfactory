@@ -17,7 +17,7 @@ import {
   openRouterErrorMessage,
 } from "./generation-output.js";
 import { expandDraftVariations, feedCandidateItemCount, feedSourceItemCount } from "./generation-sources.js";
-import { canAttemptArticleRepair } from "./generate-content.js";
+import { aiRequestTimeoutMs, canAttemptArticleRepair } from "./generate-content.js";
 import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
 import { publishTags, publishTitle, slugify, truncateAtWord } from "./publishing.js";
 
@@ -29,8 +29,13 @@ const match = findIndexedTopicDuplicate({
   },
 }, "saas content calendar");
 
-assert.equal(canAttemptArticleRepair(18_000), true);
-assert.equal(canAttemptArticleRepair(24_000), false);
+assert.equal(canAttemptArticleRepair(18_000, 52_000), true);
+assert.equal(canAttemptArticleRepair(24_000, 52_000), false);
+assert.equal(aiRequestTimeoutMs({}), 35_000);
+assert.equal(aiRequestTimeoutMs({ AI_REQUEST_TIMEOUT_MS: "180000" }), 180_000);
+assert.equal(aiRequestTimeoutMs({ AI_REQUEST_TIMEOUT_MS: "5000" }), 35_000);
+assert.equal(aiRequestTimeoutMs({ AI_REQUEST_TIMEOUT_MS: "900000" }), 35_000);
+assert.equal(aiRequestTimeoutMs({ AI_REQUEST_TIMEOUT_MS: "slow" }), 35_000);
 
 assert.equal(match?.path, "/blog/saas-content-calendar");
 assert.equal(findIndexedTopicDuplicate({ internalLinkIndex: { pages: [{ title: "Pricing", path: "/pricing" }] } }, "seo strategy"), null);

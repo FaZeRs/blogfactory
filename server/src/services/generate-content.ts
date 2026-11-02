@@ -137,11 +137,18 @@ export function manualPromptImageResolutionSummary(requests: ManualPromptRequest
   };
 }
 
-const AI_REQUEST_TIMEOUT_MS = 35_000;
+// Defaults fit serverless request limits; persistent hosts may raise them for slower models.
+// Capped at 4 minutes so a job stays under the 10-minute stale-job cutoff.
+export function aiRequestTimeoutMs(env: Record<string, string | undefined> = process.env) {
+  const value = Number(env.AI_REQUEST_TIMEOUT_MS);
+  return Number.isInteger(value) && value >= 35_000 && value <= 240_000 ? value : 35_000;
+}
+
+const AI_REQUEST_TIMEOUT_MS = aiRequestTimeoutMs();
 const ARTICLE_REPAIR_TIMEOUT_MS = 20_000;
 const MANUAL_PROMPT_SYNC_TIMEOUT_MS = 12_000;
 const IMAGE_REQUEST_TIMEOUT_MS = 45_000;
-const JOB_SYNC_BUDGET_MS = 52_000;
+const JOB_SYNC_BUDGET_MS = AI_REQUEST_TIMEOUT_MS + 17_000;
 const OPENROUTER_COST_LOOKUP_DELAY_MS = 900;
 const OPENROUTER_COST_LOOKUP_TIMEOUT_MS = 4_000;
 
@@ -149,8 +156,8 @@ function hasJobSyncBudget(startedAt: number, requiredMs: number) {
   return JOB_SYNC_BUDGET_MS - (Date.now() - startedAt) >= requiredMs;
 }
 
-export function canAttemptArticleRepair(elapsedMs: number) {
-  return JOB_SYNC_BUDGET_MS - elapsedMs >= ARTICLE_REPAIR_TIMEOUT_MS + OPENROUTER_COST_LOOKUP_TIMEOUT_MS + 5_000;
+export function canAttemptArticleRepair(elapsedMs: number, budgetMs = JOB_SYNC_BUDGET_MS) {
+  return budgetMs - elapsedMs >= ARTICLE_REPAIR_TIMEOUT_MS + OPENROUTER_COST_LOOKUP_TIMEOUT_MS + 5_000;
 }
 
 export function openRouterImageModelId(modelId: string | null | undefined) {
