@@ -46,7 +46,7 @@ searchConsoleRoutes.get("/oauth/start", async (c) => {
 searchConsoleRoutes.get("/oauth/callback", async (c) => {
   const state = String(c.req.query("state") || "");
   const isIndexing = await isGoogleIndexingOAuthState(state);
-  const appPath = isIndexing ? "/search-growth?tab=indexing" : "/search-growth?tab=optimize";
+  const appPath = isIndexing ? "/overview/growth?tab=indexing" : "/overview/growth?tab=optimize";
   const error = c.req.query("error");
   const resultKey = isIndexing ? "indexing" : "gsc";
   if (error) return c.redirect(`${appPath}&${resultKey}=error&message=${encodeURIComponent(error)}`);
