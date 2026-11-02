@@ -180,6 +180,19 @@ assert.equal(lindevoArgs.description.length <= 255, true);
 assert.equal(lindevoArgs.imageAlt?.length, 125);
 assert.equal(lindevoArgs.category, "operations");
 assert.equal(lindevoArgs.content.includes("https://cdn.example/chart.webp"), true);
+const uploadedLindevoArgs = lindevoArticleArgs({
+  title: "Title",
+  markdown: "![Chart](https://cdn.example/chart.webp)\n\n![Other](https://cdn.example/other.webp)",
+  excerpt: "Excerpt",
+  metaDescription: "Description",
+  slug: "post",
+  tags: [],
+  coverAltText: "",
+  inlineImages: [{ url: "https://cdn.example/chart.webp", altText: "Chart" }, { url: "https://cdn.example/other.webp", altText: "Other" }],
+} as never, "operations", undefined, new Map([["https://cdn.example/chart.webp", "https://store.public.blob.vercel-storage.com/article-images/post-1.webp"]]));
+assert.equal(uploadedLindevoArgs.content.includes("https://store.public.blob.vercel-storage.com/article-images/post-1.webp"), true);
+assert.equal(uploadedLindevoArgs.content.includes("https://cdn.example/chart.webp"), false);
+assert.equal(uploadedLindevoArgs.content.includes("https://cdn.example/other.webp"), true);
 assert.equal("thumbnail" in lindevoArticleArgs({ title: "T", markdown: "", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "operations"), false);
 process.env.API_KEY_ENCRYPTION_SECRET = "old-publishing-secret";
 const staleGhostCredentials = encryptSecret(JSON.stringify({ url: "https://old.example", adminApiKey: `${"a".repeat(24)}:${"b".repeat(64)}` }));

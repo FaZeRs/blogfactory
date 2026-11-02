@@ -545,7 +545,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
           : provider === "wix"
             ? await publishWix(credentials as WixCredentials, article, mode)
             : provider === "lindevo"
-              ? await publishLindevo(credentials as LindevoCredentials, article, mode)
+              ? await publishLindevo(credentials as LindevoCredentials, article, mode, await previousLindevoArticleId(userId, postId, integration.id))
               : await publishFramer(credentials as FramerCredentials, article, mode, integration.config as Record<string, unknown> | null);
 
     const result = externalResult;
@@ -2187,10 +2187,11 @@ async function testLindevo(credentials: LindevoCredentials) {
   return { success: true, message: `Connected to ${domainFromUrl(credentials.mcpUrl)}` };
 }
 
-export function lindevoArticleArgs(article: ArticlePayload, category: string, thumbnail?: string) {
+export function lindevoArticleArgs(article: ArticlePayload, category: string, thumbnail?: string, uploaded = new Map<string, string>()) {
+  // An image Lindevo did not take keeps a link to BlogFactory storage.
   const inlineImages = article.inlineImages.map((image) => ({
     from: image.url,
-    to: image.url.startsWith("http") ? image.url : getPublicUrl(image.url) || image.url,
+    to: uploaded.get(image.url) || (image.url.startsWith("http") ? image.url : getPublicUrl(image.url) || image.url),
   }));
   return {
     title: article.title.slice(0, 255),
@@ -2203,11 +2204,54 @@ export function lindevoArticleArgs(article: ArticlePayload, category: string, th
   };
 }
 
-async function publishLindevo(credentials: LindevoCredentials, article: ArticlePayload, mode: PublishMode): Promise<PublishResult> {
+async function lindevoImageBase64(pathOrUrl: string) {
+  const image = await fetchImage(pathOrUrl).catch(() => null);
+  return image && image.buffer.length <= LINDEVO_MAX_THUMBNAIL_BYTES ? image.buffer.toString("base64") : undefined;
+}
+
+async function uploadLindevoImage(credentials: LindevoCredentials, pathOrUrl: string, name: string) {
+  const image = await lindevoImageBase64(pathOrUrl);
+  if (!image) return null;
+  const data = await lindevoCall(credentials, "upload_image", { image, name: slugify(name) });
+  return typeof data.url === "string" ? data.url : null;
+}
+
+/** The Lindevo article an earlier delivery of this post to this destination created. */
+async function previousLindevoArticleId(userId: string, postId: string, integrationId: string) {
+  const [previous] = await db
+    .select({ externalId: postPublications.externalId })
+    .from(postPublications)
+    .where(and(
+      eq(postPublications.userId, userId),
+      eq(postPublications.postId, postId),
+      eq(postPublications.integrationId, integrationId),
+      eq(postPublications.status, "draft"),
+      sql`${postPublications.externalId} IS NOT NULL`,
+    ))
+    .orderBy(desc(postPublications.createdAt))
+    .limit(1);
+  return previous?.externalId || null;
+}
+
+async function publishLindevo(credentials: LindevoCredentials, article: ArticlePayload, mode: PublishMode, previousId: string | null): Promise<PublishResult> {
   if (mode === "publish") throw new Error("Lindevo receives drafts only; publish the article from the Lindevo dashboard");
-  const cover = article.coverImageUrl ? await fetchImage(article.coverImageUrl).catch(() => null) : null;
-  const thumbnail = cover && cover.buffer.length <= LINDEVO_MAX_THUMBNAIL_BYTES ? cover.buffer.toString("base64") : undefined;
-  const data = await lindevoCall(credentials, "create_article", lindevoArticleArgs(article, credentials.category, thumbnail));
+  const existing = previousId
+    ? (await lindevoCall(credentials, "get_article", { id: previousId })).article as { isDraft?: boolean } | null
+    : null;
+  if (existing && existing.isDraft !== true) {
+    throw new Error("This post's Lindevo article is already published; edit it in the Lindevo dashboard");
+  }
+  const thumbnail = article.coverImageUrl ? await lindevoImageBase64(article.coverImageUrl) : undefined;
+  // An older Lindevo without upload_image fails here, and the image stays linked.
+  const uploaded = new Map<string, string>();
+  for (const [index, image] of article.inlineImages.entries()) {
+    const url = await uploadLindevoImage(credentials, image.url, `${article.slug}-${index + 1}`).catch(() => null);
+    if (url) uploaded.set(image.url, url);
+  }
+  const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded);
+  const data = existing && previousId
+    ? await lindevoCall(credentials, "update_article", { id: previousId, ...args })
+    : await lindevoCall(credentials, "create_article", args);
   const id = typeof data.id === "string" ? data.id : null;
   return {
     status: "draft",
@@ -2215,7 +2259,7 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
     // Preview links carry a signed token, so only the dashboard edit link is stored.
     externalUrl: null,
     externalEditUrl: id ? `${new URL(credentials.mcpUrl).origin}/blog/${id}/edit` : null,
-    responseData: { id, slug: data.slug },
+    responseData: { id, slug: data.slug ?? args.slug, updated: Boolean(existing), inlineImagesUploaded: uploaded.size },
   };
 }
 
