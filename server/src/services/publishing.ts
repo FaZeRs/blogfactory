@@ -2188,11 +2188,12 @@ async function testLindevo(credentials: LindevoCredentials) {
 }
 
 export function lindevoArticleArgs(article: ArticlePayload, category: string, thumbnail?: string, uploaded = new Map<string, string>()) {
-  // An image Lindevo did not take keeps a link to BlogFactory storage.
-  const inlineImages = article.inlineImages.map((image) => ({
-    from: image.url,
-    to: uploaded.get(image.url) || (image.url.startsWith("http") ? image.url : getPublicUrl(image.url) || image.url),
-  }));
+  // An image Lindevo did not take keeps a link to BlogFactory storage, which must then be public.
+  const inlineImages = article.inlineImages.map((image) => {
+    const to = uploaded.get(image.url) || (image.url.startsWith("http") ? image.url : getPublicUrl(image.url));
+    if (!to) throw new Error("An inline image could not be copied to Lindevo, and BlogFactory storage has no public URL (S3_PUBLIC_URL); nothing was sent");
+    return { from: image.url, to };
+  });
   return {
     title: article.title.slice(0, 255),
     slug: article.slug,

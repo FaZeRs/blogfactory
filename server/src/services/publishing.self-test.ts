@@ -193,6 +193,18 @@ const uploadedLindevoArgs = lindevoArticleArgs({
 assert.equal(uploadedLindevoArgs.content.includes("https://store.public.blob.vercel-storage.com/article-images/post-1.webp"), true);
 assert.equal(uploadedLindevoArgs.content.includes("https://cdn.example/chart.webp"), false);
 assert.equal(uploadedLindevoArgs.content.includes("https://cdn.example/other.webp"), true);
+const privateImageArticle = { title: "T", markdown: "![Chart](user/2026-11/chart.webp)", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [{ url: "user/2026-11/chart.webp", altText: "Chart" }] } as never;
+const savedPublicUrl = process.env.S3_PUBLIC_URL;
+delete process.env.S3_PUBLIC_URL;
+assert.throws(() => lindevoArticleArgs(privateImageArticle, "operations"), /no public URL \(S3_PUBLIC_URL\); nothing was sent/);
+assert.equal(
+  lindevoArticleArgs(privateImageArticle, "operations", undefined, new Map([["user/2026-11/chart.webp", "https://s.public.blob.vercel-storage.com/article-images/p-1.webp"]])).content,
+  "![Chart](https://s.public.blob.vercel-storage.com/article-images/p-1.webp)",
+);
+process.env.S3_PUBLIC_URL = "https://media.example.com";
+assert.equal(lindevoArticleArgs(privateImageArticle, "operations").content, "![Chart](https://media.example.com/user/2026-11/chart.webp)");
+if (savedPublicUrl === undefined) delete process.env.S3_PUBLIC_URL;
+else process.env.S3_PUBLIC_URL = savedPublicUrl;
 assert.equal("thumbnail" in lindevoArticleArgs({ title: "T", markdown: "", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "operations"), false);
 process.env.API_KEY_ENCRYPTION_SECRET = "old-publishing-secret";
 const staleGhostCredentials = encryptSecret(JSON.stringify({ url: "https://old.example", adminApiKey: `${"a".repeat(24)}:${"b".repeat(64)}` }));
