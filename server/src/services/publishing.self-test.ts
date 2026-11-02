@@ -4,7 +4,7 @@ process.env.DATABASE_URL ||= "postgres://blogfactory:blogfactory@localhost:5432/
 process.env.API_KEY_ENCRYPTION_SECRET ||= "publishing-self-test-secret";
 
 const { decryptSecret, encryptSecret } = await import("./api-keys.js");
-const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, slugify } = await import("./publishing.js");
+const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, lindevoArticleArgs, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, normalizeLindevoMcpUrl, parseLindevoToolResult, slugify } = await import("./publishing.js");
 const { appendOrtakAlanDisclosures, completeSentenceWithinLimit, hasVisibleOrtakAlanSources, isMeaningfulTurkishAlt, normalizeOrtakAlanMetadata, ortakAlanFeatureImageCaption, ortakAlanTags, validateOrtakAlanMetadata } = await import("./ortak-alan-publishing.js");
 
 const ortakAlanMetadata = normalizeOrtakAlanMetadata({
@@ -152,6 +152,60 @@ assert.doesNotThrow(() =>
     { credentialsEncrypted: encryptSecret(JSON.stringify({ apiKey: "token", siteId: "site" })) } as never,
   ),
 );
+assert.equal(normalizeLindevoMcpUrl("dashboard.example.com"), "https://dashboard.example.com/api/mcp");
+assert.equal(normalizeLindevoMcpUrl("https://dashboard.example.com/api/mcp/"), "https://dashboard.example.com/api/mcp");
+assert.throws(() => encryptProviderCredentials("lindevo", { mcpUrl: "dashboard.example.com", apiToken: "key" }), /category are required/);
+assert.throws(() => encryptProviderCredentials("lindevo", { mcpUrl: "dashboard.example.com", apiToken: "key", category: "Ops News" }), /category should be a slug/);
+assert.equal(encryptProviderCredentials("lindevo", { mcpUrl: "dashboard.example.com", apiToken: "key", category: "operations" }).hint, "dashboard.example.com");
+assert.deepEqual(
+  parseLindevoToolResult("create_article", { jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: JSON.stringify({ ok: true, id: "a1", slug: "post" }) }] } }),
+  { ok: true, id: "a1", slug: "post" },
+);
+assert.throws(
+  () => parseLindevoToolResult("create_article", { result: { isError: true, content: [{ type: "text", text: "Slug already exists" }] } }),
+  /Lindevo create_article failed: Slug already exists/,
+);
+assert.throws(() => parseLindevoToolResult("list_articles", { error: { code: -32_001, message: "Invalid API token." } }), /Invalid API token/);
+const lindevoArgs = lindevoArticleArgs({
+  title: "Title",
+  markdown: "Intro\n\n![Chart](https://cdn.example/chart.webp)",
+  excerpt: "Excerpt",
+  metaDescription: "D".repeat(300),
+  slug: "post",
+  tags: ["ops"],
+  coverAltText: "A".repeat(200),
+  inlineImages: [{ url: "https://cdn.example/chart.webp", altText: "Chart" }],
+} as never, "operations", "aGVsbG8=");
+assert.equal(lindevoArgs.description.length <= 255, true);
+assert.equal(lindevoArgs.imageAlt?.length, 125);
+assert.equal(lindevoArgs.category, "operations");
+assert.equal(lindevoArgs.content.includes("https://cdn.example/chart.webp"), true);
+const uploadedLindevoArgs = lindevoArticleArgs({
+  title: "Title",
+  markdown: "![Chart](https://cdn.example/chart.webp)\n\n![Other](https://cdn.example/other.webp)",
+  excerpt: "Excerpt",
+  metaDescription: "Description",
+  slug: "post",
+  tags: [],
+  coverAltText: "",
+  inlineImages: [{ url: "https://cdn.example/chart.webp", altText: "Chart" }, { url: "https://cdn.example/other.webp", altText: "Other" }],
+} as never, "operations", undefined, new Map([["https://cdn.example/chart.webp", "https://store.public.blob.vercel-storage.com/article-images/post-1.webp"]]));
+assert.equal(uploadedLindevoArgs.content.includes("https://store.public.blob.vercel-storage.com/article-images/post-1.webp"), true);
+assert.equal(uploadedLindevoArgs.content.includes("https://cdn.example/chart.webp"), false);
+assert.equal(uploadedLindevoArgs.content.includes("https://cdn.example/other.webp"), true);
+const privateImageArticle = { title: "T", markdown: "![Chart](user/2026-11/chart.webp)", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [{ url: "user/2026-11/chart.webp", altText: "Chart" }] } as never;
+const savedPublicUrl = process.env.S3_PUBLIC_URL;
+delete process.env.S3_PUBLIC_URL;
+assert.throws(() => lindevoArticleArgs(privateImageArticle, "operations"), /no public URL \(S3_PUBLIC_URL\); nothing was sent/);
+assert.equal(
+  lindevoArticleArgs(privateImageArticle, "operations", undefined, new Map([["user/2026-11/chart.webp", "https://s.public.blob.vercel-storage.com/article-images/p-1.webp"]])).content,
+  "![Chart](https://s.public.blob.vercel-storage.com/article-images/p-1.webp)",
+);
+process.env.S3_PUBLIC_URL = "https://media.example.com";
+assert.equal(lindevoArticleArgs(privateImageArticle, "operations").content, "![Chart](https://media.example.com/user/2026-11/chart.webp)");
+if (savedPublicUrl === undefined) delete process.env.S3_PUBLIC_URL;
+else process.env.S3_PUBLIC_URL = savedPublicUrl;
+assert.equal("thumbnail" in lindevoArticleArgs({ title: "T", markdown: "", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "operations"), false);
 process.env.API_KEY_ENCRYPTION_SECRET = "old-publishing-secret";
 const staleGhostCredentials = encryptSecret(JSON.stringify({ url: "https://old.example", adminApiKey: `${"a".repeat(24)}:${"b".repeat(64)}` }));
 process.env.API_KEY_ENCRYPTION_SECRET = "publishing-self-test-secret";

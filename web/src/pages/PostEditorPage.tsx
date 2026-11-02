@@ -77,7 +77,7 @@ interface Post {
   personas?: { name: string } | null;
 }
 
-const PROVIDER_NAMES: Record<string, string> = { ghost: "Ghost", wordpress: "WordPress", wix: "Wix", framer: "Framer" };
+const PROVIDER_NAMES: Record<string, string> = { ghost: "Ghost", wordpress: "WordPress", wix: "Wix", framer: "Framer", lindevo: "Lindevo" };
 
 function formatProviderName(provider: string) {
   return PROVIDER_NAMES[provider?.toLowerCase()] || formatSourceType(provider);

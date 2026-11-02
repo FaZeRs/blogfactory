@@ -10,6 +10,7 @@ import {
   listUserIntegrations,
   serializeIntegration,
   testIntegration,
+  type IntegrationProvider,
 } from "../services/publishing.js";
 import { readJsonObject, requiredString } from "../http/error-contract.js";
 
@@ -65,7 +66,7 @@ integrationsRoutes.put("/:id", async (c) => {
   if (!existing) return c.json({ error: "Integration not found" }, 404);
 
   try {
-    const provider = existing.provider as "wordpress" | "ghost" | "wix" | "framer";
+    const provider = existing.provider as IntegrationProvider;
     const credentials = body.credentials
       ? encryptProviderCredentials(provider, body.credentials, existing)
       : null;
@@ -165,5 +166,6 @@ function defaultDisplayName(provider: string) {
   if (provider === "wordpress") return "WordPress";
   if (provider === "ghost") return "Ghost";
   if (provider === "wix") return "Wix";
+  if (provider === "lindevo") return "Lindevo";
   return "Framer";
 }

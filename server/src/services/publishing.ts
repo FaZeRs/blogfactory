@@ -8,7 +8,7 @@ import { imageAssets, postPublications, posts, siteIntegrations, sites, userSett
 import { decryptSecret, encryptSecret, encryptedCredentialStatus, testedConnectionReady } from "./api-keys.js";
 import { normalizeImagePlacement, reflowInlineImages, type ImagePlacement, type PlacementImage } from "./image-placement.js";
 import { stripUnclosedBoldMarkers } from "./post-cleanup.js";
-import { getObject } from "./s3-client.js";
+import { getObject, getPublicUrl } from "./s3-client.js";
 import { publishingFailureState } from "./atomic-state.js";
 import { slugify } from "./slugify.js";
 export { slugify } from "./slugify.js";
@@ -25,10 +25,10 @@ import {
   type OrtakAlanPublishingMetadata,
 } from "./ortak-alan-publishing.js";
 
-export type IntegrationProvider = "wordpress" | "ghost" | "wix" | "framer";
+export type IntegrationProvider = "wordpress" | "ghost" | "wix" | "framer" | "lindevo";
 export type PublishMode = "draft" | "publish";
 
-export const PUBLISHING_PROVIDERS: IntegrationProvider[] = ["wordpress", "ghost", "wix", "framer"];
+export const PUBLISHING_PROVIDERS: IntegrationProvider[] = ["wordpress", "ghost", "wix", "framer", "lindevo"];
 
 type IntegrationRow = typeof siteIntegrations.$inferSelect;
 type PostRow = typeof posts.$inferSelect;
@@ -56,7 +56,13 @@ interface FramerCredentials {
   collectionId: string;
 }
 
-type ProviderCredentials = WordPressCredentials | GhostCredentials | WixCredentials | FramerCredentials;
+interface LindevoCredentials {
+  mcpUrl: string;
+  apiToken: string;
+  category: string;
+}
+
+type ProviderCredentials = WordPressCredentials | GhostCredentials | WixCredentials | FramerCredentials | LindevoCredentials;
 
 interface PublishOptions {
   mode?: PublishMode;
@@ -353,6 +359,7 @@ export async function testIntegration(row: IntegrationRow) {
   if (provider === "ghost") return testGhost(credentials as GhostCredentials);
   if (provider === "wix") return testWix(credentials as WixCredentials);
   if (provider === "framer") return testFramer(credentials as FramerCredentials);
+  if (provider === "lindevo") return testLindevo(credentials as LindevoCredentials);
   throw new Error("Unsupported integration provider");
 }
 
@@ -537,7 +544,9 @@ export async function publishPost(userId: string, postId: string, integrationId:
           ? await publishGhost(credentials as GhostCredentials, article, mode, publishOptions)
           : provider === "wix"
             ? await publishWix(credentials as WixCredentials, article, mode)
-            : await publishFramer(credentials as FramerCredentials, article, mode, integration.config as Record<string, unknown> | null);
+            : provider === "lindevo"
+              ? await publishLindevo(credentials as LindevoCredentials, article, mode, await previousLindevoArticleId(userId, postId, integration.id))
+              : await publishFramer(credentials as FramerCredentials, article, mode, integration.config as Record<string, unknown> | null);
 
     const result = externalResult;
     const publishedAt = new Date();
@@ -675,6 +684,17 @@ function validateCredentials(provider: IntegrationProvider, input: unknown): Pro
     return credentials;
   }
 
+  if (provider === "lindevo") {
+    const credentials = {
+      mcpUrl: normalizeLindevoMcpUrl(stringValue("mcpUrl")),
+      apiToken: stringValue("apiToken"),
+      category: stringValue("category"),
+    };
+    if (!credentials.apiToken || !credentials.category) throw new Error("Lindevo API token and article category are required");
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(credentials.category)) throw new Error("Lindevo category should be a slug such as operations");
+    return credentials;
+  }
+
   const credentials = {
     projectUrl: stringValue("projectUrl"),
     apiKey: stringValue("apiKey"),
@@ -713,6 +733,7 @@ function credentialHint(provider: IntegrationProvider, credentials: ProviderCred
   if (provider === "wordpress") return (credentials as WordPressCredentials).username;
   if (provider === "ghost") return domainFromUrl((credentials as GhostCredentials).url);
   if (provider === "wix") return last4((credentials as WixCredentials).siteId);
+  if (provider === "lindevo") return domainFromUrl((credentials as LindevoCredentials).mcpUrl);
   return domainFromUrl((credentials as FramerCredentials).projectUrl);
 }
 
@@ -732,6 +753,14 @@ export function normalizeGhostUrl(url: string) {
     .replace(/\/ghost\/api\/admin(?:\/.*)?$/i, "")
     .replace(/\/ghost$/i, "");
   return `${parsed.origin}${path}`;
+}
+
+export function normalizeLindevoMcpUrl(url: string) {
+  const withProtocol = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  const parsed = new URL(withProtocol);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("Only HTTP and HTTPS URLs are supported");
+  const path = parsed.pathname.replace(/\/+$/, "");
+  return `${parsed.origin}${path || "/api/mcp"}`;
 }
 
 function domainFromUrl(url: string) {
@@ -935,7 +964,7 @@ export function truncateAtWord(value: string, maxChars: number) {
   const cleaned = value.replace(/\s+/g, " ").trim();
   if (cleaned.length <= maxChars) return cleaned;
   const clipped = cleaned.slice(0, maxChars + 1).replace(/\s+\S*$/, "").trim();
-  return clipped || cleaned.slice(0, maxChars).trim();
+  return clipped && clipped.length <= maxChars ? clipped : cleaned.slice(0, maxChars).trim();
 }
 
 type ListKind = "ul" | "ol";
@@ -2121,6 +2150,118 @@ async function publishFramer(credentials: FramerCredentials, article: ArticlePay
   } finally {
     await framer.disconnect();
   }
+}
+
+const LINDEVO_MAX_THUMBNAIL_BYTES = Math.floor(2.5 * 1024 * 1024);
+
+async function lindevoCall(credentials: LindevoCredentials, name: string, args: Record<string, unknown>) {
+  // Lindevo's endpoint is stateless with JSON responses, so a bare tools/call needs no MCP session.
+  const response = await safeFetch(credentials.mcpUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credentials.apiToken}`,
+      Accept: "application/json, text/event-stream",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+    timeoutMs: 60_000,
+  });
+  if (response.status === 401) throw new Error("Lindevo rejected the API token");
+  if (!response.ok) throw new Error(`Lindevo ${name} failed: ${response.status}`);
+  return parseLindevoToolResult(name, await response.json());
+}
+
+export function parseLindevoToolResult(name: string, body: unknown): Record<string, unknown> {
+  const envelope = (body || {}) as { error?: { message?: string }; result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> } };
+  if (envelope.error) throw new Error(`Lindevo ${name} failed: ${envelope.error.message || "unknown error"}`);
+  const text = envelope.result?.content?.find((part) => part.type === "text")?.text || "";
+  if (envelope.result?.isError) throw new Error(`Lindevo ${name} failed: ${text.slice(0, 500) || "unknown error"}`);
+  const parsed = parseJson(text);
+  if (!parsed || typeof parsed !== "object") throw new Error(`Lindevo ${name} returned an unexpected response`);
+  return parsed as Record<string, unknown>;
+}
+
+async function testLindevo(credentials: LindevoCredentials) {
+  const data = await lindevoCall(credentials, "list_articles", { limit: 1 });
+  if (!Array.isArray(data.articles)) throw new Error("Lindevo test failed: list_articles returned no article list");
+  return { success: true, message: `Connected to ${domainFromUrl(credentials.mcpUrl)}` };
+}
+
+export function lindevoArticleArgs(article: ArticlePayload, category: string, thumbnail?: string, uploaded = new Map<string, string>()) {
+  // An image Lindevo did not take keeps a link to BlogFactory storage, which must then be public.
+  const inlineImages = article.inlineImages.map((image) => {
+    const to = uploaded.get(image.url) || (image.url.startsWith("http") ? image.url : getPublicUrl(image.url));
+    if (!to) throw new Error("An inline image could not be copied to Lindevo, and BlogFactory storage has no public URL (S3_PUBLIC_URL); nothing was sent");
+    return { from: image.url, to };
+  });
+  return {
+    title: article.title.slice(0, 255),
+    slug: article.slug,
+    description: truncateAtWord(article.metaDescription || article.excerpt, 255),
+    content: replaceImageUrls(article.markdown, inlineImages),
+    category,
+    tags: article.tags,
+    ...(thumbnail ? { thumbnail, imageAlt: truncateAtWord(article.coverAltText, 125) } : {}),
+  };
+}
+
+async function lindevoImageBase64(pathOrUrl: string) {
+  const image = await fetchImage(pathOrUrl).catch(() => null);
+  return image && image.buffer.length <= LINDEVO_MAX_THUMBNAIL_BYTES ? image.buffer.toString("base64") : undefined;
+}
+
+async function uploadLindevoImage(credentials: LindevoCredentials, pathOrUrl: string, name: string) {
+  const image = await lindevoImageBase64(pathOrUrl);
+  if (!image) return null;
+  const data = await lindevoCall(credentials, "upload_image", { image, name: slugify(name) });
+  return typeof data.url === "string" ? data.url : null;
+}
+
+/** The Lindevo article an earlier delivery of this post to this destination created. */
+async function previousLindevoArticleId(userId: string, postId: string, integrationId: string) {
+  const [previous] = await db
+    .select({ externalId: postPublications.externalId })
+    .from(postPublications)
+    .where(and(
+      eq(postPublications.userId, userId),
+      eq(postPublications.postId, postId),
+      eq(postPublications.integrationId, integrationId),
+      eq(postPublications.status, "draft"),
+      sql`${postPublications.externalId} IS NOT NULL`,
+    ))
+    .orderBy(desc(postPublications.createdAt))
+    .limit(1);
+  return previous?.externalId || null;
+}
+
+async function publishLindevo(credentials: LindevoCredentials, article: ArticlePayload, mode: PublishMode, previousId: string | null): Promise<PublishResult> {
+  if (mode === "publish") throw new Error("Lindevo receives drafts only; publish the article from the Lindevo dashboard");
+  const existing = previousId
+    ? (await lindevoCall(credentials, "get_article", { id: previousId })).article as { isDraft?: boolean } | null
+    : null;
+  if (existing && existing.isDraft !== true) {
+    throw new Error("This post's Lindevo article is already published; edit it in the Lindevo dashboard");
+  }
+  const thumbnail = article.coverImageUrl ? await lindevoImageBase64(article.coverImageUrl) : undefined;
+  // An older Lindevo without upload_image fails here, and the image stays linked.
+  const uploaded = new Map<string, string>();
+  for (const [index, image] of article.inlineImages.entries()) {
+    const url = await uploadLindevoImage(credentials, image.url, `${article.slug}-${index + 1}`).catch(() => null);
+    if (url) uploaded.set(image.url, url);
+  }
+  const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded);
+  const data = existing && previousId
+    ? await lindevoCall(credentials, "update_article", { id: previousId, ...args })
+    : await lindevoCall(credentials, "create_article", args);
+  const id = typeof data.id === "string" ? data.id : null;
+  return {
+    status: "draft",
+    externalId: id,
+    // Preview links carry a signed token, so only the dashboard edit link is stored.
+    externalUrl: null,
+    externalEditUrl: id ? `${new URL(credentials.mcpUrl).origin}/blog/${id}/edit` : null,
+    responseData: { id, slug: data.slug ?? args.slug, updated: Boolean(existing), inlineImagesUploaded: uploaded.size },
+  };
 }
 
 async function getFramerCollection(framer: Awaited<ReturnType<typeof connect>>, collectionIdOrName: string) {

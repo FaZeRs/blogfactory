@@ -124,7 +124,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const actions: CommandEntry[] = [
     { id: "create", label: "Create content", hint: "New generation run", icon: Plus, run: () => go("/create") },
     { id: "add-source", label: "Add a content source", hint: "RSS or news feed", icon: Rss, run: () => go("/sources/rss/new") },
-    { id: "connect-cms", label: "Connect a CMS destination", hint: "WordPress, Ghost, Wix, Framer", icon: Plug, run: () => go("/control/integrations") },
+    { id: "connect-cms", label: "Connect a CMS destination", hint: "WordPress, Ghost, Wix, Framer, Lindevo", icon: Plug, run: () => go("/control/integrations") },
     { id: "connect-agent", label: "Connect an MCP client", hint: "Site-scoped agent access", icon: Bot, run: () => go("/control/connections") },
     ...(user?.role === "admin"
       ? [{ id: "admin", label: "Manage users", hint: "Approvals and roles", icon: Users, run: () => go("/admin/users") } as CommandEntry]
