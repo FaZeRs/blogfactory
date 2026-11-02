@@ -4,7 +4,7 @@ process.env.DATABASE_URL ||= "postgres://blogfactory:blogfactory@localhost:5432/
 process.env.API_KEY_ENCRYPTION_SECRET ||= "publishing-self-test-secret";
 
 const { decryptSecret, encryptSecret } = await import("./api-keys.js");
-const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, slugify } = await import("./publishing.js");
+const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, lindevoArticleArgs, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, normalizeLindevoMcpUrl, parseLindevoToolResult, slugify } = await import("./publishing.js");
 const { appendOrtakAlanDisclosures, completeSentenceWithinLimit, hasVisibleOrtakAlanSources, isMeaningfulTurkishAlt, normalizeOrtakAlanMetadata, ortakAlanFeatureImageCaption, ortakAlanTags, validateOrtakAlanMetadata } = await import("./ortak-alan-publishing.js");
 
 const ortakAlanMetadata = normalizeOrtakAlanMetadata({
@@ -152,6 +152,35 @@ assert.doesNotThrow(() =>
     { credentialsEncrypted: encryptSecret(JSON.stringify({ apiKey: "token", siteId: "site" })) } as never,
   ),
 );
+assert.equal(normalizeLindevoMcpUrl("dashboard.example.com"), "https://dashboard.example.com/api/mcp");
+assert.equal(normalizeLindevoMcpUrl("https://dashboard.example.com/api/mcp/"), "https://dashboard.example.com/api/mcp");
+assert.throws(() => encryptProviderCredentials("lindevo", { mcpUrl: "dashboard.example.com", apiToken: "key" }), /category are required/);
+assert.throws(() => encryptProviderCredentials("lindevo", { mcpUrl: "dashboard.example.com", apiToken: "key", category: "Ops News" }), /category should be a slug/);
+assert.equal(encryptProviderCredentials("lindevo", { mcpUrl: "dashboard.example.com", apiToken: "key", category: "operations" }).hint, "dashboard.example.com");
+assert.deepEqual(
+  parseLindevoToolResult("create_article", { jsonrpc: "2.0", id: 1, result: { content: [{ type: "text", text: JSON.stringify({ ok: true, id: "a1", slug: "post" }) }] } }),
+  { ok: true, id: "a1", slug: "post" },
+);
+assert.throws(
+  () => parseLindevoToolResult("create_article", { result: { isError: true, content: [{ type: "text", text: "Slug already exists" }] } }),
+  /Lindevo create_article failed: Slug already exists/,
+);
+assert.throws(() => parseLindevoToolResult("list_articles", { error: { code: -32_001, message: "Invalid API token." } }), /Invalid API token/);
+const lindevoArgs = lindevoArticleArgs({
+  title: "Title",
+  markdown: "Intro\n\n![Chart](https://cdn.example/chart.webp)",
+  excerpt: "Excerpt",
+  metaDescription: "D".repeat(300),
+  slug: "post",
+  tags: ["ops"],
+  coverAltText: "A".repeat(200),
+  inlineImages: [{ url: "https://cdn.example/chart.webp", altText: "Chart" }],
+} as never, "operations", "aGVsbG8=");
+assert.equal(lindevoArgs.description.length <= 255, true);
+assert.equal(lindevoArgs.imageAlt?.length, 125);
+assert.equal(lindevoArgs.category, "operations");
+assert.equal(lindevoArgs.content.includes("https://cdn.example/chart.webp"), true);
+assert.equal("thumbnail" in lindevoArticleArgs({ title: "T", markdown: "", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "operations"), false);
 process.env.API_KEY_ENCRYPTION_SECRET = "old-publishing-secret";
 const staleGhostCredentials = encryptSecret(JSON.stringify({ url: "https://old.example", adminApiKey: `${"a".repeat(24)}:${"b".repeat(64)}` }));
 process.env.API_KEY_ENCRYPTION_SECRET = "publishing-self-test-secret";

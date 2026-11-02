@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { TagInput } from "@/components/ui/tag-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -80,6 +81,7 @@ const providerLabels: Record<string, string> = {
   ghost: "Ghost",
   wix: "Wix",
   framer: "Framer",
+  lindevo: "Lindevo",
 };
 
 const TAG_LIMIT = 8;
@@ -169,6 +171,11 @@ export function PublishDialog({ postId, title, content, summary, publishingMetad
   const selected = connected.find((integration) => integration.id === requestedIntegrationId)
     || (!siteId && !requestedIntegrationId ? connected[0] : undefined);
   const isOrtakAlan = selected?.provider === "ghost" && selected.config?.profile === "ortak_alan_news";
+  // Lindevo only accepts drafts; publishing happens in its own dashboard.
+  const draftOnly = selected?.provider === "lindevo";
+  useEffect(() => {
+    if (draftOnly) setMode("draft");
+  }, [draftOnly]);
   const { authors: ghostAuthors, isLoading: authorsLoading, error: authorsError } = useGhostAuthors(selected?.id, Boolean(open && isOrtakAlan));
   const seoChecks = useMemo(() => {
     const slugValid = slug.length >= seoLimits.slugMin && slug.length <= seoLimits.slugMax && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
@@ -514,7 +521,7 @@ export function PublishDialog({ postId, title, content, summary, publishingMetad
             <EmptyState
               size="row"
               title="Yayın entegrasyonu bağlı değil"
-              description="Önce Integrations bölümünden WordPress, Ghost, Wix veya Framer bağlayın."
+              description="Önce Integrations bölümünden WordPress, Ghost, Wix, Framer veya Lindevo bağlayın."
               primaryAction={{ label: "Integrations aç", href: "/control/integrations" }}
             />
           ) : (
@@ -550,8 +557,8 @@ export function PublishDialog({ postId, title, content, summary, publishingMetad
                     <span className="text-xs text-muted-foreground">Yayına almadan önce CMS içinde kontrol et.</span>
                   </span>
                 </label>
-                <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-byword-border p-3">
-                  <RadioGroupItem value="publish" />
+                <label className={cn("flex cursor-pointer items-center gap-3 rounded-lg border border-byword-border p-3", draftOnly && "cursor-not-allowed opacity-50")}>
+                  <RadioGroupItem value="publish" disabled={draftOnly} />
                   <span>
                     <span className="block text-sm font-semibold">Canlı yayınla</span>
                     <span className="text-xs text-muted-foreground">Doğrudan herkese açık siteye gönder.</span>

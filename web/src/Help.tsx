@@ -171,7 +171,7 @@ const helpArticles: HelpArticle[] = [
     category: "CMS Draft Delivery",
     title: "Will BlogFactory publish live content?",
     symptom: "You need to confirm the authority boundary before connecting a CMS.",
-    solution: "No. WordPress, Ghost, Wix, and Framer destinations receive approved content as drafts only. Live publishing and deletion are outside the agent surface.",
+    solution: "No. WordPress, Ghost, Wix, Framer, and Lindevo destinations receive approved content as drafts only. Live publishing and deletion are outside the agent surface.",
     href: documentation("README.md"),
     linkLabel: "Read the authority boundary",
   },
@@ -211,7 +211,7 @@ const commonQuestions = [
   ["Is BlogFactory Cloud available?", "No. BlogFactory Cloud is coming soon; the current release candidate is self-hosted first."],
   ["Does BlogFactory include an AI model?", "No. You bring your own AI credentials and select the provider/model for generation."],
   ["Can an agent publish or delete content?", "No. The delivery ceiling is a CMS draft after explicit approval; live publishing and deletion are not available through MCP."],
-  ["Which CMS destinations are supported?", "Approved drafts can be prepared for WordPress, Ghost, Wix, and Framer."],
+  ["Which CMS destinations are supported?", "Approved drafts can be prepared for WordPress, Ghost, Wix, Framer, and Lindevo."],
   ["Are sites and operation records shared between users?", "No. Access is site-scoped. The operation ledger stores sanitized metadata, never prompts, article bodies, provider responses, or credentials."],
 ] as const;
 

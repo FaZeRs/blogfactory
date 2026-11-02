@@ -650,7 +650,7 @@ export default function Posts() {
             <div>
               <AlertTitle>CMS credentials need to be re-saved</AlertTitle>
               <AlertDescription>
-                {brokenIntegrations.map((integration) => integration.provider === "ghost" ? "Ghost" : integration.provider === "wordpress" ? "WordPress" : integration.provider === "wix" ? "Wix" : "Framer").join(", ")} credentials cannot be decrypted, so drafts cannot be sent to the CMS.
+                {brokenIntegrations.map((integration) => integration.provider === "ghost" ? "Ghost" : integration.provider === "wordpress" ? "WordPress" : integration.provider === "wix" ? "Wix" : integration.provider === "lindevo" ? "Lindevo" : "Framer").join(", ")} credentials cannot be decrypted, so drafts cannot be sent to the CMS.
               </AlertDescription>
             </div>
             <Button variant="outline" onClick={() => navigate("/control/integrations")} className="shrink-0">Fix credentials</Button>

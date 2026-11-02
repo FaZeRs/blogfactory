@@ -142,9 +142,26 @@ const providerDetails: Record<IntegrationProvider, {
       { key: "collectionId", label: "Collection ID or name", placeholder: "Blog", helper: "Use the collection ID or its exact name, for example Blog." },
     ],
   },
+  lindevo: {
+    name: "Lindevo",
+    description: "Create Lindevo blog drafts with tags, cover image, and SEO description through the Lindevo MCP endpoint.",
+    badge: "CMS",
+    icon: Plug,
+    docsUrl: "https://github.com/fazers/lindevo",
+    guide: [
+      "Open the Lindevo dashboard and create an API key with read and write content access.",
+      "Paste the dashboard MCP endpoint, for example https://dashboard.example.com/api/mcp.",
+      "Choose the Lindevo article category new drafts should use. Publish them from the Lindevo dashboard.",
+    ],
+    fields: [
+      { key: "mcpUrl", label: "Lindevo MCP URL", placeholder: "https://dashboard.example.com/api/mcp", helper: "Use the dashboard origin; /api/mcp is added when the path is empty." },
+      { key: "apiToken", label: "API key", placeholder: "Lindevo API key", type: "password", helper: "The key owner becomes the article author." },
+      { key: "category", label: "Article category", placeholder: "operations", helper: "One of getting-started, system-design, or operations." },
+    ],
+  },
 };
 
-const providers: IntegrationProvider[] = ["wordpress", "ghost", "wix", "framer"];
+const providers: IntegrationProvider[] = ["wordpress", "ghost", "wix", "framer", "lindevo"];
 
 
 export const shouldReloadGhostAuthors = (existing: boolean, provider: IntegrationProvider | null, profile: string, credentialsChanged: boolean, hasDefaultAuthor: boolean) =>

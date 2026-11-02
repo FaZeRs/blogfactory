@@ -105,7 +105,7 @@ describe("Integrations setup dialog", () => {
     expect(shouldReloadGhostAuthors(true, "ghost", "ortak_alan_news", true, true)).toBe(false);
   });
 
-  it.each(["WordPress", "Ghost", "Wix", "Framer"])("renders the %s provider form", async (provider) => {
+  it.each(["WordPress", "Ghost", "Wix", "Framer", "Lindevo"])("renders the %s provider form", async (provider) => {
     await renderPage();
 
     await act(async () => connectButton(provider).click());

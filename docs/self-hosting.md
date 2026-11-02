@@ -63,7 +63,7 @@ Each user brings their own OpenRouter key. Open **Control -> Article Settings ->
 
 ### CMS draft delivery
 
-Open **Control -> Integrations**, choose the active site, and follow the provider-specific guide for WordPress, Ghost, Wix, or Framer. Save and test the connection before selecting it as a destination. BlogFactory sends reviewed content as a CMS draft; it does not publish live or delete provider content.
+Open **Control -> Integrations**, choose the active site, and follow the provider-specific guide for WordPress, Ghost, Wix, Framer, or Lindevo. Save and test the connection before selecting it as a destination. BlogFactory sends reviewed content as a CMS draft; it does not publish live or delete provider content.
 
 ### Google Search Console
 

@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 import { asArray } from "@/lib/api-shape";
 import { useSites } from "@/hooks/useSites";
 
-export type IntegrationProvider = "wordpress" | "ghost" | "wix" | "framer";
+export type IntegrationProvider = "wordpress" | "ghost" | "wix" | "framer" | "lindevo";
 
 export interface SiteIntegration {
   id: string;
