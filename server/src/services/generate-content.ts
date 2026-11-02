@@ -23,6 +23,7 @@ import { classifyEditorialTopics, inspectFeedRouting, mergeTopicTags, normalizeF
 import { completeSentenceWithinLimit, isOrtakAlanProfile, normalizeOrtakAlanMetadata } from "./ortak-alan-publishing.js";
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "./seo-metadata.js";
 import { safeFetch } from "./safe-fetch.js";
+import { NO_DRAFT_TIMEOUT_MESSAGE, STALE_RUNNING_MS } from "./job-timeouts.js";
 import type { GenerateOpts, GenerationSettings, SourceArticle } from "./generation-types.js";
 export type { GenerateOpts } from "./generation-types.js";
 import {
@@ -154,6 +155,11 @@ const OPENROUTER_COST_LOOKUP_TIMEOUT_MS = 4_000;
 
 function hasJobSyncBudget(startedAt: number, requiredMs: number) {
   return JOB_SYNC_BUDGET_MS - (Date.now() - startedAt) >= requiredMs;
+}
+
+// Drafts run sequentially, so stop starting new ones before the stale-job cutoff can reclaim the job.
+export function canStartDraft(elapsedMs: number, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
+  return elapsedMs + timeoutMs + 60_000 <= STALE_RUNNING_MS;
 }
 
 export function canAttemptArticleRepair(elapsedMs: number, budgetMs = JOB_SYNC_BUDGET_MS) {
@@ -969,6 +975,11 @@ export async function generateContent(opts: GenerateOpts) {
 
     for (let i = 0; i < articles.length; i++) {
       const article = articles[i];
+      if (!canStartDraft(Date.now() - startedAt)) {
+        lastGenerationError = NO_DRAFT_TIMEOUT_MESSAGE;
+        for (let j = i; j < articles.length; j++) failedDrafts.push({ index: j, error: lastGenerationError });
+        break;
+      }
 
       await db.update(jobs).set({
         currentStep: `generating_draft_${i + 1}_of_${articles.length}`,
