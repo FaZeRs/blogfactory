@@ -22,6 +22,7 @@ export const ResearchOutputSchema = z.object({
   queries: z.array(z.string()),
   sourceCount: z.number().int(),
   skippedSources: z.number().int(),
+  searchAdapter: z.enum(["searxng", "dataforseo", "none"]).optional(),
   claimCount: z.number().int(),
   verifiedCount: z.number().int(),
   claims: z.array(z.object({ claimId: z.string(), evidenceId: z.string(), verified: z.boolean() })),

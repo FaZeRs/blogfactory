@@ -274,6 +274,7 @@ export const researchStage: Stage<ResearchInput, ResearchOutput> = {
         queries: result.queries,
         sourceCount: result.sources.length,
         skippedSources: result.skipped,
+        searchAdapter: ctx.deps.search.name,
         claimCount: result.rows.length,
         verifiedCount: verified,
         claims,

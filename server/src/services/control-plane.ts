@@ -309,7 +309,7 @@ async function engineResearch(userId: string, siteId: string, jobId: string) {
   const [run] = await db.select({ id: articleRuns.id, mode: articleRuns.mode }).from(articleRuns)
     .where(and(eq(articleRuns.userId, userId), eq(articleRuns.siteId, siteId), eq(articleRuns.jobId, jobId))).limit(1);
   if (!run) return null;
-  const [claims, gates, [brief]] = await Promise.all([
+  const [claims, gates, [brief], [research]] = await Promise.all([
     db.select({ claim: articleEvidence.claim, quote: articleEvidence.quote, url: sql<string>`coalesce(${articleSources.finalUrl}, ${articleSources.url})`, fetchedVia: articleSources.fetchedVia, verified: articleEvidence.verified })
       .from(articleEvidence)
       .innerJoin(articleSources, and(eq(articleSources.id, articleEvidence.sourceId), eq(articleSources.userId, userId)))
@@ -321,7 +321,11 @@ async function engineResearch(userId: string, siteId: string, jobId: string) {
     db.select({ output: articleStageRuns.output }).from(articleStageRuns)
       .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId), eq(articleStageRuns.stage, "brief"), inArray(articleStageRuns.status, ["succeeded", "reused"])))
       .orderBy(desc(articleStageRuns.startedAt)).limit(1),
+    db.select({ output: articleStageRuns.output }).from(articleStageRuns)
+      .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId), eq(articleStageRuns.stage, "research"), inArray(articleStageRuns.status, ["succeeded", "reused"])))
+      .orderBy(desc(articleStageRuns.startedAt)).limit(1),
   ]);
+  const searchAdapter = (research?.output as { output?: { searchAdapter?: unknown } } | null)?.output?.searchAdapter;
   // Only the final gate attempt matters to a reviewer.
   const finalAttempt = gates[0]?.attempt;
   const keywordData = (brief?.output as { output?: { keywordData?: unknown } } | null)?.output?.keywordData;
@@ -329,8 +333,7 @@ async function engineResearch(userId: string, siteId: string, jobId: string) {
     mode: run.mode as "normal" | "deep",
     claims: claims.map((claim) => ({ claim: claim.claim, quote: claim.quote, url: claim.url, fetched_via: claim.fetchedVia || "unknown", verified: claim.verified })),
     gates: gates.filter((gate) => gate.attempt === finalAttempt).map((gate) => ({ gate: gate.gate, passed: gate.passed, severity: gate.severity || "info" })),
-    // shortcut: search adapter is read from instance config now, not recorded per run; record it in research output if adapters change often.
-    adapters: { search: process.env.SEARXNG_URL?.trim() ? "searxng" : process.env.DATAFORSEO_LOGIN ? "dataforseo" : "none", keyword_data: Boolean(keywordData) },
+    adapters: { search: typeof searchAdapter === "string" ? searchAdapter : "none", keyword_data: Boolean(keywordData) },
   };
 }
 
