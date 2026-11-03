@@ -5,6 +5,7 @@ export type BackgroundWorkerConfig = {
   campaignItems: number;
   seoJobs: number;
   imageJobs: number;
+  articleRuns: number;
   heartbeatFile: string;
   heartbeatUrl?: string;
 };
@@ -23,6 +24,7 @@ type WorkerDrains = {
   campaigns(maxCampaigns: number, maxItemsPerCampaign: number): Promise<unknown>;
   seo(userId: undefined, limit: number): Promise<unknown>;
   images(userId?: string): Promise<unknown>;
+  articles(limit: number): Promise<unknown>;
 };
 
 function boundedInt(value: string | undefined, fallback: number, min: number, max: number) {
@@ -36,27 +38,30 @@ export function readBackgroundWorkerConfig(env: Record<string, string | undefine
     campaignItems: boundedInt(env.BACKGROUND_WORKER_CAMPAIGN_ITEMS, 1, 1, 10),
     seoJobs: boundedInt(env.BACKGROUND_WORKER_SEO_JOBS, 2, 1, 10),
     imageJobs: boundedInt(env.BACKGROUND_WORKER_IMAGE_JOBS, 1, 1, 4),
+    articleRuns: boundedInt(env.BACKGROUND_WORKER_ARTICLE_RUNS, 2, 1, 10),
     heartbeatFile: env.BACKGROUND_WORKER_HEARTBEAT_FILE || "/tmp/blogfactory-worker-heartbeat",
     heartbeatUrl: env.BACKGROUND_WORKER_HEARTBEAT_URL?.trim() || undefined,
   };
 }
 
 async function loadDrains(): Promise<WorkerDrains> {
-  const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }] = await Promise.all([
+  const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }, { drainArticleRuns }] = await Promise.all([
     import("./campaign-runner.js"),
     import("./seo-metadata.js"),
     import("./low-cost-images.js"),
+    import("../engine/article-runs.js"),
   ]);
-  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages };
+  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns };
 }
 
 export async function runBackgroundWorkerCycle(config: BackgroundWorkerConfig, drains?: WorkerDrains) {
   const activeDrains = drains || await loadDrains();
-  const names = ["campaigns", "seo", "images"] as const;
+  const names = ["campaigns", "seo", "images", "articles"] as const;
   const results = await Promise.allSettled([
     activeDrains.campaigns(1, config.campaignItems),
     activeDrains.seo(undefined, config.seoJobs),
     Promise.all(Array.from({ length: config.imageJobs }, () => activeDrains.images())),
+    activeDrains.articles(config.articleRuns),
   ]);
   return {
     ok: results.every((result) => result.status === "fulfilled"),
@@ -146,6 +151,7 @@ export async function runBackgroundWorker(
     campaignItems: config.campaignItems,
     seoJobs: config.seoJobs,
     imageJobs: config.imageJobs,
+    articleRuns: config.articleRuns,
   });
 
   const periodic = createPeriodicScheduler(await loadPeriodicTasks(env));

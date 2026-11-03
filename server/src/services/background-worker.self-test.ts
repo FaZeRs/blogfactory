@@ -12,6 +12,7 @@ assert.deepEqual(readBackgroundWorkerConfig({}), {
   campaignItems: 1,
   seoJobs: 2,
   imageJobs: 1,
+  articleRuns: 2,
   heartbeatFile: "/tmp/blogfactory-worker-heartbeat",
   heartbeatUrl: undefined,
 });
@@ -28,6 +29,7 @@ assert.deepEqual(config, {
   campaignItems: 10,
   seoJobs: 3,
   imageJobs: 2,
+  articleRuns: 2,
   heartbeatFile: "/tmp/blogfactory-worker-heartbeat",
   heartbeatUrl: "https://example.com/heartbeat",
 });
@@ -37,14 +39,23 @@ assert.deepEqual(await runBackgroundWorkerCycle(config, {
   campaigns: async (campaigns, items) => { calls.push(`campaigns:${campaigns}:${items}`); },
   seo: async (_userId, limit) => { calls.push(`seo:${limit}`); },
   images: async () => { calls.push("images"); },
+  articles: async (limit) => { calls.push(`articles:${limit}`); },
 }), { ok: true, failed: [] });
-assert.deepEqual(calls.sort(), ["campaigns:1:10", "images", "images", "seo:3"]);
+assert.deepEqual(calls.sort(), ["articles:2", "campaigns:1:10", "images", "images", "seo:3"]);
 
 assert.deepEqual(await runBackgroundWorkerCycle(config, {
   campaigns: async () => {},
   seo: async () => { throw new Error("hidden provider detail"); },
   images: async () => {},
+  articles: async () => {},
 }), { ok: false, failed: ["seo"] });
+
+assert.deepEqual(await runBackgroundWorkerCycle(config, {
+  campaigns: async () => {},
+  seo: async () => {},
+  images: async () => {},
+  articles: async () => { throw new Error("hidden"); },
+}), { ok: false, failed: ["articles"] });
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 let clock = 0;
