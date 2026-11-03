@@ -22,7 +22,9 @@ import {
 } from "../services/internal-linking.js";
 import { analyzeVoiceProfile } from "../services/voice-content.js";
 import { chunkKnowledgeContent } from "../services/knowledge.js";
-import { safeError } from "../http/error-contract.js";
+import { readJsonObject, safeError } from "../http/error-contract.js";
+import { engineSettingsResponse } from "../engine/article-runs.js";
+import { parseEngineSettings } from "../engine/modes.js";
 import { normalizeOpenRouterImageModelId } from "../services/openrouter-models.js";
 import {
   ensureGlobalSettings,
@@ -438,6 +440,28 @@ function buildSettingsUpdate(body: Record<string, unknown>): SettingsUpdate {
   update.updatedAt = new Date();
   return update;
 }
+
+settingsRoutes.get("/engine", async (c) => {
+  const userId = getUserId(c);
+  const siteId = c.req.query("siteId") || c.req.query("site_id") || await getActiveSiteId(userId);
+  const settings = await getEffectiveSettings(userId, siteId).catch(() => null);
+  return c.json(engineSettingsResponse(settings?.engineSettings));
+});
+
+settingsRoutes.put("/engine", async (c) => {
+  const userId = getUserId(c);
+  const body = await readJsonObject(c);
+  const siteId = asOptionalText(body.siteId ?? body.site_id) || await getActiveSiteId(userId);
+  if (!siteId) return c.json({ error: "Select a site before changing engine settings" }, 400);
+  const engineSettings = parseEngineSettings(body.settings ?? body);
+  try {
+    await updateSiteSettings(userId, siteId, { engineSettings });
+  } catch (err) {
+    if (err instanceof Error && err.message === "Site not found") return c.json({ error: "Site not found" }, 404);
+    throw err;
+  }
+  return c.json(engineSettingsResponse(engineSettings));
+});
 
 settingsRoutes.get("/api-keys", async (c) => {
   const userId = getUserId(c);

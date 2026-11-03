@@ -42,6 +42,14 @@ export function engineAvailability(env: Env = process.env) {
   };
 }
 
+export function engineSettingsResponse(raw: unknown, env: Env = process.env) {
+  return {
+    settings: parseEngineSettings(raw),
+    availability: engineAvailability(env),
+    estimates: { normal: estimateRunUsd("normal"), deep: estimateRunUsd("deep") },
+  };
+}
+
 export async function startArticleRun(input: {
   userId: string;
   siteId: string;

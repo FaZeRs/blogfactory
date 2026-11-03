@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { engineAvailability } from "./article-runs.js";
+import { engineAvailability, engineSettingsResponse } from "./article-runs.js";
 import { safeOperationMetadata } from "../services/operation-events.js";
 
 assert.deepEqual(engineAvailability({}), {
@@ -66,3 +66,9 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES === "1") {
 }
 console.log("article runs self-test passed");
 process.exit(0);
+
+const resp = engineSettingsResponse({ budgetUsd: 3, citationStyle: "inline", junk: 1 }, {});
+assert.deepEqual(resp.settings, { budgetUsd: 3, citationStyle: "inline" });
+assert.equal(resp.availability.available, false);
+assert.ok(resp.estimates.deep > resp.estimates.normal);
+assert.deepEqual(engineSettingsResponse("bad", {}).settings, {});
