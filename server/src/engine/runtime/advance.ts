@@ -255,3 +255,22 @@ async function commitNoRow(run: ArticleRunRow, stage: StageKey, plan: Plan, now:
     .returning({ id: articleRuns.id });
   return { kind: rows.length ? plan.kind : ("lease_lost" as const), stage };
 }
+
+/** Fails a leased run that never reached a stage (its dependencies could not load); same conditional write and job mirror as a commit. */
+export async function failRunWithoutStage(run: ArticleRunRow, reason: string, now = new Date()) {
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(articleRuns)
+      .set({ state: "failed", stateReason: trunc(reason), version: sql`${articleRuns.version} + 1`, leaseOwner: null, leaseExpiresAt: null, updatedAt: now })
+      .where(and(
+        eq(articleRuns.id, run.id),
+        eq(articleRuns.userId, run.userId),
+        eq(articleRuns.leaseOwner, run.leaseOwner!),
+        eq(articleRuns.version, run.version),
+      ))
+      .returning();
+    if (!updated) return false;
+    await mirrorJob(tx, updated, now);
+    return true;
+  });
+}

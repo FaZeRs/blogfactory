@@ -48,6 +48,17 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES === "1") {
     assert.equal((run.settings as any).models.draft, "anthropic/claude-sonnet-5.5", "custom gateway keeps ids as given");
     assert.equal((await getArticleRunForJob(user.id, started.jobId))?.stages.length, 0);
     assert.equal(await getArticleRunForJob(randomUUID(), started.jobId), null, "other users see nothing");
+    // Key vanishes after the run started: one drain fails the run and its job with the reason.
+    delete process.env.ENGINE_AI_BASE_URL;
+    const { drainArticleRuns } = await import("./article-runs.js");
+    assert.ok((await drainArticleRuns(50, "w-test")) >= 1);
+    const [failed] = await db.select().from(articleRuns).where(eq(articleRuns.id, started.runId));
+    assert.equal(failed.state, "failed");
+    assert.equal(failed.stateReason, "OpenRouter is not configured");
+    assert.equal(failed.leaseOwner, null);
+    const [failedJob] = await db.select().from(jobs).where(eq(jobs.id, started.jobId));
+    assert.equal(failedJob.status, "failed");
+    assert.equal(failedJob.errorMessage, "OpenRouter is not configured");
     await assert.rejects(startArticleRun({ ...input, siteId: randomUUID() }), /Site not found/);
   } finally {
     await db.delete(users).where(eq(users.id, user.id));

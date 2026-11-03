@@ -9,11 +9,11 @@ import { getEffectiveSettings, getSiteForUser } from "../services/user-settings.
 import { engineAiEndpoint } from "./adapters/llm.js";
 import { estimateRunUsd, parseEngineSettings, resolveRunSettings } from "./modes.js";
 import { claimArticleRuns } from "./runtime/claim.js";
-import { advanceArticleRun } from "./runtime/advance.js";
+import { advanceArticleRun, failRunWithoutStage } from "./runtime/advance.js";
 import { loadEngineDeps } from "./runtime/deps.js";
 import type { ArticleRunRow } from "./runtime/stage.js";
 import { STAGES } from "./stages/index.js";
-import type { EngineMode, ModelRole, StageKey } from "./types.js";
+import { StageInputError, type EngineMode, type ModelRole, type StageKey } from "./types.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -109,7 +109,12 @@ export async function drainArticleRuns(limit: number, workerId = `worker-${proce
     let outcome = "failed";
     let costUsd = 0;
     try {
-      const result = await advanceArticleRun(run, await loadEngineDeps(run, STAGES));
+      const deps = await loadEngineDeps(run, STAGES).catch(async (error) => {
+        // Unloadable dependencies never recover by retrying, so end the run instead of re-leasing it forever.
+        if (error instanceof StageInputError) await failRunWithoutStage(run, error.message);
+        throw error;
+      });
+      const result = await advanceArticleRun(run, deps);
       outcome = result.kind;
       status = result.kind === "failed" || result.kind === "lease_lost" ? "failed" : "succeeded";
       const [after] = await db.select({ spent: articleRuns.spentUsd }).from(articleRuns)
