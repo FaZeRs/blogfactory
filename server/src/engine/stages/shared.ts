@@ -1,31 +1,45 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { articleEvidence, articleSources, articleStageRuns } from "../../db/schema.js";
+import { renderCitations } from "../citations.js";
 import type { EvidenceItem, SourceItem } from "../gates/types.js";
 import { resolveRunSettings, parseEngineSettings } from "../modes.js";
 import type { ArticleRunRow } from "../runtime/stage.js";
 import { StageInputError, type EngineMode, type ModelRole, type StageKey } from "../types.js";
+import type { DraftOutput } from "./draft/schema.js";
 import type { ResearchOutput } from "./research/schema.js";
 
 export const runSettings = (run: ArticleRunRow) => resolveRunSettings(run.mode as EngineMode, parseEngineSettings(run.settings));
 export const modelFor = (run: ArticleRunRow, role: ModelRole) => runSettings(run).models[role];
 
-/** The stored `.output.output` of the latest succeeded or reused row of a stage; user- and run-scoped. */
-export async function latestStageOutput<T>(run: ArticleRunRow, stage: StageKey): Promise<T> {
+/** The stored `.output.output` of the latest succeeded or reused row of the given stages; user- and run-scoped. */
+export async function findStageOutput<T>(run: ArticleRunRow, ...stages: StageKey[]): Promise<{ stage: StageKey; output: T } | null> {
   const [row] = await db
-    .select({ output: articleStageRuns.output })
+    .select({ stage: articleStageRuns.stage, output: articleStageRuns.output })
     .from(articleStageRuns)
     .where(and(
       eq(articleStageRuns.runId, run.id),
       eq(articleStageRuns.userId, run.userId),
-      eq(articleStageRuns.stage, stage),
+      inArray(articleStageRuns.stage, stages),
       inArray(articleStageRuns.status, ["succeeded", "reused"]),
     ))
-    .orderBy(desc(articleStageRuns.attempt))
+    .orderBy(desc(articleStageRuns.startedAt), desc(articleStageRuns.attempt))
     .limit(1);
   const stored = row?.output as { output?: T } | null | undefined;
-  if (!stored?.output) throw new StageInputError(`No ${stage} output for this run`);
-  return stored.output;
+  return stored?.output ? { stage: row!.stage as StageKey, output: stored.output } : null;
+}
+
+export async function latestStageOutput<T>(run: ArticleRunRow, stage: StageKey): Promise<T> {
+  const found = await findStageOutput<T>(run, stage);
+  if (!found) throw new StageInputError(`No ${stage} output for this run`);
+  return found.output;
+}
+
+/** The article as it stands: the revise output when a revision ran, otherwise the draft. */
+export async function latestDraft(run: ArticleRunRow): Promise<DraftOutput> {
+  const found = await findStageOutput<DraftOutput>(run, "draft", "revise");
+  if (!found) throw new StageInputError("No draft output for this run");
+  return found.output;
 }
 
 /** Sources without page text (ids and URLs only), for prompts and citation rendering. */
@@ -71,4 +85,10 @@ export function normalizeDraftMarkdown(md: string): string {
   const wrapped = /^(`{3,}|~{3,})(?:markdown|md|mdx)?[ \t]*\n([\s\S]*)\n\1[ \t]*$/i.exec(text);
   if (wrapped) text = wrapped[2]!;
   return `${text.replace(/^\s*# [^\n]*\n+/, "").trim()}\n`;
+}
+
+/** The draft as readers see it: citations rendered from the run's own evidence and sources. */
+export async function renderArticle(run: ArticleRunRow, raw: string, withSourceText = false) {
+  const [evidence, sources] = await Promise.all([loadEvidence(run), loadSources(run, withSourceText)]);
+  return { evidence, sources, markdown: renderCitations(raw, evidence, sources, runSettings(run).citationStyle, run.locale) };
 }

@@ -3,7 +3,7 @@ import { extractMarkerIds, renderCitationsDetailed } from "../../citations.js";
 import { toPlainText } from "../../markdown/plain-text.js";
 import { MODE_PRESETS } from "../../modes.js";
 import { DATA_RULE, fenceData, preparePrompt, promptVersion } from "../../prompts/load.js";
-import type { Stage } from "../../runtime/stage.js";
+import type { ArticleRunRow, Stage } from "../../runtime/stage.js";
 import { StageInputError, type EngineMode } from "../../types.js";
 import { sanitizeText, wordCount } from "../../util.js";
 import { MIN_FAQ_ANSWER_LENGTH } from "../../markdown/faq.js";
@@ -27,30 +27,48 @@ export type DraftInput = {
 /** The brief as the writer reads it: the keyword lookup is code data, not part of the plan. */
 const briefForPrompt = ({ keywordData: _k, ...brief }: BriefOutput) => JSON.stringify(brief, null, 2);
 
+/** What the writer stages (draft, revise) read: the brief, verified evidence and the sources to cite. */
+export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput> {
+  if (!MODE_PRESETS[run.mode as EngineMode]) throw new StageInputError(`Unsupported mode ${run.mode}`);
+  const [stored, evidence, sources, settings] = await Promise.all([
+    latestStageOutput<unknown>(run, "brief"),
+    loadEvidence(run),
+    loadSources(run),
+    getEffectiveSettings(run.userId, run.siteId),
+  ]);
+  const brief = BriefOutputSchema.parse(stored);
+  const urlOf = new Map(sources.map((s) => [s.id, s.finalUrl]));
+  const verified = evidence.filter((e) => e.verified);
+  return {
+    locale: run.locale,
+    voice: buildVoiceContentInstructions(settings as never).join("\n"),
+    brief,
+    evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
+    sources: sources.map((s) => ({ id: s.id, url: s.url, finalUrl: s.finalUrl, title: s.title })),
+    evidenceSources: Object.fromEntries(verified.map((e) => [e.id, e.sourceId])),
+    citationStyle: runSettings(run).citationStyle,
+  };
+}
+
+/** Normalises the model's article and measures it the way the gates will read it (rendered citations). */
+export function toDraftOutput(input: DraftInput, locale: string, parts: { title: string; description: string; markdown: string }): DraftOutput {
+  const raw = normalizeDraftMarkdown(sanitizeText(parts.markdown));
+  const evidence = input.evidence.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, sourceId: input.evidenceSources[e.id] ?? "", verified: true }));
+  const { markdown, unresolved } = renderCitationsDetailed(raw, evidence, input.sources.map((s) => ({ ...s, markdown: "" })), input.citationStyle, locale);
+  return {
+    title: sanitizeText(parts.title),
+    description: sanitizeText(parts.description),
+    markdown: raw,
+    citedClaimIds: extractMarkerIds(raw),
+    unresolvedMarkers: unresolved,
+    words: wordCount(toPlainText(markdown)),
+  };
+}
+
 export const draftStage: Stage<DraftInput, DraftOutput> = {
   key: "draft",
   promptVersion: await promptVersion("draft"),
-  async input({ run }) {
-    if (!MODE_PRESETS[run.mode as EngineMode]) throw new StageInputError(`Unsupported mode ${run.mode}`);
-    const [stored, evidence, sources, settings] = await Promise.all([
-      latestStageOutput<unknown>(run, "brief"),
-      loadEvidence(run),
-      loadSources(run),
-      getEffectiveSettings(run.userId, run.siteId),
-    ]);
-    const brief = BriefOutputSchema.parse(stored);
-    const urlOf = new Map(sources.map((s) => [s.id, s.finalUrl]));
-    const verified = evidence.filter((e) => e.verified);
-    return {
-      locale: run.locale,
-      voice: buildVoiceContentInstructions(settings as never).join("\n"),
-      brief,
-      evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
-      sources: sources.map((s) => ({ id: s.id, url: s.url, finalUrl: s.finalUrl, title: s.title })),
-      evidenceSources: Object.fromEntries(verified.map((e) => [e.id, e.sourceId])),
-      citationStyle: runSettings(run).citationStyle,
-    };
-  },
+  input: ({ run }) => loadWriterContext(run),
   async run(input, ctx) {
     const g = ENGINE_CONFIG.gates;
     const prompt = await preparePrompt("draft", {
@@ -79,27 +97,10 @@ export const draftStage: Stage<DraftInput, DraftOutput> = {
       signal: ctx.signal,
     });
     // The brief already validated the title it chose, so the model's own title is ignored.
-    const title = sanitizeText(input.brief.chosenTitle);
-    const description = sanitizeText(r.value.description);
-    const raw = normalizeDraftMarkdown(sanitizeText(r.value.markdown));
-    const evidence = input.evidence.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, sourceId: input.evidenceSources[e.id] ?? "", verified: true }));
-    const { markdown, unresolved } = renderCitationsDetailed(
-      raw,
-      evidence,
-      input.sources.map((s) => ({ ...s, markdown: "" })),
-      input.citationStyle,
-      ctx.run.locale,
-    );
+    const output = toDraftOutput(input, ctx.run.locale, { title: input.brief.chosenTitle, description: r.value.description, markdown: r.value.markdown });
     return {
       next: { type: "advance", to: "gates" },
-      output: {
-        title,
-        description,
-        markdown: raw,
-        citedClaimIds: extractMarkerIds(raw),
-        unresolvedMarkers: unresolved,
-        words: wordCount(toPlainText(markdown)),
-      },
+      output,
       usage: [{ model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costUsd: r.costUsd }],
     };
   },
