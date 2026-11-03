@@ -123,3 +123,12 @@ export function isBoilerplateTitle(title: string): boolean {
     GENERIC.has(text.toLowerCase().replace(TRAILING_PUNCT_RE, ""))
   );
 }
+
+/** Milliseconds in a day. */
+export const DAY_MS = 86_400_000;
+
+const WHITESPACE_RUN = /\s+/;
+
+export function wordCount(text: string): number {
+  return text.split(WHITESPACE_RUN).filter(Boolean).length;
+}
