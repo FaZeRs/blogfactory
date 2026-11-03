@@ -40,6 +40,8 @@ Verified on 2026-08-22:
 | `list_search_console_sitemaps` | `content:read` | Read Search Console sitemap health |
 | `query_search_console_analytics` | `content:read` | Query bounded analytics with complete data by default |
 
+`generate_draft` takes `mode`: `fast` (default, the single-call generator), or `normal` / `deep` for the staged engine (research, brief, draft, quality gates, revise, deliver). Normal and deep accept only `article_keyword` and `article_title` sources and one draft per job (`variations` above 1 is a `validation_error`). They need the persistent background worker and an AI key; otherwise the call returns `configuration_missing` with the reason. The same per-site `generation_busy` rule applies, and `get_job` reads progress as before. No new tool or scope is added.
+
 The web Connections surface reads this catalog from authenticated `GET /api/mcp/capabilities`; tool counts and scope lists must not be hardcoded in UI code.
 
 Search Console headline totals use one property-level, date-grouped 28-day dataset across dashboard, insights, workspace digest, and MCP. Responses include source, range, fetch time, completeness boundary, scope, and cache provenance. Page/query rows are labeled as the bounded opportunity dataset; `query_search_console_analytics` excludes preliminary dates unless `include_preliminary` is explicitly enabled.

@@ -348,6 +348,14 @@ assert.deepEqual(MCP_SCOPES, ["content:read", "drafts:write", "publish:draft"]);
 assert.equal(new Set(MCP_ERROR_CODES).size, 13);
 assert.equal(MCP_POST_CONTENT_LIMIT, 100_000);
 assert.doesNotThrow(assertMcpToolRegistry);
+{
+  const { z } = await import("zod");
+  const input = z.object(MCP_TOOL_REGISTRY.generate_draft.inputSchema);
+  const base = { site_id: "00000000-0000-4000-8000-000000000003", source_type: "article_keyword", source_value: "x" };
+  assert.equal(input.parse(base).mode, "fast");
+  assert.equal(input.parse({ ...base, mode: "deep" }).mode, "deep");
+  assert.equal(input.safeParse({ ...base, mode: "turbo" }).success, false);
+}
 assert.deepEqual(capMcpPostContent("short"), { content: "short", content_truncated: false });
 assert.deepEqual(capMcpPostContent("x".repeat(MCP_POST_CONTENT_LIMIT + 1)), {
   content: "x".repeat(MCP_POST_CONTENT_LIMIT),

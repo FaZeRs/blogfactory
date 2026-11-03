@@ -11,6 +11,7 @@ import { readJsonObject, requiredString, safeError } from "../http/error-contrac
 import type { GenerateOpts } from "../services/generation-types.js";
 import type { ExtractOpts } from "../services/extract-content.js";
 import type { FetchOpts } from "../services/fetch-social-content.js";
+import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
 import { SEO_PLAN_MODE } from "../services/seo-growth-plan.js";
 
 export const contentRoutes = new Hono();
@@ -54,6 +55,29 @@ contentRoutes.post("/generate", async (c) => {
   const body = await generationBody(c);
   let feedRunClaim: FeedRunClaim | null = null;
   let releaseScheduled = false;
+
+  const mode = (body as { mode?: unknown }).mode;
+  if (mode !== undefined && mode !== "fast") {
+    if (mode !== "normal" && mode !== "deep") return c.json({ error: "mode must be fast, normal or deep" }, 400);
+    const siteId = body.siteId || body.site_id;
+    if (!siteId) return c.json({ error: "siteId is required for normal and deep modes" }, 400);
+    if (body.sourceType !== "article_keyword" && body.sourceType !== "article_title") {
+      return c.json({ error: "Normal and deep modes support article_keyword and article_title sources only." }, 400);
+    }
+    try {
+      const started = await startArticleRun({
+        userId, siteId, mode, sourceType: body.sourceType, topic: body.sourceValue,
+        preferredIntegrationId: body.preferredIntegrationId || body.preferred_integration_id || null,
+        origin: "web",
+      });
+      return c.json({ jobId: started.jobId, runId: started.runId, status: "running", mode, estimateUsd: started.estimateUsd, postIds: [] }, 202);
+    } catch (err: any) {
+      if (err instanceof EngineUnavailableError) return c.json({ error: err.message, code: err.code }, 400);
+      if (err?.message === "Site not found") return c.json({ error: "Site not found" }, 404);
+      console.error("engine start error", safeError(err));
+      return c.json({ error: "Content generation failed" }, 500);
+    }
+  }
 
   try {
     const campaignId = body.campaignId || null;

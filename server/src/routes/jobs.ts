@@ -7,6 +7,7 @@ import { getUserId } from "../middleware/auth.js";
 import { getPinnedSiteSettings } from "../services/user-settings.js";
 import { markStaleRunningJobs } from "../services/job-timeouts.js";
 import { readJsonObject } from "../http/error-contract.js";
+import { getArticleRunForJob } from "../engine/article-runs.js";
 import { pagination, parseJobListQuery } from "./list-query.js";
 
 export const jobsRoutes = new Hono();
@@ -191,8 +192,15 @@ jobsRoutes.get("/:id", async (c) => {
 
   if (!job) return c.json({ error: "Job not found" }, 404);
   const { integration_site_id, ...result } = job;
+  const engine = await getArticleRunForJob(userId, id);
   return c.json({
     ...result,
+    ...(engine ? {
+      engine: {
+        run_id: engine.run.id, mode: engine.run.mode, state: engine.run.state, stage: engine.run.currentStage,
+        spent_usd: engine.run.spentUsd, budget_usd: engine.run.budgetUsd, stages: engine.stages,
+      },
+    } : {}),
     routing_status: result.site_id && result.preferred_integration_id && integration_site_id === result.site_id && result.integration_status === "connected" ? "ready" : "needs_routing",
   });
 });
