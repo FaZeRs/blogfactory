@@ -445,7 +445,7 @@ RETURNING *
 - Create: `server/src/engine/evals/{schema,run,decide,cli}.ts` + `run.test.ts`, `decide.test.ts` (from `LV/evals/`, `LV/jobs/eval.ts`)
 - Create: `server/src/engine/prompts/{judge-rubric,judge-pairwise}.md`
 - Create: `server/src/engine/evals/briefs/*.json` — the 10 Lindevo briefs plus at least 3 new ones: `11-tr-local-dentist.json` (Turkish, local business), `12-shop-running-shoes.json` (e-commerce), `13-app-habit-tracker.json` (mobile app site)
-- Modify: `server/package.json` (`"eval:engine": "bun run src/engine/evals/cli.ts"`), root `package.json` (`"eval:engine": "npm run eval:engine --workspace=server"`)
+- Modify: `server/package.json` (`"eval:engine": "bun run src/engine/evals/cli.ts"`), root `package.json` (`"eval:engine": "npm run eval:engine --workspace=server"`), `.gitignore` (`server/.eval/`)
 
 **Interfaces:**
 - `EvalBrief` (ported schema) = topic, locale, frozen `sources` (url, title, markdown) and `evidence`. No network during an eval.
