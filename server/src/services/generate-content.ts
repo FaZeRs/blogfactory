@@ -1,8 +1,8 @@
 import { db } from "../db/index.js";
 import { safeError } from "../http/error-contract.js";
-import { evaluateDailyGuardrails } from "./generation-guardrails.js";
+import { checkAccountGuardrails } from "./account-guardrails.js";
 import { campaignItems, imageAssets, imageGenerationRequests, jobs, posts, feeds, generationLogs, personas, sites, siteIntegrations } from "../db/schema.js";
-import { eq, and, gte, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { saveImageBuffer } from "./image-storage.js";
 import { getOpenRouterKey } from "./api-keys.js";
 import { extractContent } from "./extract-content.js";
@@ -15,7 +15,7 @@ import {
   resolveOpenRouterTextModel,
 } from "./openrouter-models.js";
 import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
-import { getEffectiveSettings, getGlobalSettings, getPinnedSiteSettings, updateGlobalSettings } from "./user-settings.js";
+import { getEffectiveSettings, getPinnedSiteSettings } from "./user-settings.js";
 import { buildSportsNewsInstructions, classifySportsNews, sportsMatrixRowsFromSettings } from "./sports-news.js";
 import { fetchSocialContent } from "./fetch-social-content.js";
 import { imageTargets } from "./image-slots.js";
@@ -680,52 +680,13 @@ export async function generateContent(opts: GenerateOpts) {
 
   try {
     // Budget is account-level; feed generation resolves defaults from its pinned site.
-    const accountSettings = await getGlobalSettings(userId);
     const settings = feedRecord || hasJobRoutingSnapshot
       ? await getPinnedSiteSettings(userId, resolvedSiteId)
       : await getEffectiveSettings(userId, resolvedSiteId);
-    if (accountSettings?.budgetPaused) {
-      await db.update(jobs).set({ status: "failed", errorMessage: "Generation paused — monthly budget exceeded", completedAt: new Date() }).where(eq(jobs.id, jobId));
-      return { jobId, status: "failed", error: "Budget exceeded" };
-    }
-
-    if (accountSettings?.monthlyBudget) {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-      const [costResult] = await db.select({ total: sql<number>`COALESCE(SUM(cost), 0)` })
-        .from(generationLogs)
-        .where(and(eq(generationLogs.userId, userId), sql`created_at >= ${startOfMonth.toISOString()}`));
-
-      if ((costResult?.total || 0) >= accountSettings.monthlyBudget) {
-        await updateGlobalSettings(userId, { budgetPaused: true });
-        await db.update(jobs).set({ status: "failed", errorMessage: "Monthly budget exceeded — generation paused", completedAt: new Date() }).where(eq(jobs.id, jobId));
-        return { jobId, status: "failed", error: "Budget exceeded" };
-      }
-    }
-
-    // Daily ceilings do not latch budget_paused: they clear themselves at UTC midnight.
-    if (accountSettings?.dailyCostLimit || accountSettings?.dailyRequestLimit) {
-      const startOfDay = new Date();
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const [todayUsage] = await db.select({
-        spend: sql<number>`COALESCE(SUM(${generationLogs.cost}), 0)::float8`,
-        requests: sql<number>`COUNT(*)::int`,
-        failures: sql<number>`COUNT(*) FILTER (WHERE ${generationLogs.status} IS NOT NULL AND ${generationLogs.status} <> 'success')::int`,
-      })
-        .from(generationLogs)
-        .where(and(eq(generationLogs.userId, userId), gte(generationLogs.createdAt, startOfDay)));
-
-      const blocked = evaluateDailyGuardrails(accountSettings, {
-        monthSpend: 0,
-        todaySpend: Number(todayUsage?.spend || 0),
-        todayRequests: Number(todayUsage?.requests || 0),
-        todayFailures: Number(todayUsage?.failures || 0),
-      });
-      if (blocked) {
-        await db.update(jobs).set({ status: "failed", errorMessage: blocked.message, completedAt: new Date() }).where(eq(jobs.id, jobId));
-        return { jobId, status: "failed", error: blocked.message };
-      }
+    const guard = await checkAccountGuardrails(userId);
+    if (guard.blocked) {
+      await db.update(jobs).set({ status: "failed", errorMessage: guard.message, completedAt: new Date() }).where(eq(jobs.id, jobId));
+      return { jobId, status: "failed", error: guard.error };
     }
     const promptSettings = applyGenerationOverrides((opts.settingsSnapshot || settings) as GenerationSettings | undefined, opts);
     const effectiveOpts = applyArticleDefaults(opts, promptSettings);
