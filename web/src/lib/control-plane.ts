@@ -57,6 +57,7 @@ export type ReviewPacket = {
   editorial: { state: string; revision_id: string | null; revision_number: number | null; current_revision_approved: boolean };
   changes: { changed_fields: string[]; word_delta: number };
   seo: { status: string };
+  research: { mode: "normal" | "deep"; claims: Array<{ claim: string; quote: string; url: string; fetched_via: string; verified: boolean }>; gates: Array<{ gate: string; passed: boolean; severity: string }>; adapters: { search: string; keyword_data: boolean } } | null;
   preflight: { can_send: boolean; has_blockers: boolean; checks: Array<{ id: string; label: string; status: "pass" | "warning" | "blocker"; message: string }> };
   destinations: Array<{ id: string; provider: string; display_name: string; status: string; credential_status: "usable" | "missing" | "undecryptable"; preferred: boolean }>;
   permissions: { can_push_cms_draft: boolean };

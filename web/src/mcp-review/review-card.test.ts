@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { cmsDraftSuccessMessage, reviewDeliveryState, toolResultError } from "./review-card";
+import { cmsDraftSuccessMessage, sourceHost, reviewDeliveryState, toolResultError } from "./review-card";
+
+describe("MCP Review Card sources", () => {
+  it("shows the host for http(s) links only", () => {
+    expect(sourceHost("https://www.example.com/a?b=1")).toBe("example.com");
+    expect(sourceHost("javascript:alert(1)")).toBeNull();
+    expect(sourceHost("not a url")).toBeNull();
+  });
+});
 
 describe("MCP Review Card delivery gate", () => {
   it("requires scope, clean blockers, and an explicit destination", () => {

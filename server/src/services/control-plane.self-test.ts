@@ -44,6 +44,12 @@ const base = {
 
 assert.equal(classifyDraftAction(base), null);
 assert.equal(classifyDraftAction({ ...base, content: "changed", seoStatus: "ready" }), null);
+const escalated = classifyDraftAction({ ...base, engineEscalation: "Gates still failing: overlap", revision: null })!;
+assert.equal(escalated.kind, "engine_escalated");
+assert.equal(escalated.severity, "blocker");
+assert.equal(escalated.suggested_action, "Gates still failing: overlap");
+assert.equal(escalated.reasons.length, 2);
+assert.equal(classifyDraftAction({ ...base, engineEscalation: null }), null);
 assert.equal(classifyDraftAction({ ...base, revision: null })?.kind, "missing_revision");
 assert.equal(classifyDraftAction({ ...base, seoMetadata: null })?.kind, "seo_not_ready");
 assert.equal(classifyDraftAction({ ...base, preferredIntegrationId: null, integrationSiteId: null, integrationReady: false, usableDestinationCount: 0 })?.kind, "destination_not_ready");

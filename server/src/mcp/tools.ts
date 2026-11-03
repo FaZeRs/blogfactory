@@ -1296,6 +1296,12 @@ const reviewPacket = z.object({
   }),
   changes: z.object({ changed_fields: z.array(z.string()), word_delta: z.number().int() }),
   seo: z.object({ status: seoStatusSchema }),
+  research: z.object({
+    mode: z.enum(["normal", "deep"]),
+    claims: z.array(z.object({ claim: z.string(), quote: z.string(), url: z.string(), fetched_via: z.string(), verified: z.boolean() })),
+    gates: z.array(z.object({ gate: z.string(), passed: z.boolean(), severity: z.string() })),
+    adapters: z.object({ search: z.string(), keyword_data: z.boolean() }),
+  }).nullable(),
   preflight: z.object({
     can_send: z.boolean(),
     has_blockers: z.boolean(),
