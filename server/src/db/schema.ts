@@ -7,7 +7,10 @@ import {
   real,
   timestamp,
   jsonb,
+  index,
+  unique,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 
 // ── users (replaces Supabase auth.users + profiles) ──
@@ -574,6 +577,7 @@ export const userSettings = pgTable("user_settings", {
   dailyCostLimit: real("daily_cost_limit"),
   dailyRequestLimit: integer("daily_request_limit"),
   dailyFailureLimit: integer("daily_failure_limit"),
+  engineSettings: jsonb("engine_settings"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -609,3 +613,96 @@ export const schedulerLogs = pgTable("scheduler_logs", {
   results: jsonb("results"),
   triggeredAt: timestamp("triggered_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ── staged blog engine (normal/deep modes) ──
+export const articleRuns = pgTable("article_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+  preferredIntegrationId: uuid("preferred_integration_id").references(() => siteIntegrations.id, { onDelete: "set null" }),
+  mode: text("mode").notNull(),
+  sourceType: text("source_type").notNull(),
+  topic: text("topic").notNull(),
+  locale: text("locale").default("en").notNull(),
+  settings: jsonb("settings").notNull(),
+  currentStage: text("current_stage").default("research").notNull(),
+  state: text("state").default("active").notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  version: integer("version").default(0).notNull(),
+  reviseCount: integer("revise_count").default(0).notNull(),
+  budgetUsd: real("budget_usd").notNull(),
+  spentUsd: real("spent_usd").default(0).notNull(),
+  stateReason: text("state_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("article_runs_claim_idx").on(t.nextAttemptAt).where(sql`${t.state} = 'active'`),
+  index("article_runs_user_site_idx").on(t.userId, t.siteId, t.createdAt.desc()),
+]);
+
+export const articleStageRuns = pgTable("article_stage_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().references(() => articleRuns.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  stage: text("stage").notNull(),
+  attempt: integer("attempt").default(1).notNull(),
+  status: text("status").notNull(),
+  inputHash: text("input_hash"),
+  model: text("model"),
+  promptVersion: text("prompt_version"),
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
+  costUsd: real("cost_usd").default(0).notNull(),
+  output: jsonb("output"),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (t) => [
+  unique("article_stage_runs_run_id_stage_attempt_key").on(t.runId, t.stage, t.attempt),
+  index("article_stage_runs_reuse_idx").on(t.runId, t.stage, t.inputHash).where(sql`${t.status} = 'succeeded'`),
+]);
+
+export const articleSources = pgTable("article_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().references(() => articleRuns.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  finalUrl: text("final_url"),
+  fetchedVia: text("fetched_via"),
+  httpStatus: integer("http_status"),
+  textLength: integer("text_length"),
+  title: text("title"),
+  markdown: text("markdown"),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("article_sources_run_idx").on(t.runId, t.userId)]);
+
+export const articleEvidence = pgTable("article_evidence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().references(() => articleRuns.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceId: uuid("source_id").notNull().references(() => articleSources.id, { onDelete: "cascade" }),
+  claim: text("claim").notNull(),
+  quote: text("quote").notNull(),
+  kind: text("kind"),
+  verified: boolean("verified").default(false).notNull(),
+  method: text("method"),
+  ratio: real("ratio"),
+  reason: text("reason"),
+}, (t) => [index("article_evidence_run_idx").on(t.runId, t.userId)]);
+
+export const articleGateResults = pgTable("article_gate_results", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().references(() => articleRuns.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  attempt: integer("attempt").default(1).notNull(),
+  gate: text("gate").notNull(),
+  passed: boolean("passed").notNull(),
+  severity: text("severity"),
+  issues: jsonb("issues").default([]).notNull(),
+  metrics: jsonb("metrics").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("article_gate_results_run_idx").on(t.runId, t.userId)]);

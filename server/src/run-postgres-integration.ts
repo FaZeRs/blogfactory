@@ -508,6 +508,34 @@ try {
   const { purgeExpiredOperationEvents } = await import("./services/operation-events.js");
   assert.ok(await purgeExpiredOperationEvents() >= 1, "expired operation events were not purged");
 
+  // article runs: tables exist, mode check holds, user delete cascades to every child
+  const runTables = ["article_runs", "article_stage_runs", "article_sources", "article_evidence", "article_gate_results"];
+  const found = await sql<{ table_name: string }[]>`
+    SELECT table_name FROM information_schema.tables WHERE table_name IN ${sql(runTables)}
+  `;
+  assert.equal(found.length, runTables.length, "article run tables are missing");
+  const cascadeUserId = randomUUID();
+  const cascadeSiteId = randomUUID();
+  const runId = randomUUID();
+  const sourceId = randomUUID();
+  await sql`INSERT INTO users (id, email, password_hash, approval_status) VALUES (${cascadeUserId}, ${`cascade-${cascadeUserId}@example.com`}, 'test', 'approved')`;
+  await sql`INSERT INTO sites (id, user_id, name, domain) VALUES (${cascadeSiteId}, ${cascadeUserId}, 'Cascade test', 'cascade-test.example.com')`;
+  await assert.rejects(
+    sql`INSERT INTO article_runs (user_id, site_id, mode, source_type, topic, settings, budget_usd) VALUES (${cascadeUserId}, ${cascadeSiteId}, 'fast', 'topic', 'x', '{}', 1)`,
+    /article_runs_mode_check/,
+    "article_runs accepted mode = 'fast'",
+  );
+  await sql`INSERT INTO article_runs (id, user_id, site_id, mode, source_type, topic, settings, budget_usd) VALUES (${runId}, ${cascadeUserId}, ${cascadeSiteId}, 'normal', 'topic', 'x', '{}', 1)`;
+  await sql`INSERT INTO article_stage_runs (run_id, user_id, stage, status) VALUES (${runId}, ${cascadeUserId}, 'research', 'running')`;
+  await sql`INSERT INTO article_sources (id, run_id, user_id, url) VALUES (${sourceId}, ${runId}, ${cascadeUserId}, 'https://example.com')`;
+  await sql`INSERT INTO article_evidence (run_id, user_id, source_id, claim, quote) VALUES (${runId}, ${cascadeUserId}, ${sourceId}, 'c', 'q')`;
+  await sql`INSERT INTO article_gate_results (run_id, user_id, gate, passed) VALUES (${runId}, ${cascadeUserId}, 'overlap', true)`;
+  await sql`DELETE FROM users WHERE id = ${cascadeUserId}`;
+  for (const table of runTables) {
+    const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ${sql(table)} WHERE user_id = ${cascadeUserId}`;
+    assert.equal(row.count, 0, `${table} survived user deletion`);
+  }
+
   await revokeMcpAccessToken(userId, createdToken.token.id);
   assert.equal(
     await markMcpAccessTokenUsed(createdToken.token.id, new Date()),
