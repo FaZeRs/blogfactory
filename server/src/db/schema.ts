@@ -162,6 +162,7 @@ export const posts = pgTable("posts", {
   seoMetadata: jsonb("seo_metadata"),
   publishingMetadata: jsonb("publishing_metadata"),
   editorialState: text("editorial_state").default("draft").notNull(),
+  publishAt: timestamp("publish_at", { withTimezone: true }),
   approvedRevisionId: uuid("approved_revision_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -582,6 +583,7 @@ export const userSettings = pgTable("user_settings", {
   dailyRequestLimit: integer("daily_request_limit"),
   dailyFailureLimit: integer("daily_failure_limit"),
   engineSettings: jsonb("engine_settings"),
+  ideaSettings: jsonb("idea_settings"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -712,3 +714,44 @@ export const articleGateResults = pgTable("article_gate_results", {
   metrics: jsonb("metrics").default({}).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("article_gate_results_run_idx").on(t.runId, t.userId)]);
+
+// ── ideas ──
+export const ideaDiscoveries = pgTable("idea_discoveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  status: text("status").default("queued").notNull(),
+  signalCount: integer("signal_count").default(0).notNull(),
+  ideaCount: integer("idea_count").default(0).notNull(),
+  costUsd: real("cost_usd").default(0).notNull(),
+  error: text("error"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const ideas = pgTable("ideas", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  status: text("status").default("new").notNull(),
+  title: text("title").notNull(),
+  angle: text("angle"),
+  primaryKeyword: text("primary_keyword"),
+  alternateKeywords: text("alternate_keywords").array().default(sql`'{}'`).notNull(),
+  searchIntent: text("search_intent"),
+  audienceQuestion: text("audience_question"),
+  brief: jsonb("brief").default(sql`'{}'::jsonb`).notNull(),
+  score: real("score"),
+  scoreBreakdown: jsonb("score_breakdown"),
+  origin: text("origin").default("discovered").notNull(),
+  discoveryId: uuid("discovery_id").references(() => ideaDiscoveries.id, { onDelete: "set null" }),
+  mode: text("mode").default("normal").notNull(),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+  jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+  rejectedReason: text("rejected_reason"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

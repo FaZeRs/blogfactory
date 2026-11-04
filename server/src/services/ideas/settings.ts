@@ -1,0 +1,94 @@
+import { getEffectiveSettings, updateSiteSettings } from "../user-settings.js";
+
+export const SCORE_FACTORS = ["trend", "fit", "demand", "feasibility", "novelty", "gain"] as const;
+export type ScoreFactor = typeof SCORE_FACTORS[number];
+export type ScoreWeights = Record<ScoreFactor, number>;
+
+export type IdeaSettings = {
+  /** Weekdays use JS numbering: 0 Sunday ... 6 Saturday. */
+  cadence: { weekdays: number[]; time: string; timezone: string };
+  leadDays: number;
+  defaultMode: "normal" | "deep";
+  autopilot: { enabled: boolean; approvePerWeek: number; minScore: number };
+  weights: ScoreWeights;
+  /** Extra seed topics; the site's own topics are added when discovery runs. */
+  seedTopics: string[];
+  /** Competitor domains whose sitemaps are scanned for new pages. */
+  competitors: string[];
+};
+
+export const DEFAULT_WEIGHTS: ScoreWeights = { trend: 1, fit: 1, demand: 1, feasibility: 1, novelty: 1, gain: 1 };
+
+export const DEFAULT_IDEA_SETTINGS: IdeaSettings = {
+  cadence: { weekdays: [1, 4], time: "08:00", timezone: "UTC" },
+  leadDays: 3,
+  defaultMode: "normal",
+  autopilot: { enabled: false, approvePerWeek: 2, minScore: 60 },
+  weights: DEFAULT_WEIGHTS,
+  seedTopics: [],
+  competitors: [],
+};
+
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const int = (v: unknown, min: number, max: number, fallback: number) => {
+  const n = typeof v === "number" ? Math.round(v) : NaN;
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+const strings = (v: unknown, max: number, len: number) =>
+  Array.isArray(v) ? [...new Set(v.flatMap((x) => typeof x === "string" && x.trim() ? [x.trim().slice(0, len)] : []))].slice(0, max) : [];
+
+export function isValidTimezone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || !tz) return false;
+  try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; }
+}
+
+/** Any stored or submitted value in, a complete valid settings object out. Never throws. */
+export function normalizeIdeaSettings(raw: unknown): IdeaSettings {
+  const d = DEFAULT_IDEA_SETTINGS;
+  const r = obj(raw);
+  const cad = obj(r.cadence);
+  const weekdays = Array.isArray(cad.weekdays)
+    ? [...new Set(cad.weekdays.filter((n): n is number => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
+    : [];
+  const auto = obj(r.autopilot);
+  const w = obj(r.weights);
+  const weights = { ...DEFAULT_WEIGHTS };
+  for (const f of SCORE_FACTORS) {
+    const n = w[f];
+    if (typeof n === "number" && Number.isFinite(n)) weights[f] = Math.min(5, Math.max(0, n));
+  }
+  return {
+    cadence: {
+      weekdays: weekdays.length ? weekdays : d.cadence.weekdays,
+      time: typeof cad.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(cad.time) ? cad.time : d.cadence.time,
+      timezone: isValidTimezone(cad.timezone) ? cad.timezone : d.cadence.timezone,
+    },
+    leadDays: int(r.leadDays, 0, 30, d.leadDays),
+    defaultMode: r.defaultMode === "deep" ? "deep" : "normal",
+    autopilot: {
+      enabled: auto.enabled === true,
+      approvePerWeek: int(auto.approvePerWeek, 1, 14, d.autopilot.approvePerWeek),
+      minScore: int(auto.minScore, 0, 100, d.autopilot.minScore),
+    },
+    weights,
+    seedTopics: strings(r.seedTopics, 20, 120),
+    competitors: strings(r.competitors, 10, 253),
+  };
+}
+
+export async function getIdeaSettings(userId: string, siteId: string): Promise<IdeaSettings> {
+  return normalizeIdeaSettings((await getEffectiveSettings(userId, siteId)).ideaSettings);
+}
+
+export async function saveIdeaSettings(userId: string, siteId: string, input: unknown): Promise<IdeaSettings> {
+  const ideaSettings = normalizeIdeaSettings(input);
+  await updateSiteSettings(userId, siteId, { ideaSettings });
+  return ideaSettings;
+}
+
+/** The site's own topics plus the settings' extras, deduped, for discovery. */
+export function effectiveSeedTopics(settings: IdeaSettings, site: { topics?: string[] | null; editorialTopics?: string[] | null }): string[] {
+  const all = [...(site.editorialTopics ?? []), ...(site.topics ?? []), ...settings.seedTopics].map((t) => t.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  return all.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())).slice(0, 12);
+}

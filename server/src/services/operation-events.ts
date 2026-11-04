@@ -23,6 +23,13 @@ export function safeOperationMetadata(action: string, input: unknown): Operation
     }
     return metadata;
   }
+  if (action === "ideas.discovery") {
+    for (const key of ["signal_count", "idea_count", "cost_usd", "failed_collectors", "sources"]) {
+      const item = value[key];
+      if (typeof item === "string" || typeof item === "number") metadata[key] = item;
+    }
+    return metadata;
+  }
   for (const key of ["status", "kind", "severity", "source_type", "variations", "page", "limit", "post_type"]) {
     const item = value[key];
     if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") metadata[key] = item;

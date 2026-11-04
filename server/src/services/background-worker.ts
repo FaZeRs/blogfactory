@@ -6,6 +6,7 @@ export type BackgroundWorkerConfig = {
   seoJobs: number;
   imageJobs: number;
   articleRuns: number;
+  ideaDiscoveries: number;
   heartbeatFile: string;
   heartbeatUrl?: string;
 };
@@ -25,6 +26,7 @@ type WorkerDrains = {
   seo(userId: undefined, limit: number): Promise<unknown>;
   images(userId?: string): Promise<unknown>;
   articles(limit: number): Promise<unknown>;
+  ideas(limit: number): Promise<unknown>;
 };
 
 function boundedInt(value: string | undefined, fallback: number, min: number, max: number) {
@@ -39,27 +41,30 @@ export function readBackgroundWorkerConfig(env: Record<string, string | undefine
     seoJobs: boundedInt(env.BACKGROUND_WORKER_SEO_JOBS, 2, 1, 10),
     imageJobs: boundedInt(env.BACKGROUND_WORKER_IMAGE_JOBS, 1, 1, 4),
     articleRuns: boundedInt(env.BACKGROUND_WORKER_ARTICLE_RUNS, 2, 1, 10),
+    ideaDiscoveries: boundedInt(env.BACKGROUND_WORKER_IDEA_DISCOVERIES, 1, 1, 4),
     heartbeatFile: env.BACKGROUND_WORKER_HEARTBEAT_FILE || "/tmp/blogfactory-worker-heartbeat",
     heartbeatUrl: env.BACKGROUND_WORKER_HEARTBEAT_URL?.trim() || undefined,
   };
 }
 
 async function loadDrains(): Promise<WorkerDrains> {
-  const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }, { drainArticleRuns }] = await Promise.all([
+  const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }, { drainArticleRuns }, { drainIdeaDiscoveries }] = await Promise.all([
     import("./campaign-runner.js"),
     import("./seo-metadata.js"),
     import("./low-cost-images.js"),
     import("../engine/article-runs.js"),
+    import("./ideas/discovery.js"),
   ]);
-  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns };
+  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns, ideas: (limit) => drainIdeaDiscoveries(limit) };
 }
 
 // An engine stage can run for minutes; it must not hold up the other queues or the heartbeat.
 let articlesInFlight: Promise<PromiseSettledResult<unknown>> | null = null;
+let ideasInFlight: Promise<PromiseSettledResult<unknown>> | null = null;
 
 export async function runBackgroundWorkerCycle(config: BackgroundWorkerConfig, drains?: WorkerDrains) {
   const activeDrains = drains || await loadDrains();
-  const names = ["campaigns", "seo", "images", "articles"] as const;
+  const names = ["campaigns", "seo", "images", "articles", "ideas"] as const;
   if (!articlesInFlight) {
     const started = activeDrains.articles(config.articleRuns)
       .then((value) => ({ status: "fulfilled", value }) as const, (reason) => ({ status: "rejected", reason }) as const);
@@ -67,12 +72,22 @@ export async function runBackgroundWorkerCycle(config: BackgroundWorkerConfig, d
     void started.finally(() => { if (articlesInFlight === started) articlesInFlight = null; });
   }
   const inFlight = articlesInFlight;
+  // Discovery is one model call plus short lookups, but is still kept off the cycle's critical path.
+  if (!ideasInFlight) {
+    ideasInFlight = activeDrains.ideas(config.ideaDiscoveries)
+      .then((value) => ({ status: "fulfilled", value }) as const, (reason) => ({ status: "rejected", reason }) as const);
+    const started = ideasInFlight;
+    void started.finally(() => { if (ideasInFlight === started) ideasInFlight = null; });
+  }
+  const ideasRun = ideasInFlight;
   const results = await Promise.allSettled([
     activeDrains.campaigns(1, config.campaignItems),
     activeDrains.seo(undefined, config.seoJobs),
     Promise.all(Array.from({ length: config.imageJobs }, () => activeDrains.images())),
     // Reports a drain that finished within this cycle; one still running counts as healthy.
     Promise.race([inFlight, new Promise<null>((resolve) => setTimeout(() => resolve(null), 0))])
+      .then((settled) => { if (settled?.status === "rejected") throw settled.reason; }),
+    Promise.race([ideasRun, new Promise<null>((resolve) => setTimeout(() => resolve(null), 0))])
       .then((settled) => { if (settled?.status === "rejected") throw settled.reason; }),
   ]);
   return {
@@ -164,6 +179,7 @@ export async function runBackgroundWorker(
     seoJobs: config.seoJobs,
     imageJobs: config.imageJobs,
     articleRuns: config.articleRuns,
+    ideaDiscoveries: config.ideaDiscoveries,
   });
 
   const periodic = createPeriodicScheduler(await loadPeriodicTasks(env));

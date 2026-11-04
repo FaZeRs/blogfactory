@@ -144,6 +144,7 @@ export function makeDeps(script: Script) {
   const keywordCalls = { n: 0 };
   const dataForSeo: DataForSeoClient = {
     serp: async () => [],
+    keywordIdeas: async () => [],
     keywordOverview: async (keyword): Promise<KeywordOverview> => {
       keywordCalls.n += 1;
       return { keyword, volume: 100, difficulty: 10, intent: "informational", aiOverview: false };

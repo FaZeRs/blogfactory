@@ -13,6 +13,7 @@ assert.deepEqual(readBackgroundWorkerConfig({}), {
   seoJobs: 2,
   imageJobs: 1,
   articleRuns: 2,
+  ideaDiscoveries: 1,
   heartbeatFile: "/tmp/blogfactory-worker-heartbeat",
   heartbeatUrl: undefined,
 });
@@ -30,6 +31,7 @@ assert.deepEqual(config, {
   seoJobs: 3,
   imageJobs: 2,
   articleRuns: 2,
+  ideaDiscoveries: 1,
   heartbeatFile: "/tmp/blogfactory-worker-heartbeat",
   heartbeatUrl: "https://example.com/heartbeat",
 });
@@ -40,14 +42,16 @@ assert.deepEqual(await runBackgroundWorkerCycle(config, {
   seo: async (_userId, limit) => { calls.push(`seo:${limit}`); },
   images: async () => { calls.push("images"); },
   articles: async (limit) => { calls.push(`articles:${limit}`); },
+  ideas: async (limit) => { calls.push(`ideas:${limit}`); },
 }), { ok: true, failed: [] });
-assert.deepEqual(calls.sort(), ["articles:2", "campaigns:1:10", "images", "images", "seo:3"]);
+assert.deepEqual(calls.sort(), ["articles:2", "campaigns:1:10", "ideas:1", "images", "images", "seo:3"]);
 
 assert.deepEqual(await runBackgroundWorkerCycle(config, {
   campaigns: async () => {},
   seo: async () => { throw new Error("hidden provider detail"); },
   images: async () => {},
   articles: async () => {},
+  ideas: async () => {},
 }), { ok: false, failed: ["seo"] });
 
 assert.deepEqual(await runBackgroundWorkerCycle(config, {
@@ -55,13 +59,22 @@ assert.deepEqual(await runBackgroundWorkerCycle(config, {
   seo: async () => {},
   images: async () => {},
   articles: async () => { throw new Error("hidden"); },
+  ideas: async () => {},
 }), { ok: false, failed: ["articles"] });
+
+assert.deepEqual(await runBackgroundWorkerCycle(config, {
+  campaigns: async () => {},
+  seo: async () => {},
+  images: async () => {},
+  articles: async () => {},
+  ideas: async () => { throw new Error("hidden"); },
+}), { ok: false, failed: ["ideas"] });
 
 // A slow article drain does not block the cycle, and is not started twice while it runs.
 let releaseArticles = () => {};
 let articleStarts = 0;
 const slowArticles = () => new Promise<void>((resolve) => { articleStarts += 1; releaseArticles = resolve; });
-const quick = { campaigns: async () => {}, seo: async () => {}, images: async () => {}, articles: slowArticles };
+const quick = { campaigns: async () => {}, seo: async () => {}, images: async () => {}, articles: slowArticles, ideas: async () => {} };
 assert.deepEqual(await runBackgroundWorkerCycle(config, quick), { ok: true, failed: [] });
 assert.deepEqual(await runBackgroundWorkerCycle(config, quick), { ok: true, failed: [] });
 assert.equal(articleStarts, 1);

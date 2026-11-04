@@ -19,7 +19,7 @@ export type EngineDeps = {
 // shortcut: provider spend is per-process memory, so the monthly cap resets on restart; persist it with the ledger when DataForSEO is enabled for real.
 let dataForSeoSpent = { month: "", usd: 0 };
 const month = () => new Date().toISOString().slice(0, 7);
-const dataForSeoSpend = {
+export const dataForSeoSpend = {
   monthlySpentUsd: async () => (dataForSeoSpent.month === month() ? dataForSeoSpent.usd : 0),
   recordSpend: async (usd: number) => {
     dataForSeoSpent = { month: month(), usd: (dataForSeoSpent.month === month() ? dataForSeoSpent.usd : 0) + usd };
