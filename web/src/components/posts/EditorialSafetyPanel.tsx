@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EDITORIAL_STATE_BADGES } from "@/lib/editorial-state";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Eye, History, ImagePlus, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Eye, History, RotateCcw, ShieldAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -229,43 +229,6 @@ function DestinationPicker({ postId, siteId }: { postId: string; siteId?: string
   );
 }
 
-const COVER_WAIT_MS = 90_000;
-
-/** Queues one AI cover, then refreshes the post until it appears; the button unmounts once the check passes. */
-function GenerateCoverButton({ postId }: { postId: string }) {
-  const queryClient = useQueryClient();
-  const [waitingSince, setWaitingSince] = useState<number | null>(null);
-  const generate = useMutation({
-    mutationFn: () => api.post<{ status: string }>(`/images/posts/${postId}/cover`),
-    onSuccess: (result) => {
-      if (result.status === "queued") setWaitingSince(Date.now());
-      queryClient.invalidateQueries({ queryKey: ["post", postId] });
-      queryClient.invalidateQueries({ queryKey: ["post-preflight", postId] });
-    },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Cover image could not be generated"),
-  });
-  useEffect(() => {
-    if (waitingSince === null) return;
-    const timer = setInterval(() => {
-      if (Date.now() - waitingSince > COVER_WAIT_MS) {
-        setWaitingSince(null);
-        toast.error("The cover is taking longer than expected. Check the Image Gallery for its status.");
-        return;
-      }
-      queryClient.invalidateQueries({ queryKey: ["post", postId] });
-      queryClient.invalidateQueries({ queryKey: ["post-preflight", postId] });
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [postId, queryClient, waitingSince]);
-  const busy = generate.isPending || waitingSince !== null;
-  return (
-    <Button type="button" variant="outline" size="sm" className="mt-2 h-8 text-xs" onClick={() => generate.mutate()} disabled={busy}>
-      {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="mr-1.5 h-3.5 w-3.5" />}
-      {busy ? "Generating cover…" : "Generate cover"}
-    </Button>
-  );
-}
-
 export function EditorialSafetyPanel({
   postId,
   siteId,
@@ -332,7 +295,7 @@ export function EditorialSafetyPanel({
                     <p className="text-xs font-semibold">{check.label}</p>
                     <p className="mt-0.5 break-words text-xs text-muted-foreground">{check.message}</p>
                     {check.id === "destination" && check.status !== "pass" && <DestinationPicker postId={postId} siteId={siteId} />}
-                    {check.id === "cover_image" && check.status !== "pass" && !hasUnsavedChanges && <GenerateCoverButton postId={postId} />}
+                    {check.id === "cover_image" && check.status !== "pass" && <a href="#cover" className="mt-1.5 inline-block text-xs font-medium text-byword-blue hover:underline">Open cover tools</a>}
                   </div>
                 </div>
               ))}

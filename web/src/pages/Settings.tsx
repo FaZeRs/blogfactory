@@ -134,6 +134,7 @@ interface UserSettings extends BrandKnowledgeSettings {
   manual_image_provider?: ManualImageProvider | null;
   manual_prompt_suffix?: string | null;
   cover_image_resolution?: "512" | "1K" | null;
+  cover_style_preset?: string | null;
   inline_image_resolution?: "512" | "1K" | null;
   cover_enabled?: boolean | null;
   inline_enabled?: boolean | null;
@@ -647,6 +648,15 @@ export default function Settings() {
       toast.success("Internal linking disconnected");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to disconnect internal linking"),
+  });
+
+  const saveCoverStyleMutation = useMutation({
+    mutationFn: (preset: string) => api.put("/settings", { siteId: activeSiteId, cover_style_preset: preset }),
+    onSuccess: () => {
+      invalidateSettings();
+      toast.success("Default cover style saved");
+    },
+    onError: () => toast.error("Failed to save settings"),
   });
 
   // Save style prompt mutation
@@ -1948,6 +1958,25 @@ export default function Settings() {
                     <p className="text-xs text-muted-foreground">
                       This style will be appended to all image generation prompts.
                     </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="coverStyle">Default cover style</Label>
+                    <Select
+                      value={userSettings?.cover_style_preset || "custom"}
+                      onValueChange={(value) => saveCoverStyleMutation.mutate(value)}
+                      disabled={saveCoverStyleMutation.isPending || settingsLoading}
+                    >
+                      <SelectTrigger id="coverStyle" className="w-full sm:w-64"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="custom">Use the style prompt</SelectItem>
+                        <SelectItem value="editorial_photo">Editorial photo</SelectItem>
+                        <SelectItem value="flat_illustration">Flat illustration</SelectItem>
+                        <SelectItem value="3d_render">3D render</SelectItem>
+                        <SelectItem value="abstract">Abstract</SelectItem>
+                        <SelectItem value="brand_colors">Brand colors</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Starting style for new covers. You can change it per cover in the editor.</p>
                   </div>
                   <Button
                     variant="secondary"

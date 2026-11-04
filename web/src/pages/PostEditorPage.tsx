@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { MarkdownEditor } from "@/components/posts/MarkdownEditor";
+import { CoverPanel } from "@/components/posts/CoverPanel";
 import { GeneratedImagesPanel } from "@/components/posts/GeneratedImagesPanel";
 import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -416,6 +417,8 @@ export default function PostEditorPage() {
               placeholder="Post title..."
             />
           </BywordCard>
+
+          <CoverPanel postId={post.id} disabled={Boolean(hasChanges)} />
 
           <EditorialSafetyPanel
             postId={post.id}
