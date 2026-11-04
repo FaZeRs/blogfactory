@@ -238,7 +238,8 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
   } finally {
     clearTimeout(timer);
   }
-  return commit(run, row.id, stage, chosen, now);
+  // Finish time, not the claim time read before the stage ran.
+  return commit(run, row.id, stage, chosen, deps.now());
 }
 
 /** Terminal write for a run that has no stage row yet. */
