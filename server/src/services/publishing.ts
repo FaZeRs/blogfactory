@@ -251,6 +251,7 @@ export function serializePublication(row: typeof postPublications.$inferSelect) 
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
   if (value && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => left.localeCompare(right))

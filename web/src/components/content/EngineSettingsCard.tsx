@@ -73,7 +73,7 @@ export function EngineSettingsCard({ siteId }: { siteId: string | null | undefin
         <div className="space-y-2">
           <Label>Citation style</Label>
           <Select
-            value={draft.citationStyle ?? "inline"}
+            value={draft.citationStyle ?? "references"}
             onValueChange={(v) => setDraft((d) => ({ ...d, citationStyle: v as "inline" | "references" }))}
           >
             <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>

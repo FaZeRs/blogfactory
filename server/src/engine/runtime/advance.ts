@@ -4,6 +4,7 @@ import { articleRuns, articleStageRuns, jobs } from "../../db/schema.js";
 import { checkAccountGuardrails } from "../../services/account-guardrails.js";
 import { parseEngineSettings, resolveRunSettings } from "../modes.js";
 import { RateLimitError, StageInputError, type EngineMode, type StageKey, type Transition } from "../types.js";
+import type { EngineLlm } from "../adapters/llm.js";
 import type { EngineDeps } from "./deps.js";
 import { stageInputHash } from "./hash.js";
 import type { ArticleRunRow, StageContext } from "./stage.js";
@@ -158,11 +159,20 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
     patch: { nextAttemptAt: new Date(now.getTime() + PAUSE_MS), stateReason: message },
     row: "delete",
   });
+  // Every model call is tallied here so failed and rate-limited attempts still count against the budget.
+  let attemptCost = 0;
+  const llm: EngineLlm = {
+    async json(req) {
+      const r = await deps.llm.json(req);
+      attemptCost += r.costUsd;
+      return r;
+    },
+  };
 
   async function plan(): Promise<Plan> {
     const def = deps.stages[stage];
     if (!def) throw new StageInputError(`Stage ${stage} is not registered`);
-    const ctx: StageContext = { run, deps, signal: controller.signal, attempt };
+    const ctx: StageContext = { run, deps: { ...deps, llm }, signal: controller.signal, attempt };
     const input = await def.input(ctx);
     const inputHash = stageInputHash(stage, def.promptVersion, models, input);
 
@@ -188,7 +198,12 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
     }
 
     if (run.spentUsd + preset.estimateUsd[stage] > run.budgetUsd) {
-      return pause(`Run budget reached: $${run.spentUsd.toFixed(2)} of $${run.budgetUsd.toFixed(2)} spent`);
+      // The budget is frozen on the run, so waiting cannot help: fail instead of pausing forever.
+      return {
+        kind: "failed",
+        patch: { state: "failed", stateReason: `Run budget reached: $${run.spentUsd.toFixed(2)} of $${run.budgetUsd.toFixed(2)} spent` },
+        row: "delete",
+      };
     }
     const guard = await checkAccountGuardrails(run.userId, now);
     if (guard.blocked) return pause(guard.message);
@@ -221,7 +236,7 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
     if (err instanceof RateLimitError) {
       chosen = {
         kind: "rate_limited",
-        patch: { nextAttemptAt: new Date(now.getTime() + Math.max(err.retryAfterMs ?? 0, MIN_RATE_LIMIT_MS)) },
+        patch: { nextAttemptAt: new Date(now.getTime() + Math.max(err.retryAfterMs ?? 0, MIN_RATE_LIMIT_MS)), spentUsd: run.spentUsd + attemptCost },
         row: "delete",
       };
     } else {
@@ -229,10 +244,11 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
       const final = err instanceof StageInputError || failures >= MAX_ATTEMPTS;
       chosen = {
         kind: final ? "failed" : "retry",
-        patch: final
-          ? { state: "failed", stateReason: trunc(message) }
-          : { nextAttemptAt: new Date(now.getTime() + RETRY_MS[failures - 1]) },
-        row: { status: "failed", error: trunc(message) },
+        patch: {
+          spentUsd: run.spentUsd + attemptCost,
+          ...(final ? { state: "failed", stateReason: trunc(message) } : { nextAttemptAt: new Date(now.getTime() + RETRY_MS[failures - 1]) }),
+        },
+        row: { status: "failed", error: trunc(message), costUsd: attemptCost },
       };
     }
   } finally {

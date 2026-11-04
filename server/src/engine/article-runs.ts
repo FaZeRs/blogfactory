@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { articleRuns, articleStageRuns, jobs } from "../db/schema.js";
+import { articleRuns, articleStageRuns, jobs, siteIntegrations } from "../db/schema.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { finishOperationEvent, startOperationEvent } from "../services/operation-events.js";
@@ -61,6 +61,13 @@ export async function startArticleRun(input: {
 }): Promise<{ jobId: string; runId: string; estimateUsd: number }> {
   if (!persistentBackgroundExecution()) throw new EngineUnavailableError("worker_required");
   if (!(await getSiteForUser(input.userId, input.siteId))) throw new Error("Site not found");
+  if (input.preferredIntegrationId) {
+    const [integration] = await db.select({ siteId: siteIntegrations.siteId, status: siteIntegrations.status }).from(siteIntegrations)
+      .where(and(eq(siteIntegrations.id, input.preferredIntegrationId), eq(siteIntegrations.userId, input.userId))).limit(1);
+    if (!integration) throw new StageInputError("Integration not found");
+    if (integration.siteId !== input.siteId) throw new StageInputError("Publishing target does not belong to the selected site");
+    if (integration.status !== "connected") throw new StageInputError("Publishing target is not connected");
+  }
   const openRouterKey = await getOpenRouterKey(input.userId);
   const endpoint = engineAiEndpoint(process.env, openRouterKey);
   if (!endpoint) throw new EngineUnavailableError("ai_key_missing");

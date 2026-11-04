@@ -112,7 +112,7 @@ const kindRank = new Map<ActionKind, number>(ACTION_KINDS.map((kind, index) => [
 
 export function classifyDraftAction(input: DraftActionInput): ActionItem | null {
   const reasons: ActionReason[] = [];
-  const hasPublishingMetadata = Boolean(input.publishingMetadata && typeof input.publishingMetadata === "object" && Object.keys(input.publishingMetadata).length);
+  const hasPublishingMetadata = Boolean(input.publishingMetadata && typeof input.publishingMetadata === "object" && Object.keys(input.publishingMetadata).some((key) => key !== "engine"));
   const preferredRoutingReady = Boolean(
     input.preferredIntegrationId
     && input.integrationSiteId === input.siteId

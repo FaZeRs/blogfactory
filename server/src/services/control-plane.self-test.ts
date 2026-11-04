@@ -58,6 +58,7 @@ assert.equal(classifyDraftAction({ ...base, editorialState: "in_review" })?.kind
 assert.equal(classifyDraftAction({ ...base, editorialState: "approved", approvedRevisionId: "00000000-0000-4000-8000-000000000099" })?.kind, "stale_approval");
 assert.equal(classifyDraftAction({ ...base, coverImageUrl: null })?.kind, "missing_cover");
 assert.equal(classifyDraftAction({ ...base, publishingMetadata: null })?.kind, "publishing_metadata_missing");
+assert.equal(classifyDraftAction({ ...base, publishingMetadata: { engine: { runId: "r" } } })?.kind, "publishing_metadata_missing");
 assert.equal(classifyDraftAction({ ...base, updatedAt: new Date("2026-08-01T00:00:00.000Z") })?.kind, "stale_draft");
 assert.equal(classifyDraftAction({ ...base, seoMetadata: null, editorialState: "changes_requested", coverImageUrl: null })?.severity, "blocker");
 const mixed = classifyDraftAction({ ...base, seoMetadata: null, coverImageUrl: null })!;

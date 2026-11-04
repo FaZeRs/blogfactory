@@ -189,7 +189,7 @@ export async function researchCore(input: ResearchInput, ctx: StageContext, spen
         quote,
         kind: c.kind,
         verified: v.verified,
-        method: v.verified ? (v.score === 1 ? "exact" : "fuzzy") : null,
+        method: v.verified ? (v.score === 1 ? "exact" : "windowed") : null,
         ratio: v.score,
         reason: v.reason,
       };

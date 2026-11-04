@@ -12,6 +12,7 @@ import type { GenerateOpts } from "../services/generation-types.js";
 import type { ExtractOpts } from "../services/extract-content.js";
 import type { FetchOpts } from "../services/fetch-social-content.js";
 import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
+import { StageInputError } from "../engine/types.js";
 import { SEO_PLAN_MODE } from "../services/seo-growth-plan.js";
 
 export const contentRoutes = new Hono();
@@ -74,6 +75,7 @@ contentRoutes.post("/generate", async (c) => {
     } catch (err: any) {
       if (err instanceof EngineUnavailableError) return c.json({ error: err.message, code: err.code }, 400);
       if (err?.message === "Site not found") return c.json({ error: "Site not found" }, 404);
+      if (err instanceof StageInputError) return c.json({ error: err.message }, 400);
       console.error("engine start error", safeError(err));
       return c.json({ error: "Content generation failed" }, 500);
     }

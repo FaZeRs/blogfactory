@@ -48,7 +48,7 @@ const reload = async (id: string) => (await db.select().from(articleRuns).where(
 const stageRows = (runId: string) => db.select().from(articleStageRuns).where(eq(articleStageRuns.runId, runId));
 const reloadJob = async (id: string) => (await db.select().from(jobs).where(eq(jobs.id, id)))[0];
 
-type Behaviour = { research?: () => Promise<void>; calls?: { n: number } };
+type Behaviour = { research?: () => Promise<void>; afterLlm?: () => Promise<void>; calls?: { n: number } };
 function makeDeps(behaviour: Behaviour = {}, now: () => Date = () => new Date()) {
   const llm = createFakeLlm({ brief: Array.from({ length: 20 }, () => ({ a: "x" })) });
   const stage = (key: string, to?: string) => ({
@@ -59,6 +59,7 @@ function makeDeps(behaviour: Behaviour = {}, now: () => Date = () => new Date())
       if (behaviour.calls) behaviour.calls.n += 1;
       await behaviour.research?.();
       await ctx.deps.llm.json({ role: "brief", model: "m", system: "s", user: "u", schema: z.object({ a: z.string() }), maxTokens: 10 });
+      await behaviour.afterLlm?.();
       return {
         output: { ok: true },
         next: to ? { type: "advance" as const, to } : { type: "done" as const },
@@ -190,6 +191,17 @@ try {
     assert.ok(j.completedAt);
   }
 
+  // A failed attempt still counts the model spend it made.
+  {
+    const { run } = await fixture();
+    const { deps } = makeDeps({ afterLlm: async () => { throw new Error("boom"); } });
+    const priced = { ...deps, llm: { json: async (req: never) => ({ ...(await deps.llm.json(req)), costUsd: 0.02 }) } } as EngineDeps;
+    assert.equal((await advanceArticleRun(await claimOne(run.id), priced)).kind, "retry");
+    assert.ok(Math.abs((await reload(run.id)).spentUsd - 0.02) < 1e-9);
+    const [failed] = await stageRows(run.id);
+    assert.ok(Math.abs(failed.costUsd - 0.02) < 1e-9);
+  }
+
   // Budget: nothing is called.
   {
     const { run } = await fixture({ budgetUsd: 0.01 });
@@ -197,12 +209,11 @@ try {
     const { deps, llm } = makeDeps({ calls });
     const now = new Date();
     const res = await advanceArticleRun(await claimOne(run.id), { ...deps, now: () => now });
-    assert.equal(res.kind, "budget_paused");
+    assert.equal(res.kind, "failed");
     assert.equal(calls.n, 0);
     assert.equal(llm.calls.length, 0);
     const after = await reload(run.id);
-    assert.equal(after.state, "active");
-    assert.equal(after.nextAttemptAt.getTime(), now.getTime() + 3600_000);
+    assert.equal(after.state, "failed");
     assert.match(after.stateReason ?? "", /^Run budget reached: \$0\.00 of \$0\.01 spent$/);
     assert.equal((await stageRows(run.id)).length, 0);
   }

@@ -24,6 +24,11 @@ assert.notEqual(
   publishingIdempotencyKey({ ...request, postUpdatedAt: new Date("2026-07-11T10:01:00Z") }),
   "edited posts create a new publish operation",
 );
+assert.notEqual(
+  publishingIdempotencyKey({ ...request, options: { ...request.options, publishAt: new Date("2026-12-01T00:00:00Z") } }),
+  publishingIdempotencyKey({ ...request, options: { ...request.options, publishAt: new Date("2026-12-15T00:00:00Z") } }),
+  "a new publish date creates a new publish operation",
+);
 
 assert.deepEqual(publishingFailureState(false, new Error("provider failed")), {
   status: "failed",
