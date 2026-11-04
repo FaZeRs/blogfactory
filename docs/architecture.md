@@ -122,6 +122,10 @@ Self-hosted Compose and Dokploy installs keep their own `scheduler` container ca
 
 The backend decides eligibility and claims work. Schedulers must stay thin; do not create a second queue or duplicate job classification in a Worker or workflow.
 
+## Staged blog engine
+
+`server/src/engine/` runs the `normal` and `deep` generation modes as durable stages (research, brief, draft, quality gates, revise, deliver). `article-runs.ts` starts a run from the same generation request as fast mode; state lives in `article_runs`, with `article_stage_runs`, `article_sources`, `article_evidence`, and `article_gate_results` as user-scoped children. The worker's `articles` drain claims runs with a lease and advances one stage at a time; retries, 429 rescheduling, and lease recovery are in `engine/runtime/`. Search (SearXNG or DataForSEO), page reading (Crawl4AI or plain fetch), and the LLM client are adapters in `engine/adapters/`; the LLM is OpenAI-compatible (the user's OpenRouter key, or the instance `ENGINE_AI_*` endpoint). Engine settings are per user at `GET/PUT /api/settings/engine`. The engine delivers a draft post only; escalated runs reach the Review Queue as `engine_escalated`. Fast mode does not use the engine. `npm run eval:engine` runs the golden-brief eval harness.
+
 ## Hosting and routing
 
 | Layer | Current responsibility |
