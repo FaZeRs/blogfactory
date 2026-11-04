@@ -139,7 +139,7 @@ export function classifyDraftAction(input: DraftActionInput): ActionItem | null 
     reasons.push({ kind: "stale_approval", severity: "review", label: "Approval expired", message: "The approved revision is no longer current." });
   }
   if (!input.coverImageUrl) reasons.push({ kind: "missing_cover", severity: "warning", label: "Cover image", message: "No cover image is attached." });
-  if (!hasPublishingMetadata) reasons.push({ kind: "publishing_metadata_missing", severity: "warning", label: "Publishing metadata", message: "Tags, categories, or provider metadata have not been saved." });
+  if (!hasPublishingMetadata) reasons.push({ kind: "publishing_metadata_missing", severity: "warning", label: "Publishing metadata", message: "Optional: add tags and categories in Send to CMS." });
   if (input.now.getTime() - input.updatedAt.getTime() > 14 * 24 * 60 * 60 * 1000) {
     reasons.push({ kind: "stale_draft", severity: "warning", label: "Stale draft", message: "This draft has not changed for more than 14 days." });
   }
@@ -381,7 +381,7 @@ export async function getReviewPacket(input: { userId: string; postId: string; a
     { id: "seo", label: "Canonical SEO", status: seoReady ? "pass" : "blocker", message: seoReady ? "Current and valid" : "SEO metadata is missing, stale, or invalid" },
     { id: "destination", label: "CMS destination", status: usableDestinations.length ? "pass" : "blocker", message: usableDestinations.length ? `${usableDestinations.length} usable destination${usableDestinations.length === 1 ? "" : "s"}` : "Connect or repair a CMS destination for this site" },
     { id: "cover_image", label: "Cover image", status: post.coverImageUrl ? "pass" : "warning", message: post.coverImageUrl ? "Attached to the saved revision" : "No cover image is attached" },
-    { id: "publishing_metadata", label: "Publishing metadata", status: hasPublishingMetadata ? "pass" : "warning", message: hasPublishingMetadata ? "Saved for this revision" : "Tags, categories, or provider metadata have not been saved yet" },
+    { id: "publishing_metadata", label: "Publishing metadata", status: hasPublishingMetadata ? "pass" : "warning", message: hasPublishingMetadata ? "Saved for this revision" : "Optional: add tags and categories in Send to CMS; they are saved when you send" },
   ] as const;
   const currentSnapshot = currentRevision ? postRevisionSnapshot(currentRevision.snapshot) : null;
   const previousSnapshot = previousRevision ? postRevisionSnapshot(previousRevision.snapshot) : null;

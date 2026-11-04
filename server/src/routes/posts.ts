@@ -333,7 +333,7 @@ postsRoutes.get("/:id/preflight", async (c) => {
     { id: "seo", label: "Canonical SEO", status: seoReady ? "pass" : "blocker", message: seoReady ? "Current and valid" : "SEO metadata is missing, stale, or invalid" },
     { id: "destination", label: "CMS destination", status: destinationReady ? "pass" : "blocker", message: destinationReady ? `${integration?.provider} is connected` : "Choose a connected destination for this site" },
     { id: "cover_image", label: "Cover image", status: post.coverImageUrl ? "pass" : "warning", message: post.coverImageUrl ? "Attached to the saved revision" : "No cover image is attached" },
-    { id: "publishing_metadata", label: "Publishing metadata", status: savedPublishingMetadata(post.publishingMetadata) ? "pass" : "warning", message: savedPublishingMetadata(post.publishingMetadata) ? "Saved for this revision" : "Tags, categories, or provider metadata have not been saved yet" },
+    { id: "publishing_metadata", label: "Publishing metadata", status: savedPublishingMetadata(post.publishingMetadata) ? "pass" : "warning", message: savedPublishingMetadata(post.publishingMetadata) ? "Saved for this revision" : "Optional: add tags and categories in Send to CMS; they are saved when you send" },
     { id: "review", label: "Editorial review", status: approved ? "pass" : mode === "publish" ? "warning" : "pass", message: approved ? "Current revision is approved" : mode === "publish" ? "Live publishing requires explicit review override" : "Approval is optional for CMS drafts" },
     ...routingWarnings.filter((warning): warning is string => typeof warning === "string").map((warning, index) => ({ id: `routing_${index}`, label: "Publishing metadata", status: "warning", message: warning })),
   ];
