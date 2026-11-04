@@ -9,6 +9,8 @@ export type ModePreset = {
     maxQueries: number;
     maxPages: number;
     maxClaimsPerPage: number;
+    /** Top organic results read for the outline analysis (the site itself excluded). */
+    maxCompetitors: number;
     minVerifiedClaims: 3;
     useKeywordData: boolean;
   };
@@ -36,7 +38,7 @@ export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
   normal: {
     stages: STAGES,
     maxRevise: 1,
-    research: { maxQueries: 3, maxPages: 6, maxClaimsPerPage: 5, minVerifiedClaims: 3, useKeywordData: false },
+    research: { maxQueries: 3, maxPages: 6, maxClaimsPerPage: 5, maxCompetitors: 4, minVerifiedClaims: 3, useKeywordData: false },
     models: models("anthropic/claude-sonnet-5.5"),
     budgetUsd: 1,
     estimateUsd: { research: 0.05, brief: 0.03, draft: 0.15, gates: 0, revise: 0.07, deliver: 0 },
@@ -44,7 +46,7 @@ export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
   deep: {
     stages: STAGES,
     maxRevise: 2,
-    research: { maxQueries: 6, maxPages: 12, maxClaimsPerPage: 6, minVerifiedClaims: 3, useKeywordData: true },
+    research: { maxQueries: 6, maxPages: 12, maxClaimsPerPage: 6, maxCompetitors: 5, minVerifiedClaims: 3, useKeywordData: true },
     models: models("anthropic/claude-opus-5.5"),
     budgetUsd: 5,
     estimateUsd: { research: 0.3, brief: 0.2, draft: 0.9, gates: 0, revise: 0.6, deliver: 0 },

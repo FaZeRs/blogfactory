@@ -47,7 +47,7 @@ export async function loadSources(run: ArticleRunRow, withMarkdown = false): Pro
   const rows = await db
     .select()
     .from(articleSources)
-    .where(and(eq(articleSources.runId, run.id), eq(articleSources.userId, run.userId)));
+    .where(and(eq(articleSources.runId, run.id), eq(articleSources.userId, run.userId), eq(articleSources.kind, "evidence")));
   return rows.map((s) => ({
     id: s.id,
     url: s.url,

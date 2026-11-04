@@ -193,6 +193,7 @@ export async function getArticleRunForJob(userId: string, jobId: string): Promis
     .where(and(eq(articleRuns.jobId, jobId), eq(articleRuns.userId, userId))).limit(1);
   if (!run) return null;
   const scope = (t: typeof articleSources | typeof articleEvidence | typeof articleGateResults) => and(eq(t.runId, run.id), eq(t.userId, userId));
+  const evidenceSources = and(scope(articleSources), eq(articleSources.kind, "evidence"));
   const [rows, sources, evidence, gates] = await Promise.all([
     db.select().from(articleStageRuns)
       .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId)))
@@ -200,7 +201,7 @@ export async function getArticleRunForJob(userId: string, jobId: string): Promis
     db.select({
       id: articleSources.id, url: articleSources.url, title: articleSources.title, fetchedVia: articleSources.fetchedVia,
       httpStatus: articleSources.httpStatus, textLength: articleSources.textLength,
-    }).from(articleSources).where(scope(articleSources)).orderBy(asc(articleSources.fetchedAt)),
+    }).from(articleSources).where(evidenceSources).orderBy(asc(articleSources.fetchedAt)),
     db.select({
       id: articleEvidence.id, sourceId: articleEvidence.sourceId, claim: articleEvidence.claim, quote: articleEvidence.quote,
       verified: articleEvidence.verified, method: articleEvidence.method, reason: articleEvidence.reason,

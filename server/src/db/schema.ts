@@ -681,6 +681,8 @@ export const articleSources = pgTable("article_sources", {
   textLength: integer("text_length"),
   title: text("title"),
   markdown: text("markdown"),
+  /** `evidence` sources feed claim extraction; `competitor` rows are ranking pages kept for the outline analysis. */
+  kind: text("kind").default("evidence").notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("article_sources_run_idx").on(t.runId, t.userId)]);
 

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "../../../db/index.js";
-import { articleEvidence, articleSources } from "../../../db/schema.js";
+import { articleEvidence, articleSources, sites } from "../../../db/schema.js";
 import type { ReadPage } from "../../adapters/reader.js";
 import { ENGINE_CONFIG } from "../../config.js";
 import { verifyQuote } from "../../evidence/verify.js";
@@ -10,6 +10,7 @@ import type { Stage, StageContext, StageOutcome } from "../../runtime/stage.js";
 import { RateLimitError, StageInputError, type EngineMode } from "../../types.js";
 import { isBoilerplateTitle, mapLimit, sanitizeText, truncate } from "../../util.js";
 import { modelFor } from "../shared.js";
+import { analyzeSerp, type CompetitorResult } from "./competitors.js";
 import {
   ClaimExtractionSchema,
   ResearchQueriesSchema,
@@ -25,6 +26,11 @@ export type ResearchInput = {
   maxPages: number;
   maxClaimsPerPage: number;
   minVerifiedClaims: number;
+  /** Top results to outline; 0 or missing skips the competitor step. */
+  maxCompetitors?: number;
+  /** The run's own site: its pages are never competitors. */
+  siteDomain?: string | null;
+  deep?: boolean;
 };
 
 export type ResearchSource = {
@@ -199,7 +205,7 @@ export async function researchCore(input: ResearchInput, ctx: StageContext, spen
 }
 
 /** Replaces this run's sources and evidence (a retry starts clean); every query is user- and run-scoped. */
-async function persist(ctx: StageContext, result: ResearchResult) {
+async function persist(ctx: StageContext, result: ResearchResult, competitors: CompetitorResult["competitors"]) {
   const { run } = ctx;
   return db.transaction(async (tx) => {
     const scope = (t: typeof articleEvidence | typeof articleSources) => and(eq(t.runId, run.id), eq(t.userId, run.userId));
@@ -219,6 +225,11 @@ async function persist(ctx: StageContext, result: ResearchResult) {
           fetchedAt: s.fetchedAt,
         }))).returning({ id: articleSources.id })
       : [];
+    if (competitors.length) {
+      await tx.insert(articleSources).values(competitors.map((c) => ({
+        runId: run.id, userId: run.userId, url: c.url, finalUrl: c.url, title: c.title, textLength: c.words, kind: "competitor",
+      })));
+    }
     const evidence = result.rows.length
       ? await tx.insert(articleEvidence).values(result.rows.map((r) => ({
           runId: run.id,
@@ -247,13 +258,14 @@ function shortfall(result: ResearchResult, verified: number, needs: number): str
 
 export const researchStage: Stage<ResearchInput, ResearchOutput> = {
   key: "research",
-  promptVersion: await promptVersion("research-queries", "research-claims"),
+  promptVersion: await promptVersion("research-queries", "research-claims", "serp-analysis"),
   async input({ run, deps }) {
     if (run.sourceType !== "article_keyword" && run.sourceType !== "article_title") throw new StageInputError(`Unsupported source type ${run.sourceType}`);
     // Without search there is nothing to read, so every retry would pay for queries and fail the same way.
     if (deps.search.name === "none") throw new StageInputError("No search adapter is configured: set SEARXNG_URL or DataForSEO credentials");
     const r = MODE_PRESETS[run.mode as EngineMode]?.research;
     if (!r) throw new StageInputError(`Unsupported mode ${run.mode}`);
+    const [site] = await db.select({ domain: sites.domain }).from(sites).where(and(eq(sites.id, run.siteId), eq(sites.userId, run.userId))).limit(1);
     return {
       topic: run.topic,
       sourceType: run.sourceType,
@@ -262,6 +274,9 @@ export const researchStage: Stage<ResearchInput, ResearchOutput> = {
       maxPages: r.maxPages,
       maxClaimsPerPage: r.maxClaimsPerPage,
       minVerifiedClaims: r.minVerifiedClaims,
+      maxCompetitors: r.maxCompetitors,
+      siteDomain: site?.domain ?? null,
+      deep: run.mode === "deep",
     };
   },
   async run(input, ctx): Promise<StageOutcome<ResearchOutput>> {
@@ -269,7 +284,12 @@ export const researchStage: Stage<ResearchInput, ResearchOutput> = {
     const result = await researchCore(input, ctx, usages);
     const verified = result.rows.filter((r) => r.verified).length;
     if (verified < input.minVerifiedClaims) throw new Error(shortfall(result, verified, input.minVerifiedClaims));
-    const claims = await persist(ctx, result);
+    // Claim ids follow row order (c1…), as `persist` returns them.
+    const claimsForAnalysis = result.rows.flatMap((r, i) => (r.verified ? [{ id: `c${i + 1}`, claim: r.claim }] : []));
+    const serp: CompetitorResult = input.maxCompetitors
+      ? await analyzeSerp({ topic: input.topic, locale: input.locale, maxCompetitors: input.maxCompetitors, siteDomain: input.siteDomain ?? null, claims: claimsForAnalysis, deep: !!input.deep }, ctx, usages)
+      : { competitors: [], questions: [], serpAnalysis: null };
+    const claims = await persist(ctx, result, serp.competitors);
     return {
       next: { type: "advance", to: "brief" },
       output: {
@@ -280,6 +300,9 @@ export const researchStage: Stage<ResearchInput, ResearchOutput> = {
         claimCount: result.rows.length,
         verifiedCount: verified,
         claims,
+        competitors: serp.competitors,
+        questions: serp.questions,
+        serpAnalysis: serp.serpAnalysis,
       },
       usage: usages,
     };

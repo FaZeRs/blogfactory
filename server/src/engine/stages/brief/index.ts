@@ -9,8 +9,9 @@ import { StageInputError, type EngineMode } from "../../types.js";
 import { sanitizeText, truncate } from "../../util.js";
 import { buildVoiceContentInstructions } from "../../../services/voice-content.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
-import { evidenceText, linksText, loadEvidence, loadSources, modelFor, type LinkCandidate, type PromptEvidence } from "../shared.js";
-import { BriefModelSchema, PLAN, fitLengthPlan, validateBrief, type Brief, type BriefOutput } from "./schema.js";
+import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, type LinkCandidate, type PromptEvidence } from "../shared.js";
+import type { ResearchOutput, SerpAnalysis } from "../research/schema.js";
+import { BriefModelSchema, PLAN, fitLengthPlan, planTarget, validateBrief, type Brief, type BriefOutput } from "./schema.js";
 
 export type BriefInput = {
   topic: string;
@@ -25,6 +26,9 @@ export type BriefInput = {
   guidance?: string;
   /** The component profile frozen at run start; missing means "markdown". */
   profile?: ComponentProfile;
+  /** What the ranking pages cover and miss, and the questions people ask; absent when the competitor step found nothing. */
+  serp?: SerpAnalysis | null;
+  questions?: string[];
 };
 
 const MAX_LINK_CANDIDATES = 60;
@@ -52,13 +56,27 @@ export function editorGuidance(settings: unknown): string {
 export const keywordText = (k: KeywordOverview | null) =>
   k ? `Search volume: ${k.volume ?? "unknown"}; difficulty: ${k.difficulty ?? "unknown"}; intent: ${k.intent ?? "unknown"}; AI overview: ${k.aiOverview ? "yes" : "no"}` : "No keyword data.";
 
+/** The analysis as brief-prompt text. Its words are model output over untrusted pages, so the caller fences it. */
+export function serpText(serp: SerpAnalysis | null | undefined, questions: string[] = [], target: number | null = null): string {
+  if (!serp && !questions.length) return "None.";
+  const list = (items: string[]) => (items.length ? items.map((i) => `- ${i}`).join("\n") : "- none");
+  return [
+    serp && `Search intent: ${serp.searchIntent}`,
+    serp && `Covered by every competitor (cover briefly):\n${list(serp.coveredTopics)}`,
+    serp && `Gaps (give them sections):\n${list(serp.gaps)}`,
+    serp && `Information gain (build sections around these${serp.informationGain.length ? "; claim ids in brackets" : ""}):\n${list(serp.informationGain.map((g) => `${g.point}${g.claimIds.length ? ` [${g.claimIds.join(", ")}]` : ""}`))}`,
+    questions.length ? `Questions people ask (FAQ candidates):\n${list(questions)}` : "",
+    target ? `Target length: about ${target} words in total.` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
 export const briefStage: Stage<BriefInput, BriefOutput> = {
   key: "brief",
   promptVersion: await promptVersion("brief"),
   async input({ run }) {
     const r = MODE_PRESETS[run.mode as EngineMode]?.research;
     if (!r) throw new StageInputError(`Unsupported mode ${run.mode}`);
-    const [evidence, sources, settings] = await Promise.all([loadEvidence(run), loadSources(run), getEffectiveSettings(run.userId, run.siteId)]);
+    const [evidence, sources, settings, research] = await Promise.all([loadEvidence(run), loadSources(run), getEffectiveSettings(run.userId, run.siteId), latestStageOutput<ResearchOutput>(run, "research")]);
     const urlOf = new Map(sources.map((s) => [s.id, s.finalUrl]));
     const verified = evidence.filter((e) => e.verified);
     if (verified.length === 0) throw new StageInputError("no verified evidence; research did not finish");
@@ -71,6 +89,8 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       links: linkCandidates(settings),
       guidance: editorGuidance(run.settings),
       profile: componentProfile(run),
+      serp: research.serpAnalysis ?? null,
+      questions: research.questions ?? [],
       keywordData: r.useKeywordData,
       minClaims: Math.min(r.minVerifiedClaims, verified.length),
     };
@@ -83,6 +103,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       keyword = await dataForSeo.keywordOverview(input.topic, { locale: input.locale, signal: ctx.signal }).catch(() => null);
     }
     const lindevo = input.profile === "lindevo";
+    const target = planTarget(input.serp?.typicalLength);
     const takeaways = lindevo ? PLAN.lindevoTakeaways : PLAN.takeaways;
     const prompt = await preparePrompt("brief", {
       dataRule: DATA_RULE,
@@ -102,6 +123,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       topic: fenceData("topic", input.topic),
       evidence: fenceData("evidence", evidenceText(input.evidence)),
       links: linksText(input.links),
+      serp: fenceData("serp-analysis", serpText(input.serp, input.questions, target)),
       search: fenceData("keyword-data", keywordText(keyword)),
       guidance: fenceData("editor-direction", input.guidance || "None."),
       today: now().toISOString().slice(0, 10),
@@ -121,7 +143,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
         signal: ctx.signal,
       });
       usage.push({ model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costUsd: r.costUsd });
-      const brief: Brief = fitLengthPlan(r.value);
+      const brief: Brief = fitLengthPlan(r.value, target);
       issues = validateBrief(brief, check).map(sanitizeText);
       if (issues.length === 0) {
         // Long topics rarely have search data; the chosen keyword usually does. Recorded for the reviewer, not the prompt.

@@ -112,6 +112,13 @@ const BRIEF = {
   internalLinks: [],
 };
 
+const SERP_ANALYSIS = {
+  searchIntent: "Planning rooftop solar for a small team",
+  coveredTopics: ["Costs", "Roof shading"],
+  gaps: ["How to size a battery to the evening load"],
+  informationGain: [{ point: "Battery sizing follows evening use, not roof size", claimIds: ["c3", "c99"] }],
+};
+
 export type Script = { drafts: string[]; revisions: string[] };
 
 export function makeDeps(script: Script) {
@@ -125,6 +132,9 @@ export function makeDeps(script: Script) {
   const llm: typeof base = {
     ...base,
     json: (req) => {
+      if (req.role === "research_claims" && req.user.includes("## Ranking pages")) {
+        return createFakeLlm({ research_claims: [SERP_ANALYSIS] }).json(req);
+      }
       if (req.role !== "research_claims") return base.json(req);
       const i = QUOTES.findIndex((q) => req.user.includes(q));
       const claim = ["Teams that review bills monthly find savings early.", "Roof shading should be measured across a full year.", "A battery pays off with high evening use."][i]!;

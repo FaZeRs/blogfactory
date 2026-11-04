@@ -49,15 +49,23 @@ export type BriefOutput = z.infer<typeof BriefOutputSchema>;
 const plannedWords = (b: Pick<Brief, "faq" | "outline">) =>
   PLAN.openingWords + PLAN.faqWordsEach * b.faq.length + b.outline.reduce((sum, s) => sum + s.words, 0);
 
-/** Scales section budgets into the allowed band, so a plan that is too long never fails the brief. */
-export function fitLengthPlan(b: Brief): Brief {
+/** The total word target the plan aims for: the competitors' typical length, kept inside the plan band. */
+export const planTarget = (typicalLength: number | null | undefined) =>
+  typicalLength ? Math.min(PLAN.limits.max, Math.max(PLAN.limits.min, Math.round(typicalLength / 50) * 50)) : null;
+
+/**
+ * Scales section budgets into the allowed band, so a plan that is too long never fails the brief.
+ * With a `target` (see `planTarget`) the budgets are scaled to that total instead.
+ */
+export function fitLengthPlan(b: Brief, target?: number | null): Brief {
   const fixed = PLAN.openingWords + PLAN.faqWordsEach * b.faq.length;
   const sections = plannedWords(b) - fixed;
   const total = fixed + sections;
-  if (sections <= 0 || (total >= PLAN.limits.min && total <= PLAN.limits.max)) return b;
-  const over = total > PLAN.limits.max;
-  const scale = Math.max(0, (over ? PLAN.limits.max : PLAN.limits.min) - fixed) / sections;
-  const round = over ? Math.floor : Math.ceil;
+  if (sections <= 0) return b;
+  const goal = target ?? (total > PLAN.limits.max ? PLAN.limits.max : total < PLAN.limits.min ? PLAN.limits.min : null);
+  if (goal === null || goal === total) return b;
+  const scale = Math.max(0, goal - fixed) / sections;
+  const round = goal < total ? Math.floor : Math.ceil;
   return { ...b, outline: b.outline.map((s) => ({ ...s, words: Math.max(1, round(s.words * scale)) })) };
 }
 

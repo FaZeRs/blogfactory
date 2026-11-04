@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { fakeCtx } from "../test-helpers.js";
+import { analyzeSerp, competitorOutline, serpQuestions } from "./competitors.js";
 import { normalizeUrl, researchCore, type ResearchInput } from "./index.js";
+import { SerpAnalysisSchema } from "./schema.js";
 
 const input: ResearchInput = { topic: "solar panels", sourceType: "article_keyword", locale: "en", maxQueries: 3, maxPages: 5, maxClaimsPerPage: 5, minVerifiedClaims: 3 };
 const QUOTE = "Solar capacity grew by forty percent across the member states during the last full reporting year according to the agency";
@@ -49,4 +51,44 @@ test("a page whose extraction fails is skipped; all failing rethrows", async () 
     pages: { "https://a.example/report": { markdown: PAGE } },
   });
   await expect(researchCore(input, ctx)).rejects.toThrow();
+});
+
+test("competitorOutline reads title, H2/H3 outline and words; ignores headings in code fences", () => {
+  const md = "# The Title\n\nSome words here.\n\n## First **bold** [link]\n\n### Sub one\n\n```\n## not a heading\n```\n\n#### Too deep\n\n## Second ##\n";
+  const o = competitorOutline(md);
+  expect(o.title).toBe("The Title");
+  expect(o.outline).toEqual([{ level: 2, text: "First bold link" }, { level: 3, text: "Sub one" }, { level: 2, text: "Second" }]);
+  expect(o.words).toBeGreaterThan(5);
+});
+
+test("serpQuestions collects question spans from titles and snippets", () => {
+  expect(serpQuestions([{ url: "u", title: "How much do panels cost?", snippet: "Prices vary. Is solar worth it? Read on." }])).toEqual(["How much do panels cost?", "Is solar worth it?"]);
+});
+
+const ANALYSIS = { searchIntent: "Learn what solar costs", coveredTopics: ["Costs"], gaps: ["Battery sizing for small offices"], informationGain: [{ point: "Battery sizing follows evening use", claimIds: ["c1", "c9"] }] };
+const comp = { topic: "solar panels", locale: "en", maxCompetitors: 2, siteDomain: "own.example", claims: [{ id: "c1", claim: "A claim" }], deep: false };
+
+test("analyzeSerp skips the site's own domain, outlines competitors and returns the analysis with a median length", async () => {
+  const page = (n: number) => ({ markdown: `# P${n}\n\n## Costs\n\n${"word ".repeat(300 * n)}` });
+  const { ctx } = fakeCtx({
+    llm: { research_claims: [ANALYSIS] },
+    search: { "solar panels": ["https://own.example/a", "https://www.own.example/b", "https://c1.example/x", "https://c2.example/y", "https://c3.example/z"].map((url) => ({ url, title: "Does it pay off?", snippet: "" })) },
+    pages: { "https://c1.example/x": page(1), "https://c2.example/y": page(2), "https://c3.example/z": page(3) },
+  });
+  const spent: never[] = [];
+  const r = await analyzeSerp(comp, ctx, spent);
+  expect(r.competitors.map((c) => c.url)).toEqual(["https://c1.example/x", "https://c2.example/y"]);
+  expect(r.questions).toEqual(["Does it pay off?"]);
+  expect(r.serpAnalysis?.informationGain[0]?.claimIds).toEqual(["c1"]);
+  expect(r.serpAnalysis?.typicalLength).toBeGreaterThan(300);
+  expect(SerpAnalysisSchema.safeParse(r.serpAnalysis).success).toBe(true);
+});
+
+test("analyzeSerp without results or with failing reads returns no analysis instead of throwing", async () => {
+  const none = fakeCtx({ search: {} });
+  expect((await analyzeSerp(comp, none.ctx, [])).serpAnalysis).toBeNull();
+  const bad = fakeCtx({ search: { "solar panels": [{ url: "https://c1.example/x", title: "t", snippet: "" }] }, pages: {} });
+  expect((await analyzeSerp(comp, bad.ctx, [])).competitors).toEqual([]);
+  const failing = fakeCtx({ llm: { research_claims: [{ nope: 1 }] }, search: { "solar panels": [{ url: "https://c1.example/x", title: "t", snippet: "" }] }, pages: { "https://c1.example/x": { markdown: `# T\n\n${"word ".repeat(300)}` } } });
+  expect((await analyzeSerp(comp, failing.ctx, [])).serpAnalysis).toBeNull();
 });
