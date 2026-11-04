@@ -38,6 +38,7 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.equal(got.default_preset, "site_default");
     assert.equal(got.presets.length, 6);
     assert.equal(typeof got.prompt_draft, "string");
+    for (const preset of got.presets) assert.ok(got.prompt_drafts[preset.id]?.length > 0, `draft for ${preset.id}`);
     assert.equal(got.can_edit, false);
 
     // count / prompt validation

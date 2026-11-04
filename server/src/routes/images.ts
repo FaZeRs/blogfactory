@@ -308,6 +308,7 @@ imagesRoutes.get("/posts/:postId/covers", async (c) => {
     presets: COVER_PRESETS.map(({ id, label }) => ({ id, label })),
     default_preset: defaultPreset,
     prompt_draft: coverPromptDraft({ title: post.title, content: post.content || "", preset: defaultPreset, settings }),
+    prompt_drafts: Object.fromEntries(COVER_PRESETS.map((p) => [p.id, coverPromptDraft({ title: post.title, content: post.content || "", preset: p.id, settings })])),
     image_model: settings.imageModel || null,
     can_edit: Boolean(apiKey && settings.imageModel && await imageModelCanEdit(apiKey, settings.imageModel)),
     cost_per_image: settings.imageModel ? await coverImageCost(userId, settings.imageModel, coverResolution(settings)) : null,
