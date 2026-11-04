@@ -26,7 +26,7 @@ import {
   updatePostWithRevision,
   type EditorialState,
 } from "../services/post-revisions.js";
-import { getReviewPacket } from "../services/control-plane.js";
+import { getReviewPacket, savedPublishingMetadata } from "../services/control-plane.js";
 import { scoreRevisions } from "../services/post-scorecard.js";
 import { getEffectiveSettings } from "../services/user-settings.js";
 
@@ -288,6 +288,25 @@ postsRoutes.patch("/:id/editorial-state", async (c) => {
   }
 });
 
+/** Routing, not content: no revision and no updated_at bump, so an open editor keeps its version. */
+postsRoutes.put("/:id/destination", async (c) => {
+  const userId = getUserId(c);
+  const id = c.req.param("id");
+  const body = await readJsonObject(c);
+  const integrationId = requiredString(body, "integration_id", ["integrationId"]);
+  const [post] = await db.select({ siteId: posts.siteId }).from(posts).where(and(eq(posts.id, id), eq(posts.userId, userId))).limit(1);
+  if (!post) return c.json({ error: "Post not found" }, 404);
+  const [integration] = await db.select({ id: siteIntegrations.id, siteId: siteIntegrations.siteId, status: siteIntegrations.status, provider: siteIntegrations.provider })
+    .from(siteIntegrations)
+    .where(and(eq(siteIntegrations.id, integrationId), eq(siteIntegrations.userId, userId)))
+    .limit(1);
+  if (!integration) return c.json({ error: "Integration not found" }, 404);
+  if (post.siteId && integration.siteId !== post.siteId) return c.json({ error: "This destination belongs to a different site" }, 400);
+  if (integration.status !== "connected") return c.json({ error: "This destination is not connected" }, 400);
+  await db.update(posts).set({ preferredIntegrationId: integration.id }).where(and(eq(posts.id, id), eq(posts.userId, userId)));
+  return c.json({ preferred_integration_id: integration.id, provider: integration.provider });
+});
+
 postsRoutes.get("/:id/preflight", async (c) => {
   const userId = getUserId(c);
   const id = c.req.param("id");
@@ -314,7 +333,7 @@ postsRoutes.get("/:id/preflight", async (c) => {
     { id: "seo", label: "Canonical SEO", status: seoReady ? "pass" : "blocker", message: seoReady ? "Current and valid" : "SEO metadata is missing, stale, or invalid" },
     { id: "destination", label: "CMS destination", status: destinationReady ? "pass" : "blocker", message: destinationReady ? `${integration?.provider} is connected` : "Choose a connected destination for this site" },
     { id: "cover_image", label: "Cover image", status: post.coverImageUrl ? "pass" : "warning", message: post.coverImageUrl ? "Attached to the saved revision" : "No cover image is attached" },
-    { id: "publishing_metadata", label: "Publishing metadata", status: post.publishingMetadata ? "pass" : "warning", message: post.publishingMetadata ? "Saved for this revision" : "Tags, categories, or provider metadata have not been saved yet" },
+    { id: "publishing_metadata", label: "Publishing metadata", status: savedPublishingMetadata(post.publishingMetadata) ? "pass" : "warning", message: savedPublishingMetadata(post.publishingMetadata) ? "Saved for this revision" : "Tags, categories, or provider metadata have not been saved yet" },
     { id: "review", label: "Editorial review", status: approved ? "pass" : mode === "publish" ? "warning" : "pass", message: approved ? "Current revision is approved" : mode === "publish" ? "Live publishing requires explicit review override" : "Approval is optional for CMS drafts" },
     ...routingWarnings.filter((warning): warning is string => typeof warning === "string").map((warning, index) => ({ id: `routing_${index}`, label: "Publishing metadata", status: "warning", message: warning })),
   ];

@@ -5,7 +5,8 @@ import { imageAssets, imageGenerationRequests, posts } from "../db/schema.js";
 import { eq, and, inArray, desc, or, lt, ne, gte, ilike, sql, type SQL } from "drizzle-orm";
 import { getUserId } from "../middleware/auth.js";
 import { deleteFile, imageAssetValues, storeImageBuffer } from "../services/image-storage.js";
-import { attachImageRequestToPost, drainDeferredImages, kickDeferredImageWorker } from "../services/low-cost-images.js";
+import { attachImageRequestToPost, drainDeferredImages, kickDeferredImageWorker, resolveLowCostImages } from "../services/low-cost-images.js";
+import { getEffectiveSettings } from "../services/user-settings.js";
 import { canRestartImageRequest } from "./image-request-controls.js";
 import { createManualImagePromptRequestsForPost } from "../services/generate-content.js";
 import { removeInlineImagePath } from "../services/image-placement.js";
@@ -236,6 +237,32 @@ imagesRoutes.post("/posts/:postId/manual-prompts", async (c) => {
     const status = message === "Post not found" ? 404 : 400;
     return c.json({ error: message }, status);
   }
+});
+
+/** One AI cover for an existing post, using the account's image model and style prompt. */
+imagesRoutes.post("/posts/:postId/cover", async (c) => {
+  const userId = getUserId(c);
+  const postId = c.req.param("postId");
+  const [post] = await db.select({ id: posts.id, title: posts.title, content: posts.content, siteId: posts.siteId, jobId: posts.jobId })
+    .from(posts).where(and(eq(posts.id, postId), eq(posts.userId, userId))).limit(1);
+  if (!post) return c.json({ error: "Post not found" }, 404);
+  const settings = await getEffectiveSettings(userId, post.siteId);
+  if (!settings.imageModel) return c.json({ error: "Choose an image model in Article Settings first.", code: "image_model_missing" }, 400);
+  const result = await resolveLowCostImages({
+    content: post.content || "",
+    title: post.title,
+    userId,
+    postId: post.id,
+    jobId: post.jobId,
+    imageConfig: { cover: { enabled: true }, inline: { enabled: false } },
+    imageModel: settings.imageModel,
+    stylePrompt: settings.imageStylePrompt,
+    immediateAi: true,
+  });
+  const cover = result.results.find((r) => r.slot.type === "cover");
+  if (cover?.status === "queued") await kickDeferredImageWorker(userId);
+  if (cover?.status === "failed") return c.json({ error: cover.error || "Cover image generation failed" }, 502);
+  return c.json({ status: cover?.status ?? "failed", cover_image_url: result.coverPath });
 });
 
 imagesRoutes.post("/requests/:id/retry", async (c) => {

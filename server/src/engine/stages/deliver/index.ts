@@ -38,7 +38,8 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
         siteId: run.siteId,
         preferredIntegrationId: run.preferredIntegrationId,
         title: input.draft.title,
-        content: markdown,
+        // The editor trims trailing whitespace; storing it would make every fresh draft look unsaved.
+        content: markdown.trimEnd(),
         status: "draft",
         sourceType: run.sourceType,
         jobId: run.jobId,

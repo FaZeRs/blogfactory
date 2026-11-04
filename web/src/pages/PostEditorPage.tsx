@@ -236,7 +236,7 @@ export default function PostEditorPage() {
 
   const hasChanges = post && (
     title !== post.title ||
-    content !== post.content ||
+    content.trimEnd() !== (post.content || "").trimEnd() ||  // the editor drops trailing newlines
     coverImageUrl !== (post.cover_image_url || null) ||
     JSON.stringify(inlineImages) !== JSON.stringify(post.inline_images || [])
   );
@@ -423,6 +423,7 @@ export default function PostEditorPage() {
             editorialState={post.editorial_state}
             currentRevision={post.current_revision}
             preferredIntegrationId={post.preferred_integration_id}
+            siteId={post.site_id}
             hasUnsavedChanges={Boolean(hasChanges)}
             onRestored={(restored) => {
               setTitle(restored.title);

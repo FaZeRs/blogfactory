@@ -111,7 +111,7 @@ const severityRank: Record<ActionSeverity, number> = { blocker: 0, review: 1, wa
 const kindRank = new Map<ActionKind, number>(ACTION_KINDS.map((kind, index) => [kind, index]));
 
 /** Engine bookkeeping lives under `engine`; it is not tags, categories or provider metadata. */
-function savedPublishingMetadata(value: unknown) {
+export function savedPublishingMetadata(value: unknown) {
   return Boolean(value && typeof value === "object" && Object.keys(value).some((key) => key !== "engine"));
 }
 

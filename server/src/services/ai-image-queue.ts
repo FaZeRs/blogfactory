@@ -21,7 +21,7 @@ export function staleImageRequestShouldFail(retryCount: number | null | undefine
 export async function queueDeferredImageRequest(opts: {
   userId: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   imageModel: string;
   slot: ImageSlot;
 }) {

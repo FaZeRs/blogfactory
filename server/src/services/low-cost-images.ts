@@ -46,7 +46,7 @@ export async function resolvePostImages(opts: {
   title: string;
   userId: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   imageConfig: any;
   imageModel?: string | null;
   inlineImageModel?: string | null;
