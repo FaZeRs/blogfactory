@@ -19,6 +19,8 @@ export type BriefInput = {
   links: LinkCandidate[];
   keywordData: boolean;
   minClaims: number;
+  /** Angle and instructions the editor typed on Create Content; planning guidance, never facts. */
+  guidance?: string;
 };
 
 const MAX_LINK_CANDIDATES = 60;
@@ -34,6 +36,13 @@ export function linkCandidates(settings: unknown): LinkCandidate[] {
     seen.add(p.url);
     return [{ url: p.url, title: typeof p.title === "string" ? truncate(sanitizeText(p.title), 120) : p.url }];
   }).slice(0, MAX_LINK_CANDIDATES);
+}
+
+export function editorGuidance(settings: unknown): string {
+  const g = (settings as { guidance?: { angle?: unknown; instructions?: unknown } } | null)?.guidance;
+  const angle = typeof g?.angle === "string" ? g.angle.trim() : "";
+  const instructions = typeof g?.instructions === "string" ? g.instructions.trim() : "";
+  return [angle && `Angle: ${angle}`, instructions && `Instructions: ${instructions}`].filter(Boolean).join("\n");
 }
 
 export const keywordText = (k: KeywordOverview | null) =>
@@ -56,6 +65,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       voice: buildVoiceContentInstructions(settings as never).join("\n"),
       evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
       links: linkCandidates(settings),
+      guidance: editorGuidance(run.settings),
       keywordData: r.useKeywordData,
       minClaims: Math.min(r.minVerifiedClaims, verified.length),
     };
@@ -85,6 +95,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       evidence: fenceData("evidence", evidenceText(input.evidence)),
       links: linksText(input.links),
       search: fenceData("keyword-data", keywordText(keyword)),
+      guidance: fenceData("editor-direction", input.guidance || "None."),
       today: now().toISOString().slice(0, 10),
     });
     const check = { links: new Set(input.links.map((l) => l.url)), verifiedIds: new Set(input.evidence.map((e) => e.id)), minClaims: input.minClaims };

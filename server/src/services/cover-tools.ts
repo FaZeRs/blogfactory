@@ -1,4 +1,5 @@
-import { buildImagePrompt } from "./image-slots.js";
+import { queueDeferredImageRequest, kickDeferredImageWorker } from "./ai-image-queue.js";
+import { buildImageAltText, buildImagePrompt } from "./image-slots.js";
 
 export const COVER_PRESETS = [
   { id: "site_default", label: "Site default", style: "" },
@@ -54,4 +55,34 @@ export function cleanCoverPrompt(text: unknown): string | null {
 
 export function adjustCoverPrompt(instruction: string) {
   return `Edit this image: ${instruction}. Keep the composition and subject unless the instruction says otherwise. No text, logos or watermarks.`;
+}
+
+export function coverResolution(settings: { imageAdvancedOptions?: unknown }) {
+  const options = settings.imageAdvancedOptions as Record<string, unknown> | null | undefined;
+  return options && options.coverResolution === "512" ? "512" : "1K";
+}
+
+/** Queues `count` new cover requests for a post; finished images become the cover only if it has not changed since. */
+export async function queueCoverRequests(opts: {
+  userId: string;
+  post: { id: string; title: string; content: string | null; jobId: string | null; coverImageUrl: string | null };
+  settings: CoverSettings & { imageModel: string };
+  prompt: string;
+  count?: number;
+  referencePath?: string | null;
+}) {
+  const slot = {
+    type: "cover" as const, position: 0, aspectRatio: "16:9", resolution: coverResolution(opts.settings), prompt: opts.prompt,
+    altText: buildImageAltText({ title: opts.post.title, type: "cover", content: opts.post.content || "" }),
+  };
+  const ids: string[] = [];
+  for (let i = 0; i < (opts.count ?? 1); i++) {
+    const queued = await queueDeferredImageRequest({
+      userId: opts.userId, postId: opts.post.id, jobId: opts.post.jobId, imageModel: opts.settings.imageModel, slot, force: true,
+      referencePath: opts.referencePath ?? null, replacesCover: opts.post.coverImageUrl ?? null,
+    });
+    if (queued.id) ids.push(queued.id);
+  }
+  await kickDeferredImageWorker(opts.userId);
+  return ids;
 }

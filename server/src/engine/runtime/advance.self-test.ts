@@ -12,7 +12,8 @@ delete process.env.ENGINE_AI_BASE_URL;
 
 const { and, eq, inArray } = await import("drizzle-orm");
 const { db } = await import("../../db/index.js");
-const { articleRuns, articleStageRuns, jobs, sites, users } = await import("../../db/schema.js");
+const { articleRuns, articleStageRuns, generationLogs, jobs, sites, users } = await import("../../db/schema.js");
+const { sql } = await import("drizzle-orm");
 const { claimArticleRuns } = await import("./claim.js");
 const { advanceArticleRun } = await import("./advance.js");
 const { loadEngineDeps } = await import("./deps.js");
@@ -101,6 +102,11 @@ try {
     assert.deepEqual((await stageRows(run.id)).map((r) => r.status).sort(), ["reused", "succeeded"]);
     assert.equal((await reload(run.id)).currentStage, "brief");
     assert.ok(Math.abs((await reload(run.id)).spentUsd - 0.01) < 1e-9, "reuse costs nothing");
+    const logs = await db.select({ cost: generationLogs.cost, status: generationLogs.status }).from(generationLogs)
+      .where(sql`${generationLogs.responseData}->'engine'->>'runId' = ${run.id}`);
+    assert.equal(logs.length, 1, "each paid stage is logged once; a reused stage is not");
+    assert.ok(Math.abs(logs[0].cost! - 0.01) < 1e-9);
+    assert.equal(logs[0].status, "success");
   }
 
   // Review Focus 3: racing claims are disjoint.

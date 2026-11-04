@@ -57,6 +57,17 @@ assert.deepEqual(await runBackgroundWorkerCycle(config, {
   articles: async () => { throw new Error("hidden"); },
 }), { ok: false, failed: ["articles"] });
 
+// A slow article drain does not block the cycle, and is not started twice while it runs.
+let releaseArticles = () => {};
+let articleStarts = 0;
+const slowArticles = () => new Promise<void>((resolve) => { articleStarts += 1; releaseArticles = resolve; });
+const quick = { campaigns: async () => {}, seo: async () => {}, images: async () => {}, articles: slowArticles };
+assert.deepEqual(await runBackgroundWorkerCycle(config, quick), { ok: true, failed: [] });
+assert.deepEqual(await runBackgroundWorkerCycle(config, quick), { ok: true, failed: [] });
+assert.equal(articleStarts, 1);
+releaseArticles();
+await new Promise((resolve) => setTimeout(resolve, 0));
+
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 let clock = 0;
 let releaseDaily = () => {};

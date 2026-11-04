@@ -110,6 +110,11 @@ type DraftActionInput = {
 const severityRank: Record<ActionSeverity, number> = { blocker: 0, review: 1, warning: 2 };
 const kindRank = new Map<ActionKind, number>(ACTION_KINDS.map((kind, index) => [kind, index]));
 
+/** An engine escalation stands until a human answers it with a later revision or an approval. */
+export function engineEscalationOpen(revisionNumber: number | null | undefined, editorialState: string | null | undefined) {
+  return (revisionNumber ?? 1) <= 1 && editorialState !== "approved";
+}
+
 /** Engine bookkeeping lives under `engine`; it is not tags, categories or provider metadata. */
 export function savedPublishingMetadata(value: unknown) {
   return Boolean(value && typeof value === "object" && Object.keys(value).some((key) => key !== "engine"));
@@ -244,7 +249,10 @@ async function draftActionItems(userId: string, siteId: string, now = new Date()
         credentialsEncrypted: row.integrationCredentialsEncrypted,
       }),
       usableDestinationCount,
-      engineEscalation: row.jobId ? escalationReasons.get(row.jobId) || null : null,
+      // A human edit (a later revision) or an approval answers the escalation.
+      engineEscalation: row.jobId && engineEscalationOpen(latest.get(row.id)?.revisionNumber, row.editorialState)
+        ? escalationReasons.get(row.jobId) || null
+        : null,
       revision: latest.get(row.id) || null,
       now,
     });
@@ -376,7 +384,14 @@ export async function getReviewPacket(input: { userId: string; postId: string; a
   const seoReady = Boolean(readySeoMetadataForArticle(post.seoMetadata, post.title, post.content));
   const usableDestinations = destinations.filter(testedConnectionReady);
   const hasPublishingMetadata = savedPublishingMetadata(post.publishingMetadata);
+  const escalated = Boolean(post.jobId && engineMetadata(post.publishingMetadata)?.escalated === true
+    && engineEscalationOpen(currentRevision?.revisionNumber, post.editorialState));
+  const [escalatedRun] = escalated && post.jobId
+    ? await db.select({ stateReason: articleRuns.stateReason }).from(articleRuns)
+      .where(and(eq(articleRuns.userId, input.userId), eq(articleRuns.jobId, post.jobId))).limit(1)
+    : [];
   const checks = [
+    ...(escalated ? [{ id: "engine_checks", label: "Engine checks", status: "blocker", message: escalatedRun?.stateReason || "Engine checks did not pass. Edit and save, or approve, to clear." }] : []),
     { id: "saved_revision", label: "Saved revision", status: currentRevision ? "pass" : "blocker", message: currentRevision ? `Revision ${currentRevision.revisionNumber}` : "No saved revision exists" },
     { id: "seo", label: "Canonical SEO", status: seoReady ? "pass" : "blocker", message: seoReady ? "Current and valid" : "SEO metadata is missing, stale, or invalid" },
     { id: "destination", label: "CMS destination", status: usableDestinations.length ? "pass" : "blocker", message: usableDestinations.length ? `${usableDestinations.length} usable destination${usableDestinations.length === 1 ? "" : "s"}` : "Connect or repair a CMS destination for this site" },

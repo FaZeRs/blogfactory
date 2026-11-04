@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { articleRuns, articleStageRuns, jobs } from "../../db/schema.js";
+import { articleRuns, articleStageRuns, campaignItems, generationLogs, jobs } from "../../db/schema.js";
 import { checkAccountGuardrails } from "../../services/account-guardrails.js";
 import { parseEngineSettings, resolveRunSettings } from "../modes.js";
 import { RateLimitError, StageInputError, type EngineMode, type StageKey, type Transition } from "../types.js";
@@ -58,7 +58,15 @@ async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
         completedAt: now,
         errorMessage: run.state === "done" ? null : run.stateReason,
       };
-  await tx.update(jobs).set(set).where(and(eq(jobs.id, run.jobId), eq(jobs.userId, run.userId)));
+  const [job] = await tx.update(jobs).set(set).where(and(eq(jobs.id, run.jobId), eq(jobs.userId, run.userId)))
+    .returning({ campaignItemId: jobs.campaignItemId });
+  if (terminal && job?.campaignItemId) {
+    const ok = run.state !== "failed" && Boolean(run.postId);
+    await tx.update(campaignItems).set(ok
+      ? { status: "completed", planningStatus: "in_progress", postId: run.postId, completedAt: now, errorMessage: null }
+      : { status: "failed", planningStatus: "blocked", errorMessage: run.stateReason, completedAt: now })
+      .where(and(eq(campaignItems.id, job.campaignItemId), eq(campaignItems.userId, run.userId)));
+  }
 }
 
 /**
@@ -82,6 +90,21 @@ async function commit(run: ArticleRunRow, stageRowId: string, stage: StageKey, p
     if (plan.row === "delete") await tx.delete(articleStageRuns).where(rowWhere);
     else await tx.update(articleStageRuns).set({ finishedAt: now, ...plan.row }).where(rowWhere);
     if (plan.mirror !== false) await mirrorJob(tx, updated, now);
+    // Spend is logged per stage as it happens, so account guardrails and Usage see in-flight and failed runs.
+    const spent = (plan.patch.spentUsd ?? run.spentUsd) - run.spentUsd;
+    if (spent > 0) {
+      const model = plan.row !== "delete" ? plan.row.model ?? null : null;
+      await tx.insert(generationLogs).values({
+        userId: run.userId,
+        usageType: "text",
+        modelId: model,
+        provider: model?.split("/")[0] ?? null,
+        status: plan.kind === "failed" || plan.kind === "retry" || plan.kind === "rate_limited" ? "failed" : "success",
+        cost: spent,
+        sessionId: run.jobId,
+        responseData: { engine: { runId: run.id, mode: run.mode, stage } },
+      });
+    }
     return true;
   });
   if (won) return { kind: plan.kind, stage };

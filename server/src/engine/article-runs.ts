@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { articleEvidence, articleGateResults, articleRuns, articleSources, articleStageRuns, jobs, siteIntegrations } from "../db/schema.js";
+import { articleEvidence, articleGateResults, articleRuns, articleSources, articleStageRuns, campaignItems, jobs, siteIntegrations } from "../db/schema.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { finishOperationEvent, safeOperationMetadata, startOperationEvent } from "../services/operation-events.js";
@@ -63,6 +63,12 @@ export async function startArticleRun(input: {
   topic: string;
   preferredIntegrationId?: string | null;
   origin: "web" | "mcp";
+  /** An SEO-plan item this run fulfils; validated by the caller. */
+  campaign?: { campaignId: string; campaignItemId: string } | null;
+  /** Editor's angle and instructions for the plan stage. */
+  guidance?: { angle?: string | null; instructions?: string | null } | null;
+  /** Queue one AI cover when the draft is delivered. */
+  cover?: boolean;
 }): Promise<{ jobId: string; runId: string; estimateUsd: number }> {
   if (!persistentBackgroundExecution()) throw new EngineUnavailableError("worker_required");
   if (!(await getSiteForUser(input.userId, input.siteId))) throw new Error("Site not found");
@@ -85,13 +91,23 @@ export async function startArticleRun(input: {
       models[role] = await resolveOpenRouterTextModel(endpoint.apiKey, models[role]);
     }
   }
-  const frozen = { models, budgetUsd: resolved.budgetUsd, citationStyle: resolved.citationStyle };
+  const guidance = {
+    angle: input.guidance?.angle?.trim().slice(0, 500) || undefined,
+    instructions: input.guidance?.instructions?.trim().slice(0, 1500) || undefined,
+  };
+  const frozen = {
+    models, budgetUsd: resolved.budgetUsd, citationStyle: resolved.citationStyle,
+    ...(guidance.angle || guidance.instructions ? { guidance } : {}),
+    ...(input.cover ? { cover: true } : {}),
+  };
 
   return db.transaction(async (tx) => {
     const [job] = await tx.insert(jobs).values({
       userId: input.userId,
       siteId: input.siteId,
       preferredIntegrationId: input.preferredIntegrationId || null,
+      campaignId: input.campaign?.campaignId ?? null,
+      campaignItemId: input.campaign?.campaignItemId ?? null,
       sourceType: input.sourceType,
       sourceValue: input.topic,
       modelId: models.draft,
@@ -111,6 +127,10 @@ export async function startArticleRun(input: {
       settings: frozen,
       budgetUsd: resolved.budgetUsd,
     }).returning({ id: articleRuns.id });
+    if (input.campaign) {
+      await tx.update(campaignItems).set({ jobId: job.id, status: "running", planningStatus: "in_progress", startedAt: new Date() })
+        .where(and(eq(campaignItems.id, input.campaign.campaignItemId), eq(campaignItems.userId, input.userId)));
+    }
     return { jobId: job.id, runId: run.id, estimateUsd: estimateRunUsd(input.mode) };
   });
 }

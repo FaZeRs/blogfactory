@@ -1,8 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../../db/index.js";
-import { articleRuns, generationLogs, jobs, posts, sites } from "../../../db/schema.js";
+import { articleRuns, jobs, posts, sites } from "../../../db/schema.js";
 import { currentPostRevision, setPostEditorialState } from "../../../services/post-revisions.js";
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "../../../services/seo-metadata.js";
+import { coverPromptDraft, queueCoverRequests } from "../../../services/cover-tools.js";
+import { getEffectiveSettings } from "../../../services/user-settings.js";
 import type { Stage } from "../../runtime/stage.js";
 import { StageInputError } from "../../types.js";
 import type { DraftOutput } from "../draft/schema.js";
@@ -47,17 +49,6 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
         summary: input.draft.description,
         publishingMetadata: { engine: { runId: run.id, mode: run.mode, escalated: input.escalated } },
       }).returning();
-      await db.insert(generationLogs).values({
-        userId: run.userId,
-        postId: post.id,
-        usageType: "text",
-        modelId: post.modelId,
-        provider: post.modelId?.split("/")[0],
-        status: "success",
-        cost: run.spentUsd,
-        sessionId: run.jobId,
-        responseData: { engine: { runId: run.id, mode: run.mode } },
-      });
     }
 
     // The insert trigger wrote revision 1; the post enters review on that revision.
@@ -75,6 +66,21 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
     } catch (err) {
       // The post exists and is reviewable; metadata can be regenerated from the editor.
       console.warn("[engine] SEO metadata enqueue failed:", err instanceof Error ? err.message : err);
+    }
+
+    // Only a newly created post without a cover gets one; a retry or a human-chosen cover is left alone.
+    if (!existing && !post.coverImageUrl && (run.settings as { cover?: boolean } | null)?.cover) {
+      try {
+        const settings = await getEffectiveSettings(run.userId, run.siteId);
+        if (settings.imageModel) {
+          await queueCoverRequests({
+            userId: run.userId, post, settings: { ...settings, imageModel: settings.imageModel },
+            prompt: coverPromptDraft({ title: post.title, content: post.content, preset: "site_default", settings }),
+          });
+        }
+      } catch (err) {
+        console.warn("[engine] cover enqueue failed:", err instanceof Error ? err.message : err);
+      }
     }
 
     const output = { postId: post.id, created: !existing, escalated: input.escalated };

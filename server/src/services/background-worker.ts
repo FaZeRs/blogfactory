@@ -54,14 +54,26 @@ async function loadDrains(): Promise<WorkerDrains> {
   return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns };
 }
 
+// An engine stage can run for minutes; it must not hold up the other queues or the heartbeat.
+let articlesInFlight: Promise<PromiseSettledResult<unknown>> | null = null;
+
 export async function runBackgroundWorkerCycle(config: BackgroundWorkerConfig, drains?: WorkerDrains) {
   const activeDrains = drains || await loadDrains();
   const names = ["campaigns", "seo", "images", "articles"] as const;
+  if (!articlesInFlight) {
+    const started = activeDrains.articles(config.articleRuns)
+      .then((value) => ({ status: "fulfilled", value }) as const, (reason) => ({ status: "rejected", reason }) as const);
+    articlesInFlight = started;
+    void started.finally(() => { if (articlesInFlight === started) articlesInFlight = null; });
+  }
+  const inFlight = articlesInFlight;
   const results = await Promise.allSettled([
     activeDrains.campaigns(1, config.campaignItems),
     activeDrains.seo(undefined, config.seoJobs),
     Promise.all(Array.from({ length: config.imageJobs }, () => activeDrains.images())),
-    activeDrains.articles(config.articleRuns),
+    // Reports a drain that finished within this cycle; one still running counts as healthy.
+    Promise.race([inFlight, new Promise<null>((resolve) => setTimeout(() => resolve(null), 0))])
+      .then((settled) => { if (settled?.status === "rejected") throw settled.reason; }),
   ]);
   return {
     ok: results.every((result) => result.status === "fulfilled"),

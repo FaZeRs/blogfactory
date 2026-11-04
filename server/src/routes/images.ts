@@ -7,9 +7,7 @@ import { getUserId } from "../middleware/auth.js";
 import { deleteFile, imageAssetValues, storeImageBuffer } from "../services/image-storage.js";
 import { attachImageRequestToPost, drainDeferredImages, kickDeferredImageWorker } from "../services/low-cost-images.js";
 import { attachPostImage } from "../services/image-post-attachments.js";
-import { queueDeferredImageRequest } from "../services/ai-image-queue.js";
-import { buildImageAltText } from "../services/image-slots.js";
-import { COVER_PRESETS, adjustCoverPrompt, cleanCoverPrompt, coverPromptDraft, isCoverPresetId } from "../services/cover-tools.js";
+import { COVER_PRESETS, adjustCoverPrompt, cleanCoverPrompt, coverPromptDraft, coverResolution, isCoverPresetId, queueCoverRequests } from "../services/cover-tools.js";
 import { getOpenRouterModels, imageModelCanEdit } from "../services/openrouter-models.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { getEffectiveSettings } from "../services/user-settings.js";
@@ -253,10 +251,6 @@ async function loadCoverPost(postId: string, userId: string): Promise<CoverPost 
   return post;
 }
 
-function coverResolution(settings: { imageAdvancedOptions?: unknown }) {
-  const options = settings.imageAdvancedOptions as Record<string, unknown> | null | undefined;
-  return options && options.coverResolution === "512" ? "512" : "1K";
-}
 
 async function coverImageCost(apiKey: string | null, modelId: string, resolution: string) {
   try {
@@ -336,13 +330,7 @@ imagesRoutes.post("/posts/:postId/cover", async (c) => {
   } else {
     prompt = coverPromptDraft({ title: post.title, content: post.content || "", preset: (body.preset as string | undefined) ?? "site_default", settings });
   }
-  const slot = { type: "cover" as const, position: 0, aspectRatio: "16:9", resolution: coverResolution(settings), prompt, altText: buildImageAltText({ title: post.title, type: "cover", content: post.content || "" }) };
-  const requestIds: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const queued = await queueDeferredImageRequest({ userId, postId: post.id, jobId: post.jobId, imageModel: settings.imageModel, slot, force: true, replacesCover: post.coverImageUrl ?? null });
-    if (queued.id) requestIds.push(queued.id);
-  }
-  await kickDeferredImageWorker(userId);
+  const requestIds = await queueCoverRequests({ userId, post, settings: { ...settings, imageModel: settings.imageModel }, prompt, count });
   return c.json({ request_ids: requestIds }, 202);
 });
 
@@ -360,10 +348,8 @@ imagesRoutes.post("/posts/:postId/cover/adjust", async (c) => {
   if (!apiKey || !(await imageModelCanEdit(apiKey, settings.imageModel))) {
     return c.json({ error: "This image model cannot edit images. Choose another in Article Settings.", code: "image_edit_unsupported" }, 400);
   }
-  const slot = { type: "cover" as const, position: 0, aspectRatio: "16:9", resolution: coverResolution(settings), prompt: adjustCoverPrompt(instruction), altText: buildImageAltText({ title: post.title, type: "cover", content: post.content || "" }) };
-  const queued = await queueDeferredImageRequest({ userId, postId: post.id, jobId: post.jobId, imageModel: settings.imageModel, slot, force: true, referencePath: post.coverImageUrl, replacesCover: post.coverImageUrl });
-  await kickDeferredImageWorker(userId);
-  return c.json({ request_ids: queued.id ? [queued.id] : [] }, 202);
+  const requestIds = await queueCoverRequests({ userId, post, settings: { ...settings, imageModel: settings.imageModel }, prompt: adjustCoverPrompt(instruction), referencePath: post.coverImageUrl });
+  return c.json({ request_ids: requestIds }, 202);
 });
 
 imagesRoutes.put("/posts/:postId/cover", async (c) => {
