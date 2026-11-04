@@ -174,8 +174,11 @@ const LANGUAGE_MARKERS: Record<string, Set<string>> = {
   es: new Set(["y", "el", "la", "los", "las", "con", "para", "una", "cómo", "por", "después"]),
 };
 
+/** "en", "en-US", "English (US)" and "US English" are all `en`: the model's language field has no fixed format. */
 function languageCode(value: string) {
-  return LANGUAGE_ALIASES[value.trim().toLocaleLowerCase("tr-TR")] || value.trim().toLowerCase();
+  const lower = value.trim().toLocaleLowerCase("tr-TR");
+  const label = lower.replace(/\s*\([^)]*\)$/, "");
+  return LANGUAGE_ALIASES[lower] || LANGUAGE_ALIASES[label] || label.split(/[-_]/)[0];
 }
 
 function detectedLanguage(value: string) {

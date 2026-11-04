@@ -31,6 +31,10 @@ assert.match(validateSeoForArticle({ ...valid, language: "en", metaTitle: "A Com
 assert.match(validateSeoForArticle({ ...valid, language: "en", metaTitle: "A Complete English Metadata Title for This Article", metaDescription: "This complete English description explains the article clearly, but it must fail because the requested article metadata should be German." }, "Der Artikel erklärt, warum die neue Technik für die Menschen wichtig ist und wie sie mit einer klaren Strategie eingesetzt wird.", "German").join(" "), /requested.*language/i);
 assert.match(validateSeoMetadata({ ...valid, slug: "two-words" }).join(" "), /three meaningful words/i);
 assert.match(validateSeoMetadata({ ...valid, searchIntent: "browse" }).join(" "), /supported vocabulary/i);
+const englishSeo = { ...valid, metaTitle: "A Complete English Metadata Title for This Article", metaDescription: "This complete English description explains how the article helps readers and why the guidance matters for their work." };
+for (const declared of ["en", "en-US", "English (US)", "US English", "english"]) {
+  assert.doesNotMatch(validateSeoForArticle({ ...englishSeo, language: declared }, "This article explains how the new tool works and why it matters for the team.", "US English").join(" "), /language/i, declared);
+}
 assert.match(validateSeoForArticle(valid, "Yazı içeriği", "tr", valid.metaTitle).join(" "), /must not copy the article title/i);
 assert.match(validateSeoForArticle({ ...valid, metaDescription: `${valid.metaTitle}, sosyal hareketler ve değişen kullanıcı alışkanlıkları üzerinden platformun dönüşümünü ayrıntılı biçimde açıklıyor.` }, "Yazı içeriği", "tr", valid.metaTitle).join(" "), /must not begin by copying/i);
 
