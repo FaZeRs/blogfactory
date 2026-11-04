@@ -46,13 +46,15 @@ export async function resolvePostImages(opts: {
   title: string;
   userId: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   imageConfig: any;
   imageModel?: string | null;
   inlineImageModel?: string | null;
   stylePrompt?: string | null;
   settings?: LowCostImageSettings | null;
   immediateAi?: boolean;
+  force?: boolean;
+  replacesCover?: string | null;
 }): Promise<ImageResolutionResult> {
   const settings = opts.settings || {};
   const imageModel = opts.imageModel || "";

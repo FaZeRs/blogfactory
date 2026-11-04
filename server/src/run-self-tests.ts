@@ -38,6 +38,19 @@ for (const test of tests) {
   }
 }
 
+const engine = Bun.spawn([process.execPath, "test", "src/engine"], {
+  cwd: join(repositoryRoot, "server"),
+  env: process.env,
+  stdout: "inherit",
+  stderr: "inherit",
+});
+const engineExit = await engine.exited;
+if (engineExit === 0) console.log("PASS server/src/engine (bun test)");
+else {
+  console.error(`FAIL server/src/engine (bun test) (exit ${engineExit})`);
+  failures.push("server/src/engine (bun test)");
+}
+
 if (failures.length) {
   console.error(`${failures.length}/${tests.length} backend self-tests failed.`);
   process.exit(1);

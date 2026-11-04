@@ -34,6 +34,8 @@ import {
   refreshSearchConsoleData,
 } from "../services/search-console.js";
 import { drainSeoMetadata, enqueueSeoMetadata, seoMetadata, seoStatusForArticle } from "../services/seo-metadata.js";
+import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
+import { StageInputError } from "../engine/types.js";
 import { hasMcpScope, type McpPrincipal } from "./auth.js";
 import { ACTIVE_MCP_TOOL_NAMES, MCP_SCOPES, MCP_SERVER_VERSION, MCP_TOOL_NAMES, type McpScope } from "./contracts.js";
 
@@ -616,6 +618,7 @@ type GenerateDraftInput = {
   persona_id?: string;
   preferred_integration_id?: string;
   variations: number;
+  mode: "fast" | "normal" | "deep";
   article_word_count?: number;
   custom_instructions?: string;
   generate_images: false;
@@ -645,6 +648,12 @@ function validateMcpDraftSource(input: GenerateDraftInput) {
 async function generateDraft(principal: McpPrincipal, input: GenerateDraftInput) {
   await requireOwnedAllowedSite(principal, input.site_id);
   validateMcpDraftSource(input);
+  if (input.mode !== "fast") {
+    if (input.source_type !== "article_keyword" && input.source_type !== "article_title") {
+      throw new McpToolError("validation_error", "Normal and deep modes support article_keyword and article_title sources only.", "Use source_type article_keyword or article_title, or mode fast.");
+    }
+    if (input.variations > 1) throw new McpToolError("validation_error", "Normal and deep modes create one draft per job.", "Set variations to 1.");
+  }
 
   let personaBaseModel: string | null = null;
   if (input.persona_id) {
@@ -671,6 +680,24 @@ async function generateDraft(principal: McpPrincipal, input: GenerateDraftInput)
     inArray(jobs.status, ["pending", "running"]),
   )).limit(1);
   if (activeJob) throw new McpToolError("generation_busy", "A draft generation job is already running for this site.", `Call get_job with job_id ${activeJob.id}.`, true);
+
+  if (input.mode !== "fast") {
+    try {
+      const started = await startArticleRun({
+        userId: principal.userId, siteId: input.site_id, mode: input.mode,
+        sourceType: input.source_type as "article_keyword" | "article_title", topic: input.source_value,
+        preferredIntegrationId: input.preferred_integration_id, origin: "mcp",
+      });
+      return {
+        job_id: started.jobId, status: "running", site_id: input.site_id, source_type: input.source_type, mode: input.mode,
+        post_ids: [], next_action: "Call get_job with this job_id.",
+      };
+    } catch (error) {
+      if (error instanceof EngineUnavailableError) throw new McpToolError("configuration_missing", error.message, "Ask the workspace owner to fix the engine configuration.");
+      if (error instanceof StageInputError) throw new McpToolError("validation_error", error.message, "Call list_publish_targets and choose a connected target for this site.");
+      throw error;
+    }
+  }
 
   const openRouterKey = await getOpenRouterKey(principal.userId);
   if (!openRouterKey) throw new McpToolError("configuration_missing", "OpenRouter is not configured.", "Add an OpenRouter API key in BlogFactory Settings.");
@@ -725,6 +752,7 @@ async function generateDraft(principal: McpPrincipal, input: GenerateDraftInput)
     status: "running",
     site_id: input.site_id,
     source_type: input.source_type,
+    mode: input.mode,
     post_ids: [],
     next_action: "Call get_job with this job_id.",
   };
@@ -913,11 +941,14 @@ type PushDraftInput = {
   tags?: string[];
   categories?: string[];
   excerpt?: string;
+  publish_at?: string;
   mode?: unknown;
 };
 
 async function pushToCmsDraft(principal: McpPrincipal, input: PushDraftInput) {
   if (input.mode !== undefined) throw new McpToolError("validation_error", "mode is not accepted; MCP always sends a CMS draft.", "Remove mode and retry.");
+  const publishAt = input.publish_at ? new Date(input.publish_at) : undefined;
+  if (publishAt && publishAt.getTime() <= Date.now()) throw new McpToolError("validation_error", "publish_at must be in the future.", "Choose a later publish_at or omit it.");
   const [post] = await db.select({ siteId: posts.siteId }).from(posts).where(and(
     eq(posts.id, input.post_id),
     eq(posts.userId, principal.userId),
@@ -942,6 +973,7 @@ async function pushToCmsDraft(principal: McpPrincipal, input: PushDraftInput) {
       categories: input.categories,
       excerpt: input.excerpt,
       expectedUpdatedAt: new Date(input.expected_updated_at),
+      publishAt,
     });
   } catch (error) {
     if (error instanceof ExpectedPostVersionError) throw new McpToolError("conflict", error.message, "Call get_post and retry with its updated_at.");
@@ -1270,6 +1302,12 @@ const reviewPacket = z.object({
   }),
   changes: z.object({ changed_fields: z.array(z.string()), word_delta: z.number().int() }),
   seo: z.object({ status: seoStatusSchema }),
+  research: z.object({
+    mode: z.enum(["normal", "deep"]),
+    claims: z.array(z.object({ claim: z.string(), quote: z.string(), url: z.string(), fetched_via: z.string(), verified: z.boolean() })),
+    gates: z.array(z.object({ gate: z.string(), passed: z.boolean(), severity: z.string() })),
+    adapters: z.object({ search: z.string(), keyword_data: z.boolean() }),
+  }).nullable(),
   preflight: z.object({
     can_send: z.boolean(),
     has_blockers: z.boolean(),
@@ -1467,6 +1505,7 @@ export const MCP_TOOL_REGISTRY = {
       persona_id: uuid.optional(),
       preferred_integration_id: uuid.optional(),
       variations: z.number().int().min(1).max(3).default(1),
+      mode: z.enum(["fast", "normal", "deep"]).default("fast"),
       article_word_count: z.number().int().min(300).max(5_000).optional(),
       custom_instructions: z.string().trim().min(1).max(4_000).optional(),
       generate_images: z.literal(false).default(false),
@@ -1476,6 +1515,7 @@ export const MCP_TOOL_REGISTRY = {
       status: z.literal("running"),
       site_id: uuid,
       source_type: z.enum(MCP_DRAFT_SOURCE_TYPES),
+      mode: z.enum(["fast", "normal", "deep"]),
       post_ids: z.array(uuid),
       next_action: z.string(),
     }),
@@ -1639,6 +1679,7 @@ export const MCP_TOOL_REGISTRY = {
       tags: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
       categories: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
       excerpt: z.string().trim().max(500).optional(),
+      publish_at: z.iso.datetime().optional(),
     },
     outputSchema: successOutputSchema({
       success: z.literal(true),

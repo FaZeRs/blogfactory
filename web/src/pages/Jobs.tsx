@@ -1,10 +1,11 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, type EngineRunDetail } from "@/lib/api";
 import { asArray, asRecord, asStringArray } from "@/lib/api-shape";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { BywordCard, BywordPageShell, SectionHeader } from "@/components/layout/BywordSurface";
+import { EngineRunView } from "@/components/runs/EngineRunView";
 import { RunWaterfall } from "@/components/runs/RunWaterfall";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/patterns/EmptyState";
@@ -418,6 +419,12 @@ const draftProgressForJob = (job: Job): DraftProgress | null => {
   };
 };
 
+const ENGINE_STEP_LABELS: Record<string, string> = {
+  engine_research: "Researching", engine_brief: "Planning", engine_draft: "Writing",
+  engine_gates: "Quality checks", engine_revise: "Revising", engine_deliver: "Delivering",
+};
+const stepLabel = (step?: string) => ENGINE_STEP_LABELS[step ?? ""] ?? (step || "queued").replace(/_/g, " ");
+
 export default function Jobs() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search") || "");
@@ -482,6 +489,13 @@ export default function Jobs() {
       return api.getArray<Post>(`/posts?ids=${postIds}`);
     },
     enabled: !!selectedJob?.result_post_ids?.length,
+  });
+
+  const { data: jobDetail } = useQuery({
+    queryKey: ["job-engine", selectedJob?.id, selectedJob?.status],
+    queryFn: () => api.get<{ engine?: EngineRunDetail }>(`/jobs/${selectedJob!.id}`),
+    enabled: !!selectedJob,
+    refetchInterval: selectedJob?.status === "running" ? 5000 : false,
   });
 
   const jobRows = useMemo(() => aggregateJobRows(jobs), [jobs]);
@@ -783,7 +797,7 @@ export default function Jobs() {
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       <span className="line-clamp-1 text-xs text-muted-foreground">
-                        {(job.current_step || "queued").replace(/_/g, " ")}
+                        {stepLabel(job.current_step)}
                       </span>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
@@ -858,8 +872,15 @@ export default function Jobs() {
                 </div>
               </SheetHeader>
 
+              {jobDetail?.engine && (
+                <div className="mb-6 space-y-2">
+                  <h3 className="text-sm font-semibold">How this article was made</h3>
+                  <EngineRunView engine={jobDetail.engine} />
+                </div>
+              )}
+
               {/* Live Progress for running jobs */}
-              {(selectedJob.status === "running" || selectedJob.status === "pending") && (
+              {!jobDetail?.engine && (selectedJob.status === "running" || selectedJob.status === "pending") && (
                 <div className="mb-6">
                   <GenerationProgress
                     currentStep={generationStepForJob(selectedJob)}

@@ -57,26 +57,24 @@ const emptyProvenance = (): SeoMetadataV1["provenance"] => ({
 });
 
 const SEO_MODEL_TIMEOUT_MS = 25_000;
+const SEO_REPAIR_ROUNDS = 2;
 
 export const SEO_RESPONSE_FORMAT = {
   type: "json_schema",
   json_schema: {
     name: "seo_metadata",
     strict: true,
+    // Length and pattern rules stay out of the schema: with them, strict decoding on gpt-4.1-mini runs to the
+    // token limit and returns no content. validateSeoForArticle enforces them and the repair pass fixes misses.
     schema: {
       type: "object",
       properties: {
-        slug: {
-          type: "string",
-          minLength: SEO_LIMITS.slugMin,
-          maxLength: SEO_LIMITS.slugMax,
-          pattern: "^[a-z0-9]+(?:-[a-z0-9]+){2,}$",
-        },
-        metaTitle: { type: "string", minLength: 48, maxLength: 56 },
-        metaDescription: { type: "string", minLength: 125, maxLength: 138 },
-        primaryQuery: { type: "string", minLength: 1 },
+        slug: { type: "string" },
+        metaTitle: { type: "string" },
+        metaDescription: { type: "string" },
+        primaryQuery: { type: "string" },
         searchIntent: { type: "string", enum: ["informational", "navigational", "commercial", "transactional"] },
-        language: { type: "string", minLength: 2 },
+        language: { type: "string" },
       },
       required: ["slug", "metaTitle", "metaDescription", "primaryQuery", "searchIntent", "language"],
       additionalProperties: false,
@@ -176,8 +174,11 @@ const LANGUAGE_MARKERS: Record<string, Set<string>> = {
   es: new Set(["y", "el", "la", "los", "las", "con", "para", "una", "cómo", "por", "después"]),
 };
 
+/** "en", "en-US", "English (US)" and "US English" are all `en`: the model's language field has no fixed format. */
 function languageCode(value: string) {
-  return LANGUAGE_ALIASES[value.trim().toLocaleLowerCase("tr-TR")] || value.trim().toLowerCase();
+  const lower = value.trim().toLocaleLowerCase("tr-TR");
+  const label = lower.replace(/\s*\([^)]*\)$/, "");
+  return LANGUAGE_ALIASES[lower] || LANGUAGE_ALIASES[label] || label.split(/[-_]/)[0];
 }
 
 function detectedLanguage(value: string) {
@@ -444,41 +445,39 @@ export async function generateValidatedCandidate(input: SeoGenerationInput, requ
     errors = [`JSON parse error: ${error.message}`];
   }
 
-  const firstUsage = first?.usage || firstError?.usage || {};
-  const firstCost = first?.cost || firstError?.cost || 0;
-  const firstLatency = first?.latencyMs || firstError?.latencyMs || 0;
-  const previousOutput = first ? JSON.stringify(first.candidate) : firstError?.rawOutput || "No parseable JSON";
-  let repaired: CandidateResponse;
-  try {
-    repaired = await requester(input.apiKey, input.modelId, repairPrompt(input, previousOutput, errors));
-  } catch (error) {
-    const repairError = error instanceof SeoGenerationAttemptError
-      ? error
-      : new SeoGenerationAttemptError(error instanceof Error ? error.message : "SEO metadata repair failed");
-    throw new SeoGenerationAttemptError(
-      `SEO metadata repair failed: ${repairError.message}`,
-      combineUsage(firstUsage, repairError.usage),
-      firstCost + repairError.cost,
-      firstLatency + repairError.latencyMs,
-      repairError.responseData,
-      repairError.rawOutput,
-    );
+  let usage = first?.usage || firstError?.usage || {};
+  let cost = first?.cost || firstError?.cost || 0;
+  let latencyMs = first?.latencyMs || firstError?.latencyMs || 0;
+  let previousOutput = first ? JSON.stringify(first.candidate) : firstError?.rawOutput || "No parseable JSON";
+  // Lengths are enforced here, not by the response schema, so a near miss gets a second repair.
+  for (let round = 1; round <= SEO_REPAIR_ROUNDS; round += 1) {
+    let repaired: CandidateResponse;
+    try {
+      repaired = await requester(input.apiKey, input.modelId, repairPrompt(input, previousOutput, errors));
+    } catch (error) {
+      const repairError = error instanceof SeoGenerationAttemptError
+        ? error
+        : new SeoGenerationAttemptError(error instanceof Error ? error.message : "SEO metadata repair failed");
+      throw new SeoGenerationAttemptError(
+        `SEO metadata repair failed: ${repairError.message}`,
+        combineUsage(usage, repairError.usage),
+        cost + repairError.cost,
+        latencyMs + repairError.latencyMs,
+        repairError.responseData,
+        repairError.rawOutput,
+      );
+    }
+    usage = combineUsage(usage, repaired.usage);
+    cost += repaired.cost;
+    latencyMs += repaired.latencyMs;
+    errors = generationErrors(input, repaired.candidate);
+    if (!errors.length) return { ...repaired, attempts: round + 1, usage, cost, latencyMs };
+    if (round === SEO_REPAIR_ROUNDS) {
+      throw new SeoGenerationAttemptError(`SEO metadata remained invalid after repair: ${errors.join(" ")}`, usage, cost, latencyMs, repaired.responseData);
+    }
+    previousOutput = JSON.stringify(repaired.candidate);
   }
-  errors = generationErrors(input, repaired.candidate);
-  if (errors.length) throw new SeoGenerationAttemptError(
-    `SEO metadata remained invalid after repair: ${errors.join(" ")}`,
-    combineUsage(firstUsage, repaired.usage),
-    firstCost + repaired.cost,
-    firstLatency + repaired.latencyMs,
-    repaired.responseData,
-  );
-  return {
-    ...repaired,
-    attempts: 2,
-    usage: combineUsage(firstUsage, repaired.usage),
-    cost: firstCost + repaired.cost,
-    latencyMs: firstLatency + repaired.latencyMs,
-  };
+  throw new SeoGenerationAttemptError("SEO metadata repair failed");
 }
 
 export async function enqueueSeoMetadata(input: { userId: string; postId: string; trigger: string; overwriteManual?: boolean }) {

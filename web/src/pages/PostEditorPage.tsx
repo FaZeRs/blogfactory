@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { MarkdownEditor } from "@/components/posts/MarkdownEditor";
+import { CoverPanel } from "@/components/posts/CoverPanel";
 import { GeneratedImagesPanel } from "@/components/posts/GeneratedImagesPanel";
 import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -236,7 +237,7 @@ export default function PostEditorPage() {
 
   const hasChanges = post && (
     title !== post.title ||
-    content !== post.content ||
+    content.trimEnd() !== (post.content || "").trimEnd() ||  // the editor drops trailing newlines
     coverImageUrl !== (post.cover_image_url || null) ||
     JSON.stringify(inlineImages) !== JSON.stringify(post.inline_images || [])
   );
@@ -417,12 +418,15 @@ export default function PostEditorPage() {
             />
           </BywordCard>
 
+          <CoverPanel postId={post.id} disabled={Boolean(hasChanges)} />
+
           <EditorialSafetyPanel
             postId={post.id}
             updatedAt={post.updated_at}
             editorialState={post.editorial_state}
             currentRevision={post.current_revision}
             preferredIntegrationId={post.preferred_integration_id}
+            siteId={post.site_id}
             hasUnsavedChanges={Boolean(hasChanges)}
             onRestored={(restored) => {
               setTitle(restored.title);

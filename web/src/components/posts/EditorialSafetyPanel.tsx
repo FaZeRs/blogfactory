@@ -29,6 +29,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { useIntegrations } from "@/hooks/useIntegrations";
+import { connectionReady } from "@/lib/credential-status";
 
 export type EditorialState = "draft" | "in_review" | "approved" | "changes_requested";
 
@@ -197,8 +199,39 @@ function RevisionHistoryDialog({
   );
 }
 
+/** Pick where this post is sent; only this site's connected destinations are offered. */
+function DestinationPicker({ postId, siteId }: { postId: string; siteId?: string | null }) {
+  const queryClient = useQueryClient();
+  const { integrations, isLoading } = useIntegrations(siteId);
+  const connected = integrations.filter(connectionReady);
+  const choose = useMutation({
+    mutationFn: (integrationId: string) => api.put(`/posts/${postId}/destination`, { integration_id: integrationId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["post", postId] });
+      queryClient.invalidateQueries({ queryKey: ["post-preflight", postId] });
+      toast.success("Destination saved");
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Destination could not be saved"),
+  });
+  if (isLoading) return null;
+  if (!connected.length) {
+    return <Link to="/control/integrations" className="mt-1.5 inline-block text-xs font-medium text-byword-blue hover:underline">Connect a CMS</Link>;
+  }
+  return (
+    <Select onValueChange={(value) => choose.mutate(value)} disabled={choose.isPending}>
+      <SelectTrigger className="mt-2 h-8 bg-card text-xs" aria-label="CMS destination"><SelectValue placeholder="Choose destination" /></SelectTrigger>
+      <SelectContent>
+        {connected.map((integration) => (
+          <SelectItem key={integration.id} value={integration.id}>{integration.displayName || integration.display_name || integration.provider}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function EditorialSafetyPanel({
   postId,
+  siteId,
   updatedAt,
   editorialState,
   currentRevision,
@@ -211,6 +244,7 @@ export function EditorialSafetyPanel({
   editorialState: EditorialState;
   currentRevision: PostRevision | null;
   preferredIntegrationId?: string | null;
+  siteId?: string | null;
   hasUnsavedChanges: boolean;
   onRestored: (post: { title: string; content: string; summary: string | null; coverImageUrl: string | null; inlineImages: string[] | null }) => void;
 }) {
@@ -257,7 +291,12 @@ export function EditorialSafetyPanel({
               {preflightLoading ? [0, 1, 2, 3].map((index) => <Skeleton key={index} className="h-16 rounded-sm" aria-label={index === 0 ? "Running preflight" : undefined} />) : preflight?.checks.map((check) => (
                 <div key={check.id} className="flex gap-2 rounded-sm border border-border bg-muted/40 p-3">
                   {check.status === "pass" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-status-success" /> : <ShieldAlert className={cn("mt-0.5 h-4 w-4 shrink-0", check.status === "blocker" ? "text-status-error" : "text-status-warning")} />}
-                  <div className="min-w-0"><p className="text-xs font-semibold">{check.label}</p><p className="mt-0.5 break-words text-xs text-muted-foreground">{check.message}</p></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold">{check.label}</p>
+                    <p className="mt-0.5 break-words text-xs text-muted-foreground">{check.message}</p>
+                    {check.id === "destination" && check.status !== "pass" && <DestinationPicker postId={postId} siteId={siteId} />}
+                    {check.id === "cover_image" && check.status !== "pass" && <a href="#cover" className="mt-1.5 inline-block text-xs font-medium text-byword-blue hover:underline">Open cover tools</a>}
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,0 +1,53 @@
+{
+  "id": "06-shift-handover-notes",
+  "topic": "Shift handover notes that nobody has to write from scratch",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://ops-safety.example/handover",
+      "title": "Handover incidents",
+      "markdown": "# Handover incidents\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nIncident reviews found that important details were most often lost at shift changes, when notes were written in a hurry."
+    },
+    {
+      "url": "https://team-research.example/structure",
+      "title": "Structured handovers",
+      "markdown": "# Structured handovers\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nTeams using a fixed handover structure received fewer follow-up calls from the next shift about open issues."
+    },
+    {
+      "url": "https://helpdesk-docs.example/summary",
+      "title": "Daily summaries",
+      "markdown": "# Daily summaries\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nThe tool can summarise the day's open tickets and team chat into a short draft that lists unresolved items first."
+    },
+    {
+      "url": "https://shift-guide.example/confirm",
+      "title": "Confirming the handover",
+      "markdown": "# Confirming the handover\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nThe outgoing lead confirms or corrects the draft, so responsibility for what is handed over stays with a person."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Details are most often lost at shift changes.",
+      "kind": "fact",
+      "quote": "Incident reviews found that important details were most often lost at shift changes, when notes were written in a hurry.",
+      "url": "https://ops-safety.example/handover"
+    },
+    {
+      "claim": "A fixed handover structure reduces follow-up calls.",
+      "kind": "fact",
+      "quote": "Teams using a fixed handover structure received fewer follow-up calls from the next shift about open issues.",
+      "url": "https://team-research.example/structure"
+    },
+    {
+      "claim": "Tools can summarise tickets and chat into a draft.",
+      "kind": "fact",
+      "quote": "The tool can summarise the day's open tickets and team chat into a short draft that lists unresolved items first.",
+      "url": "https://helpdesk-docs.example/summary"
+    },
+    {
+      "claim": "The outgoing lead stays responsible for the handover.",
+      "kind": "fact",
+      "quote": "The outgoing lead confirms or corrects the draft, so responsibility for what is handed over stays with a person.",
+      "url": "https://shift-guide.example/confirm"
+    }
+  ]
+}

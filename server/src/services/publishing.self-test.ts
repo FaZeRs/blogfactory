@@ -179,6 +179,8 @@ const lindevoArgs = lindevoArticleArgs({
 assert.equal(lindevoArgs.description.length <= 255, true);
 assert.equal(lindevoArgs.imageAlt?.length, 125);
 assert.equal(lindevoArgs.category, "operations");
+assert.equal("publishAt" in lindevoArgs, false);
+assert.equal(lindevoArticleArgs({ title: "T", markdown: "x", excerpt: "E", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "news", undefined, new Map(), new Date("2026-12-01T08:00:00Z")).publishAt, "2026-12-01T08:00:00.000Z");
 assert.equal(lindevoArgs.content.includes("https://cdn.example/chart.webp"), true);
 const uploadedLindevoArgs = lindevoArticleArgs({
   title: "Title",

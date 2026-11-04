@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { imageGenerationRequests } from "../db/schema.js";
+import { imageGenerationRequests, posts } from "../db/schema.js";
 import { attachPostImage } from "./image-post-attachments.js";
 import { imageSlotFromRequest, type ImageSlot } from "./image-slots.js";
 import { dispatchBackgroundDrain } from "./background-drain.js";
@@ -18,13 +18,47 @@ export function staleImageRequestShouldFail(retryCount: number | null | undefine
   return (retryCount || 0) + 1 >= DEFERRED_IMAGE_MAX_ATTEMPTS;
 }
 
+/** Cover requests carrying replacesCover only become the cover if it has not changed since they were queued. */
+export function shouldApplyCover(currentCover: string | null | undefined, replacesCover: string | null | undefined) {
+  return (currentCover ?? "") === (replacesCover ?? "");
+}
+
+function deferredImageValues(opts: Parameters<typeof queueDeferredImageRequest>[0]) {
+  return {
+    userId: opts.userId,
+    postId: opts.postId,
+    jobId: opts.jobId,
+    provider: "ai-deferred",
+    modelId: opts.imageModel,
+    prompt: opts.slot.prompt,
+    altText: opts.slot.altText,
+    type: opts.slot.type,
+    position: opts.slot.position,
+    aspectRatio: opts.slot.aspectRatio,
+    resolution: opts.slot.resolution,
+    status: "queued",
+    referencePath: opts.referencePath ?? null,
+    replacesCover: opts.replacesCover === undefined ? null : opts.replacesCover ?? "",
+  } satisfies typeof imageGenerationRequests.$inferInsert;
+}
+
 export async function queueDeferredImageRequest(opts: {
   userId: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   imageModel: string;
   slot: ImageSlot;
+  /** An explicit user request always renders a new image instead of reusing a finished identical one. */
+  force?: boolean;
+  referencePath?: string | null;
+  /** Cover path at queue time (null = no cover). Leave undefined for requests that should always attach. */
+  replacesCover?: string | null;
 }) {
+  if (opts.force) {
+    const [request] = await db.insert(imageGenerationRequests).values(deferredImageValues(opts)).returning({ id: imageGenerationRequests.id });
+    return { id: request?.id || null, created: true, status: "queued" };
+  }
+
   const [existing] = await db
     .select({
       id: imageGenerationRequests.id,
@@ -64,20 +98,7 @@ export async function queueDeferredImageRequest(opts: {
     return { id: existing.id, created: false, status: existing.status };
   }
 
-  const [request] = await db.insert(imageGenerationRequests).values({
-    userId: opts.userId,
-    postId: opts.postId,
-    jobId: opts.jobId,
-    provider: "ai-deferred",
-    modelId: opts.imageModel,
-    prompt: opts.slot.prompt,
-    altText: opts.slot.altText,
-    type: opts.slot.type,
-    position: opts.slot.position,
-    aspectRatio: opts.slot.aspectRatio,
-    resolution: opts.slot.resolution,
-    status: "queued",
-  }).returning({ id: imageGenerationRequests.id });
+  const [request] = await db.insert(imageGenerationRequests).values(deferredImageValues(opts)).returning({ id: imageGenerationRequests.id });
   return { id: request?.id || null, created: true, status: "queued" };
 }
 
@@ -91,7 +112,6 @@ async function claimNextDeferredImageRequest(userId?: string) {
         and status = 'queued'
         and available_at <= now()
         and post_id is not null
-        and job_id is not null
         and model_id is not null
         ${userFilter}
       order by created_at
@@ -125,6 +145,8 @@ async function claimNextDeferredImageRequest(userId?: string) {
       image_generation_requests.imported_asset_id as "importedAssetId",
       image_generation_requests.last_error as "lastError",
       image_generation_requests.completed_via as "completedVia",
+      image_generation_requests.reference_path as "referencePath",
+      image_generation_requests.replaces_cover as "replacesCover",
       image_generation_requests.created_at as "createdAt",
       image_generation_requests.updated_at as "updatedAt"
   `);
@@ -132,7 +154,7 @@ async function claimNextDeferredImageRequest(userId?: string) {
 }
 
 async function processClaimedDeferredImage(request: typeof imageGenerationRequests.$inferSelect): Promise<ImageProcessResult> {
-  if (!request.postId || !request.jobId || !request.modelId) return { processed: false };
+  if (!request.postId || !request.modelId) return { processed: false };
   const attemptRetryCount = request.retryCount || 0;
   try {
     const { generateQueuedImageRequest } = await import("./generate-content.js");
@@ -148,7 +170,13 @@ async function processClaimedDeferredImage(request: typeof imageGenerationReques
       return { processed: false, status: "cancelled" };
     }
 
-    await attachPostImage(request.postId, imageSlotFromRequest(request), result.storagePath, "auto");
+    const [post] = request.type === "cover" && request.replacesCover !== null
+      ? await db.select({ cover: posts.coverImageUrl }).from(posts).where(and(eq(posts.id, request.postId), eq(posts.userId, request.userId))).limit(1)
+      : [];
+    // A superseded cover stays as a version (asset already has postId) but is not applied.
+    if (!post || shouldApplyCover(post.cover, request.replacesCover)) {
+      await attachPostImage(request.postId, imageSlotFromRequest(request), result.storagePath, "auto");
+    }
     await db.update(imageGenerationRequests).set({ status: "done", completedVia: "ai", lastError: null, updatedAt: new Date() }).where(eq(imageGenerationRequests.id, request.id));
     console.info("[images] Deferred request finished", { requestId: request.id, postId: request.postId });
     return { processed: true, status: "done", storagePath: result.storagePath };
@@ -228,7 +256,7 @@ async function claimDeferredImageRequestById(id: string, userId?: string) {
 
 export async function processDeferredImageRequest(id: string, userId?: string) {
   const request = await claimDeferredImageRequestById(id, userId);
-  if (!request || !request.postId || !request.jobId || !request.modelId) return { processed: false };
+  if (!request || !request.postId || !request.modelId) return { processed: false };
   return processClaimedDeferredImage(request);
 }
 
@@ -236,7 +264,7 @@ export async function processNextDeferredImage(userId?: string) {
   await resetStaleImageProcessing();
 
   const request = await claimNextDeferredImageRequest(userId);
-  if (!request || !request.postId || !request.jobId || !request.modelId) return { processed: false };
+  if (!request || !request.postId || !request.modelId) return { processed: false };
   return processClaimedDeferredImage(request);
 }
 

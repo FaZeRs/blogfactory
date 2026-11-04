@@ -71,7 +71,7 @@ export async function attachPostImage(postId: string, slot: ImageSlot, path: str
             alt: asset?.altText || slot.altText || image.alt || "",
             source: asset?.credit || asset?.sourceUrl || asset?.provider || image.source || "",
             license: asset?.licenseLabel || image.license || "",
-            aiGenerated: asset?.sourceKind === "ai",
+            aiGenerated: asset?.sourceKind === "ai" || asset?.sourceKind === "ai_edit",
           },
           routingWarnings,
         }

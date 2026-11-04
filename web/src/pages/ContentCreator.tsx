@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, type EngineMode } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Input } from "@/components/ui/input";
 import { InputAffordance } from "@/components/ui/input-affordance";
@@ -51,6 +51,8 @@ import { normalizeHttpUrl, stripHttpProtocol } from "@/lib/url-validation";
 import { safeFormatDistanceToNow } from "@/lib/date-format";
 import { useAuth } from "@/hooks/useAuth";
 import { SourceType } from "@/components/content/GenerationProgress";
+import { GenerationModeSelect } from "@/components/content/GenerationModeSelect";
+import { useEngineSettings } from "@/hooks/useEngineSettings";
 import { LiveTextModelSelect, isUnavailableModel, preferredTextModelId } from "@/components/content/LiveTextModelSelect";
 import {
   SplitImageGenerationSettings,
@@ -288,7 +290,9 @@ function GenerationBrief({
   onLinkDensityChange,
   topicFit,
   blockers,
+  costLabel,
 }: {
+  costLabel?: string;
   title: string;
   source: string;
   persona: string;
@@ -306,7 +310,7 @@ function GenerationBrief({
     { label: "Source", value: source || "Missing" },
     { label: "Voice", value: persona || "No persona" },
     { label: "Model", value: model || "No model" },
-    { label: "Cost", value: formatCompactCurrency(estimate.totalExpected) },
+    { label: "Cost", value: costLabel ?? formatCompactCurrency(estimate.totalExpected) },
     { label: "Images", value: imagePlan },
     { label: "Links", value: linkState },
   ];
@@ -406,7 +410,12 @@ export default function ContentCreator() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [personaId, setPersonaId] = useState("");
   const [modelId, setModelId] = useState("anthropic/claude-3.5-sonnet");
-  const [variations, setVariations] = useState<1 | 3 | 5>(1);
+  const [pickedVariations, setVariations] = useState<1 | 3 | 5>(1);
+  const [pickedMode, setGenerationMode] = useState<EngineMode>("fast");
+  const { data: engineInfo } = useEngineSettings(activeSiteId);
+  const engineEligible = (sourceType === "article_keyword" || sourceType === "article_title") && !!engineInfo?.availability.available;
+  const generationMode: EngineMode = engineEligible ? pickedMode : "fast";
+  const variations = generationMode === "fast" ? pickedVariations : 1; // normal/deep generate one draft
   const [imageConfig, setImageConfig] = useState<SplitImageConfig>(DEFAULT_SPLIT_CONFIG);
   const [imageDeliveryMode, setImageDeliveryMode] = useState<ImageDeliveryMode>("generate");
   const [manualImageProvider, setManualImageProvider] = useState<ManualImageProvider>("midjourney");
@@ -744,6 +753,7 @@ export default function ContentCreator() {
       personaId: personaId || null,
       modelId,
       variations: 1,
+      mode: generationMode === "fast" ? undefined : generationMode,
       draftBatchId,
       draftVariationIndex: draftIndex,
       draftVariationCount: variations > 1 ? variations : undefined,
@@ -780,6 +790,7 @@ export default function ContentCreator() {
         sourceType: sourceType as SourceType,
         sourceLabel: variations > 1 ? `${getSourceLabel()} · Draft ${draftIndex}/${variations}` : getSourceLabel(),
         variations: 1,
+        engine: generationMode !== "fast",
       });
 
       try {
@@ -1366,8 +1377,9 @@ export default function ContentCreator() {
               title="Generation brief"
               source={getSourceLabel()}
               persona={selectedPersona?.name || "Default editorial voice"}
-              model={selectedTextModel?.name || modelId}
+              model={generationMode === "fast" ? selectedTextModel?.name || modelId : `${generationMode === "deep" ? "Deep" : "Normal"} mode picks a model per step`}
               estimate={articleCostEstimate}
+              costLabel={generationMode === "fast" ? undefined : `≈ $${(engineInfo?.estimates?.[generationMode] ?? 0).toFixed(2)}`}
               imagePlan={imagePlanLabel}
               linkState={contractLinkLabel}
               linksEnabled={internalLinksEnabled}
@@ -1390,6 +1402,17 @@ export default function ContentCreator() {
             />
 
             <div className="space-y-3">
+              <Label>Generation mode</Label>
+              <GenerationModeSelect
+                value={generationMode}
+                onChange={setGenerationMode}
+                availability={engineInfo?.availability}
+                estimates={engineInfo?.estimates}
+                sourceType={sourceType}
+              />
+            </div>
+
+            {generationMode === "fast" && <div className="space-y-3">
               <Label>Output variations</Label>
               <div className="grid grid-cols-3 gap-3">
                 {([1, 3, 5] as const).map((num) => (
@@ -1414,11 +1437,11 @@ export default function ContentCreator() {
                   </button>
                 ))}
               </div>
-            </div>
+            </div>}
 
             <ActiveJobsPanel jobs={activeJobs} onDismiss={dismissJob} />
 
-            <CostEstimateCard estimate={articleCostEstimate} />
+            {generationMode === "fast" && <CostEstimateCard estimate={articleCostEstimate} />}
 
             <Button
               onClick={handleGenerate}
@@ -1431,7 +1454,7 @@ export default function ContentCreator() {
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
 
-            {!isGenerating && (
+            {!isGenerating && generationMode === "fast" && (
               <p className="flex items-center justify-center gap-1.5 text-center text-sm text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 Estimated generation time: about {variations * 15} seconds.

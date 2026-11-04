@@ -84,7 +84,14 @@ analyticsRoutes.get("/openrouter-usage", async (c) => {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     const keyData = await keyResp.json();
-    if (!keyResp.ok) return c.json({ error: keyData?.error?.message || "OpenRouter usage lookup failed" }, keyResp.status as any);
+    // Never forward OpenRouter's status: a 401 here means a bad provider key, and the web client treats 401 as a lost session.
+    if (!keyResp.ok) {
+      const rejected = keyResp.status === 401 || keyResp.status === 403;
+      return c.json({
+        error: rejected ? "OpenRouter rejected the saved API key. Update it in Settings." : keyData?.error?.message || "OpenRouter usage lookup failed",
+        code: rejected ? "provider_key_rejected" : "provider_error",
+      }, 502);
+    }
 
     return c.json(keyData);
   } catch (err: any) {

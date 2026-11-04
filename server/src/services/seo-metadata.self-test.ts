@@ -3,8 +3,7 @@ import { createHash } from "node:crypto";
 import { duplicateSeoSlugs, generateValidatedCandidate, mergeManualSeoMetadata, normalizeAiSeoCandidate, normalizeSeoSlug, parseSeoCandidate, readySeoMetadataForArticle, SEO_LIMITS, SEO_MODEL_ID, SEO_RESPONSE_FORMAT, SeoGenerationAttemptError, seoSourceHash, seoStatusForArticle, validateSeoForArticle, validateSeoMetadata } from "./seo-metadata.js";
 
 assert.equal(SEO_MODEL_ID, "openai/gpt-4.1-mini");
-assert.deepEqual(SEO_RESPONSE_FORMAT.json_schema.schema.properties.metaTitle, { type: "string", minLength: 48, maxLength: 56 });
-assert.deepEqual(SEO_RESPONSE_FORMAT.json_schema.schema.properties.metaDescription, { type: "string", minLength: 125, maxLength: 138 });
+assert.equal(JSON.stringify(SEO_RESPONSE_FORMAT).match(/minLength|maxLength|pattern/), null, "length rules break strict decoding; validation enforces them");
 
 const valid = parseSeoCandidate({
   slug: "twitter-yirmi-yil-memler-toplumsal-hareketler",
@@ -32,6 +31,10 @@ assert.match(validateSeoForArticle({ ...valid, language: "en", metaTitle: "A Com
 assert.match(validateSeoForArticle({ ...valid, language: "en", metaTitle: "A Complete English Metadata Title for This Article", metaDescription: "This complete English description explains the article clearly, but it must fail because the requested article metadata should be German." }, "Der Artikel erklärt, warum die neue Technik für die Menschen wichtig ist und wie sie mit einer klaren Strategie eingesetzt wird.", "German").join(" "), /requested.*language/i);
 assert.match(validateSeoMetadata({ ...valid, slug: "two-words" }).join(" "), /three meaningful words/i);
 assert.match(validateSeoMetadata({ ...valid, searchIntent: "browse" }).join(" "), /supported vocabulary/i);
+const englishSeo = { ...valid, metaTitle: "A Complete English Metadata Title for This Article", metaDescription: "This complete English description explains how the article helps readers and why the guidance matters for their work." };
+for (const declared of ["en", "en-US", "English (US)", "US English", "english"]) {
+  assert.doesNotMatch(validateSeoForArticle({ ...englishSeo, language: declared }, "This article explains how the new tool works and why it matters for the team.", "US English").join(" "), /language/i, declared);
+}
 assert.match(validateSeoForArticle(valid, "Yazı içeriği", "tr", valid.metaTitle).join(" "), /must not copy the article title/i);
 assert.match(validateSeoForArticle({ ...valid, metaDescription: `${valid.metaTitle}, sosyal hareketler ve değişen kullanıcı alışkanlıkları üzerinden platformun dönüşümünü ayrıntılı biçimde açıklıyor.` }, "Yazı içeriği", "tr", valid.metaTitle).join(" "), /must not begin by copying/i);
 
@@ -123,7 +126,13 @@ await assert.rejects(
   }),
   /remained invalid after repair/i,
 );
-assert.equal(failedCalls, 2);
+assert.equal(failedCalls, 3, "one generation and two repair rounds");
+let nearMissCalls = 0;
+const secondRepair = await generateValidatedCandidate(generationInput, async () => {
+  nearMissCalls += 1;
+  return response(nearMissCalls < 3 ? { ...valid, metaDescription: "Geçersiz." } : valid);
+});
+assert.equal(secondRepair.attempts, 3);
 
 const screenshotRegressions = [
   {

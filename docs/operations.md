@@ -57,6 +57,10 @@ The API runs `BACKGROUND_EXECUTION_MODE=inline`; the persistent worker runs `BAC
 
 The worker's daily drain and the existing all-task drain remove expired `operation_events`. Do not create a separate retention cron. Operation events expire after 30 days.
 
+Staged-engine runs (`normal`/`deep`) are advanced by the worker's `articles` drain, bounded by `BACKGROUND_WORKER_ARTICLE_RUNS` (default 2, range 1-10). They need `BACKGROUND_EXECUTION_MODE=worker`. Adapter variables are listed in [self-hosting.md](self-hosting.md#staged-engine-normal-and-deep-modes). DataForSEO monthly spend is tracked in worker memory, so the cap resets when the worker restarts.
+
+Reading a stuck run: in `article_runs`, `state` is `active`, `done`, `escalated`, or `failed`, and `state_reason` says why (including budget pauses and failure text). An `active` run is waiting when `next_attempt_at` is in the future (retry, 429 reschedule, or budget pause); it is held by a worker while `lease_owner` is set and `lease_expires_at` is in the future. An expired lease with no progress is reclaimed on the next drain. `article_stage_runs` (filter by `run_id`) lists each stage attempt with `status`, `error`, `cost_usd`, and timestamps; a run fails after 3 attempts of one stage. The Runs page shows the same data as a stage timeline.
+
 Do not disable a failing scheduled workflow to make Actions appear clean. Confirm the affected task, timeout, and backend behavior before a narrow fix.
 
 ## Verification gates

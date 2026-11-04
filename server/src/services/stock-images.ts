@@ -129,7 +129,7 @@ async function saveExternalImage(opts: {
   imageUrl: string;
   userId: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   type: ImageTargetType;
   position: number;
   prompt: string;
@@ -160,7 +160,7 @@ async function saveExternalImage(opts: {
     licenseLabel: opts.licenseLabel,
     attributionUrl: opts.attributionUrl,
     sourceKind: "stock",
-    jobId: opts.jobId,
+    jobId: opts.jobId ?? undefined,
     postId: opts.postId,
   });
   const sourceUrl = opts.sourceUrl || opts.imageUrl;
@@ -258,7 +258,7 @@ type SearchOpts = {
   prompt: string;
   altText: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   type: ImageTargetType;
   position: number;
   aspectRatio: string;
@@ -281,7 +281,7 @@ export async function tryStockImage(opts: {
   content: string;
   userId: string;
   postId: string;
-  jobId: string;
+  jobId: string | null;
   usedSourceUrls?: Set<string>;
 }) {
   for (const query of stockQueries({ title: opts.title, content: opts.content, type: opts.slot.type })) {

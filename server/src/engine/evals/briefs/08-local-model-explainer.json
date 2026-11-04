@@ -1,0 +1,53 @@
+{
+  "id": "08-local-model-explainer",
+  "topic": "Running a language model on your own server: what it takes",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://hardware-notes.example/gpu",
+      "title": "Hardware for open models",
+      "markdown": "# Hardware for open models\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nOpen models with a few billion parameters can run on a single modern graphics card with enough memory."
+    },
+    {
+      "url": "https://privacy-guide.example/self-hosting",
+      "title": "Self-hosting and data",
+      "markdown": "# Self-hosting and data\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nRunning the model on company-owned hardware means prompts and documents never leave the company's own network."
+    },
+    {
+      "url": "https://it-ops.example/maintenance",
+      "title": "Maintaining self-hosted models",
+      "markdown": "# Maintaining self-hosted models\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nSelf-hosted models need someone to apply updates, watch performance and replace hardware when it fails."
+    },
+    {
+      "url": "https://model-bench.example/comparison",
+      "title": "Local and hosted compared",
+      "markdown": "# Local and hosted compared\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nIn the comparison, the smaller local models handled search and short answers well but fell behind on longer, more complex writing tasks."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Smaller open models run on one graphics card.",
+      "kind": "fact",
+      "quote": "Open models with a few billion parameters can run on a single modern graphics card with enough memory.",
+      "url": "https://hardware-notes.example/gpu"
+    },
+    {
+      "claim": "Self-hosting keeps prompts and documents on the company network.",
+      "kind": "fact",
+      "quote": "Running the model on company-owned hardware means prompts and documents never leave the company's own network.",
+      "url": "https://privacy-guide.example/self-hosting"
+    },
+    {
+      "claim": "Self-hosted models need ongoing maintenance.",
+      "kind": "fact",
+      "quote": "Self-hosted models need someone to apply updates, watch performance and replace hardware when it fails.",
+      "url": "https://it-ops.example/maintenance"
+    },
+    {
+      "claim": "Small local models fall behind on complex writing.",
+      "kind": "fact",
+      "quote": "In the comparison, the smaller local models handled search and short answers well but fell behind on longer, more complex writing tasks.",
+      "url": "https://model-bench.example/comparison"
+    }
+  ]
+}

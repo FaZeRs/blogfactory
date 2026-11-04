@@ -1,0 +1,53 @@
+{
+  "id": "05-company-knowledge-assistant",
+  "topic": "What a company knowledge assistant can answer today",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://workplace-study.example/search-time",
+      "title": "Time spent searching",
+      "markdown": "# Time spent searching\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nEmployees in small offices said they spend a large part of each week looking for documents and answers that colleagues already have."
+    },
+    {
+      "url": "https://ai-docs.example/retrieval",
+      "title": "Retrieval-based assistants",
+      "markdown": "# Retrieval-based assistants\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nRetrieval-based assistants answer from the company's own files and show which document each answer came from."
+    },
+    {
+      "url": "https://security-guide.example/permissions",
+      "title": "Permissions for internal assistants",
+      "markdown": "# Permissions for internal assistants\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nAn internal assistant should only search documents that the person asking is already allowed to open."
+    },
+    {
+      "url": "https://knowledge-pilot.example/findings",
+      "title": "Pilot findings",
+      "markdown": "# Pilot findings\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nMost wrong answers in the pilot came from outdated documents that nobody had archived or marked as replaced."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Staff spend much of the week searching for existing answers.",
+      "kind": "fact",
+      "quote": "Employees in small offices said they spend a large part of each week looking for documents and answers that colleagues already have.",
+      "url": "https://workplace-study.example/search-time"
+    },
+    {
+      "claim": "Retrieval assistants answer from own files and cite them.",
+      "kind": "fact",
+      "quote": "Retrieval-based assistants answer from the company's own files and show which document each answer came from.",
+      "url": "https://ai-docs.example/retrieval"
+    },
+    {
+      "claim": "An assistant should respect existing document permissions.",
+      "kind": "fact",
+      "quote": "An internal assistant should only search documents that the person asking is already allowed to open.",
+      "url": "https://security-guide.example/permissions"
+    },
+    {
+      "claim": "Outdated documents caused most wrong answers.",
+      "kind": "fact",
+      "quote": "Most wrong answers in the pilot came from outdated documents that nobody had archived or marked as replaced.",
+      "url": "https://knowledge-pilot.example/findings"
+    }
+  ]
+}

@@ -70,6 +70,21 @@ Netlify is not a full BlogFactory deployment target because it does not provisio
 - [ ] Obtain written Polar acceptance for the AI-content use case and written OpenRouter confirmation before selling Managed AI Credits.
 - [x] Publish marketing pricing, terms, and privacy pages that match the live packaging above (Managed AI Credits intentionally not offered until the Polar and OpenRouter confirmations above).
 
+## Blog engine
+
+Staged generation engine behind the `normal` and `deep` modes; design in `docs/superpowers/specs/2026-11-03-blog-engine-design.md`. Fast mode is unchanged. Self-hosted and Cloud both need the persistent worker for these modes.
+
+- [x] Sub-project 1: staged runtime (research, brief, draft, gates, revise, deliver), search/crawl/DataForSEO adapters, eval harness (`npm run eval:engine`), `mode` on `generate_draft`, optional `publish_at` on `push_to_cms_draft`.
+- [ ] Make `normal` the default manual mode (flips only after the eval shows normal beating fast).
+- [ ] Sub-project 2: research depth (more sources, DataForSEO brief data, competitor gaps).
+- [ ] Sub-project 3: quality loop (adversarial fact-check, reader persona, sanitizer, revising from reviewer comments).
+- [ ] Sub-project 4: topic discovery (radar, scored slate, pgvector novelty, refresh candidates).
+- [ ] Sub-project 5: localization (native second language, glossary, parity gate).
+- [ ] Sub-project 6: learning (reviewer edit diffs to style rules, performance snapshots).
+- [ ] Sub-project 7: covers, provenance box, distribution pack.
+- [ ] Sub-project 8: AI answer visibility (weekly answer-engine probe).
+- [ ] Cutover from the Lindevo engine (needs sub-projects 1, 3, 5 and 8, the pairwise eval win, and 6 approved real posts).
+
 ## Release language
 
 Historical pre-release language, before Phase 0 was completed:

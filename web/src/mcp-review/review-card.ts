@@ -9,6 +9,16 @@ export function reviewDeliveryState(input: {
   return { allowed: true, reason: null };
 }
 
+// Host label for a source link; null for anything that is not a plain http(s) URL, so it is never rendered as a link.
+export function sourceHost(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.hostname.replace(/^www\./, "") : null;
+  } catch {
+    return null;
+  }
+}
+
 export function cmsDraftSuccessMessage(deduplicated: boolean) {
   return `CMS draft ready.${deduplicated ? " Existing draft reused." : ""}`;
 }

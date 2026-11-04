@@ -61,6 +61,20 @@ Each user brings their own OpenRouter key. Open **Control -> Article Settings ->
 
 **Manual Prompt** changes only image delivery: BlogFactory creates Midjourney-ready prompt slots instead of calling an image model. Article and prompt generation still use OpenRouter, so Manual Prompt does not remove the OpenRouter requirement.
 
+### Staged engine (normal and deep modes)
+
+Fast mode needs nothing extra. Normal and deep run as background stages and need a persistent worker with `BACKGROUND_EXECUTION_MODE=worker`; the default Compose stack has none, so starting such a run returns a clear configuration error until you add one. All adapters are optional and set on the worker and API:
+
+| Variable | Purpose |
+| --- | --- |
+| `SEARXNG_URL` | SearXNG search endpoint |
+| `CRAWL4AI_URL`, `CRAWL4AI_TOKEN` | Crawl4AI page reader; the token is optional |
+| `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD` | DataForSEO search |
+| `DATAFORSEO_MONTHLY_USD` | Monthly DataForSEO cap (default `10`) |
+| `ENGINE_AI_BASE_URL`, `ENGINE_AI_API_KEY` | Instance OpenAI-compatible endpoint used instead of per-user OpenRouter keys; self-hosted only, never configured on Cloud |
+
+Create Content shows which adapters the instance has configured.
+
 ### CMS draft delivery
 
 Open **Control -> Integrations**, choose the active site, and follow the provider-specific guide for WordPress, Ghost, Wix, Framer, or Lindevo. Save and test the connection before selecting it as a destination. BlogFactory sends reviewed content as a CMS draft; it does not publish live or delete provider content.

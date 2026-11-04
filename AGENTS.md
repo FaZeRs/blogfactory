@@ -72,6 +72,7 @@ cloudflare/cron-worker.ts           Six-hour bounded background drains
 server/src/index.ts                  Hono app and route registration
 server/src/routes/control-plane.ts   Shared Overview and Review Queue HTTP endpoints
 server/src/routes/operations.ts      Tenant-scoped operation ledger reads
+server/src/engine/                   Staged blog engine (normal/deep); start at article-runs.ts
 server/src/mcp/contracts.ts          Protocol version, scopes, and exact tool catalog
 server/src/mcp/tools.ts              MCP schemas and handlers
 server/src/mcp/server.ts             Streamable HTTP server and call lifecycle
@@ -114,7 +115,7 @@ The action queue contains only real work: editorial review states, requested cha
 - Scopes remain `content:read`, `drafts:write`, and `publish:draft`.
 - The exact active catalog has 22 tools. Control-plane additions are `get_workspace_digest`, `list_action_items`, and `review_post`.
 - `review_post` links the standalone `ui://blogfactory/review-post.html` MCP App resource. Unsupported clients receive the same structured result as text.
-- `generate_draft` is asynchronous; `update_draft` requires `expected_updated_at`; `push_to_cms_draft` requires current version, explicit destination, valid preflight, and remains idempotent/draft-only.
+- `generate_draft` is asynchronous and takes `mode` (`fast` default, `normal`/`deep` need the persistent worker); `push_to_cms_draft` takes optional `publish_at` (Lindevo only). `update_draft` requires `expected_updated_at`; `push_to_cms_draft` requires current version, explicit destination, valid preflight, and remains idempotent/draft-only.
 - Connections UI reads scope/tool counts from `/api/mcp/capabilities`; never hardcode catalog counts in product UI.
 - Every authenticated MCP call writes a sanitized operation event. Web GET requests are not logged; mutations and important job transitions are. Bodies, prompts, source values, provider responses, tokens, keys, and credentials must never enter the ledger.
 - Operation records expire after 30 days and are purged by the existing all-task scheduler drain.

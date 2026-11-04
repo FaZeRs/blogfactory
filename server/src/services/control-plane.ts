@@ -1,6 +1,11 @@
 import { and, count, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
+  articleEvidence,
+  articleGateResults,
+  articleRuns,
+  articleSources,
+  articleStageRuns,
   generationLogs,
   jobs,
   mcpAccessTokens,
@@ -19,6 +24,7 @@ import { encryptedCredentialStatus, getApiKeyMetadata, testedConnectionReady, ty
 import { getSeoGrowthPlan } from "./seo-growth-plan.js";
 
 export const ACTION_KINDS = [
+  "engine_escalated",
   "missing_revision",
   "seo_not_ready",
   "destination_not_ready",
@@ -95,6 +101,7 @@ type DraftActionInput = {
   integrationDisplayName?: string | null;
   integrationProvider?: string | null;
   usableDestinationCount?: number;
+  engineEscalation?: string | null;
   updatedAt: Date;
   revision: { id: string; revisionNumber: number } | null;
   now: Date;
@@ -103,15 +110,26 @@ type DraftActionInput = {
 const severityRank: Record<ActionSeverity, number> = { blocker: 0, review: 1, warning: 2 };
 const kindRank = new Map<ActionKind, number>(ACTION_KINDS.map((kind, index) => [kind, index]));
 
+/** An engine escalation stands until a human answers it with a later revision or an approval. */
+export function engineEscalationOpen(revisionNumber: number | null | undefined, editorialState: string | null | undefined) {
+  return (revisionNumber ?? 1) <= 1 && editorialState !== "approved";
+}
+
+/** Engine bookkeeping lives under `engine`; it is not tags, categories or provider metadata. */
+export function savedPublishingMetadata(value: unknown) {
+  return Boolean(value && typeof value === "object" && Object.keys(value).some((key) => key !== "engine"));
+}
+
 export function classifyDraftAction(input: DraftActionInput): ActionItem | null {
   const reasons: ActionReason[] = [];
-  const hasPublishingMetadata = Boolean(input.publishingMetadata && typeof input.publishingMetadata === "object" && Object.keys(input.publishingMetadata).length);
+  const hasPublishingMetadata = savedPublishingMetadata(input.publishingMetadata);
   const preferredRoutingReady = Boolean(
     input.preferredIntegrationId
     && input.integrationSiteId === input.siteId
     && input.integrationReady,
   );
   const destinationReady = preferredRoutingReady || Boolean(input.usableDestinationCount);
+  if (input.engineEscalation) reasons.push({ kind: "engine_escalated", severity: "blocker", label: "Engine checks", message: input.engineEscalation });
   if (!input.revision) reasons.push({ kind: "missing_revision", severity: "blocker", label: "Saved revision", message: "No saved revision exists." });
   const seoReady = input.seoStatus
     ? input.seoStatus === "ready"
@@ -126,7 +144,7 @@ export function classifyDraftAction(input: DraftActionInput): ActionItem | null 
     reasons.push({ kind: "stale_approval", severity: "review", label: "Approval expired", message: "The approved revision is no longer current." });
   }
   if (!input.coverImageUrl) reasons.push({ kind: "missing_cover", severity: "warning", label: "Cover image", message: "No cover image is attached." });
-  if (!hasPublishingMetadata) reasons.push({ kind: "publishing_metadata_missing", severity: "warning", label: "Publishing metadata", message: "Tags, categories, or provider metadata have not been saved." });
+  if (!hasPublishingMetadata) reasons.push({ kind: "publishing_metadata_missing", severity: "warning", label: "Publishing metadata", message: "Optional: add tags and categories in Send to CMS." });
   if (input.now.getTime() - input.updatedAt.getTime() > 14 * 24 * 60 * 60 * 1000) {
     reasons.push({ kind: "stale_draft", severity: "warning", label: "Stale draft", message: "This draft has not changed for more than 14 days." });
   }
@@ -161,6 +179,12 @@ async function ownedSite(userId: string, siteId: string) {
   return site || null;
 }
 
+type EngineMetadata = { runId?: unknown; mode?: unknown; escalated?: unknown };
+const engineMetadata = (publishingMetadata: unknown): EngineMetadata | null => {
+  const engine = publishingMetadata && typeof publishingMetadata === "object" ? (publishingMetadata as { engine?: unknown }).engine : null;
+  return engine && typeof engine === "object" ? engine as EngineMetadata : null;
+};
+
 async function draftActionItems(userId: string, siteId: string, now = new Date()) {
   if (!await ownedSite(userId, siteId)) return null;
   const [rows, connectedDestinations] = await Promise.all([db.select({
@@ -174,6 +198,7 @@ async function draftActionItems(userId: string, siteId: string, now = new Date()
     approvedRevisionId: posts.approvedRevisionId,
     coverImageUrl: posts.coverImageUrl,
     publishingMetadata: posts.publishingMetadata,
+    jobId: posts.jobId,
     preferredIntegrationId: posts.preferredIntegrationId,
     integrationSiteId: siteIntegrations.siteId,
     integrationStatus: siteIntegrations.status,
@@ -204,6 +229,14 @@ async function draftActionItems(userId: string, siteId: string, now = new Date()
     .orderBy(desc(postRevisions.revisionNumber));
   const latest = new Map<string, { id: string; revisionNumber: number }>();
   for (const revision of revisions) if (!latest.has(revision.postId)) latest.set(revision.postId, { id: revision.id, revisionNumber: revision.revisionNumber });
+  // One query for all escalated engine drafts in this batch.
+  const escalatedJobIds = rows.flatMap((row) => row.jobId && engineMetadata(row.publishingMetadata)?.escalated === true ? [row.jobId] : []);
+  const escalationReasons = new Map<string, string>();
+  if (escalatedJobIds.length) {
+    const runs = await db.select({ jobId: articleRuns.jobId, stateReason: articleRuns.stateReason }).from(articleRuns)
+      .where(and(eq(articleRuns.userId, userId), eq(articleRuns.siteId, siteId), inArray(articleRuns.jobId, escalatedJobIds)));
+    for (const run of runs) if (run.jobId) escalationReasons.set(run.jobId, run.stateReason || "Engine checks did not pass.");
+  }
   return rows.flatMap((row) => {
     if (!row.siteId) return [];
     const item = classifyDraftAction({
@@ -216,6 +249,10 @@ async function draftActionItems(userId: string, siteId: string, now = new Date()
         credentialsEncrypted: row.integrationCredentialsEncrypted,
       }),
       usableDestinationCount,
+      // A human edit (a later revision) or an approval answers the escalation.
+      engineEscalation: row.jobId && engineEscalationOpen(latest.get(row.id)?.revisionNumber, row.editorialState)
+        ? escalationReasons.get(row.jobId) || null
+        : null,
       revision: latest.get(row.id) || null,
       now,
     });
@@ -280,6 +317,39 @@ export function revisionChangeSummary(current: PostRevisionSnapshot, previous: P
   return { changed_fields: changedFields, word_delta: words(current.content) - words(previous.content) };
 }
 
+// Evidence behind a normal/deep draft. Every read filters on user_id; the run is reached through the post's job and site.
+async function engineResearch(userId: string, siteId: string, jobId: string) {
+  const [run] = await db.select({ id: articleRuns.id, mode: articleRuns.mode }).from(articleRuns)
+    .where(and(eq(articleRuns.userId, userId), eq(articleRuns.siteId, siteId), eq(articleRuns.jobId, jobId))).limit(1);
+  if (!run) return null;
+  const [claims, gates, [brief], [research]] = await Promise.all([
+    db.select({ claim: articleEvidence.claim, quote: articleEvidence.quote, url: sql<string>`coalesce(${articleSources.finalUrl}, ${articleSources.url})`, fetchedVia: articleSources.fetchedVia, verified: articleEvidence.verified })
+      .from(articleEvidence)
+      .innerJoin(articleSources, and(eq(articleSources.id, articleEvidence.sourceId), eq(articleSources.userId, userId)))
+      .where(and(eq(articleEvidence.runId, run.id), eq(articleEvidence.userId, userId)))
+      .orderBy(desc(articleEvidence.verified), articleEvidence.id).limit(30),
+    db.select({ gate: articleGateResults.gate, passed: articleGateResults.passed, severity: articleGateResults.severity, attempt: articleGateResults.attempt })
+      .from(articleGateResults).where(and(eq(articleGateResults.runId, run.id), eq(articleGateResults.userId, userId)))
+      .orderBy(desc(articleGateResults.attempt)),
+    db.select({ output: articleStageRuns.output }).from(articleStageRuns)
+      .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId), eq(articleStageRuns.stage, "brief"), inArray(articleStageRuns.status, ["succeeded", "reused"])))
+      .orderBy(desc(articleStageRuns.startedAt)).limit(1),
+    db.select({ output: articleStageRuns.output }).from(articleStageRuns)
+      .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId), eq(articleStageRuns.stage, "research"), inArray(articleStageRuns.status, ["succeeded", "reused"])))
+      .orderBy(desc(articleStageRuns.startedAt)).limit(1),
+  ]);
+  const searchAdapter = (research?.output as { output?: { searchAdapter?: unknown } } | null)?.output?.searchAdapter;
+  // Only the final gate attempt matters to a reviewer.
+  const finalAttempt = gates[0]?.attempt;
+  const keywordData = (brief?.output as { output?: { keywordData?: unknown } } | null)?.output?.keywordData;
+  return {
+    mode: run.mode as "normal" | "deep",
+    claims: claims.map((claim) => ({ claim: claim.claim, quote: claim.quote, url: claim.url, fetched_via: claim.fetchedVia || "unknown", verified: claim.verified })),
+    gates: gates.filter((gate) => gate.attempt === finalAttempt).map((gate) => ({ gate: gate.gate, passed: gate.passed, severity: gate.severity || "info" })),
+    adapters: { search: typeof searchAdapter === "string" ? searchAdapter : "none", keyword_data: Boolean(keywordData) },
+  };
+}
+
 export async function getReviewPacket(input: { userId: string; postId: string; allowedSiteIds?: ReadonlySet<string>; canPushCmsDraft: boolean }) {
   const [post] = await db.select({
     id: posts.id,
@@ -295,6 +365,7 @@ export async function getReviewPacket(input: { userId: string; postId: string; a
     approvedRevisionId: posts.approvedRevisionId,
     coverImageUrl: posts.coverImageUrl,
     publishingMetadata: posts.publishingMetadata,
+    jobId: posts.jobId,
     preferredIntegrationId: posts.preferredIntegrationId,
     updatedAt: posts.updatedAt,
   }).from(posts).where(and(eq(posts.id, input.postId), eq(posts.userId, input.userId))).limit(1);
@@ -307,17 +378,25 @@ export async function getReviewPacket(input: { userId: string; postId: string; a
     db.select({ id: postPublications.id, status: postPublications.status, externalUrl: postPublications.externalUrl, externalEditUrl: postPublications.externalEditUrl, updatedAt: postPublications.updatedAt })
       .from(postPublications).where(and(eq(postPublications.userId, input.userId), eq(postPublications.postId, post.id))).orderBy(desc(postPublications.updatedAt)).limit(5),
   ]);
+  const research = post.jobId ? await engineResearch(input.userId, post.siteId, post.jobId) : null;
   const currentRevision = revisionRows[0] || null;
   const previousRevision = revisionRows[1] || null;
   const seoReady = Boolean(readySeoMetadataForArticle(post.seoMetadata, post.title, post.content));
   const usableDestinations = destinations.filter(testedConnectionReady);
-  const hasPublishingMetadata = Boolean(post.publishingMetadata && typeof post.publishingMetadata === "object" && Object.keys(post.publishingMetadata).length);
+  const hasPublishingMetadata = savedPublishingMetadata(post.publishingMetadata);
+  const escalated = Boolean(post.jobId && engineMetadata(post.publishingMetadata)?.escalated === true
+    && engineEscalationOpen(currentRevision?.revisionNumber, post.editorialState));
+  const [escalatedRun] = escalated && post.jobId
+    ? await db.select({ stateReason: articleRuns.stateReason }).from(articleRuns)
+      .where(and(eq(articleRuns.userId, input.userId), eq(articleRuns.jobId, post.jobId))).limit(1)
+    : [];
   const checks = [
+    ...(escalated ? [{ id: "engine_checks", label: "Engine checks", status: "blocker", message: escalatedRun?.stateReason || "Engine checks did not pass. Edit and save, or approve, to clear." }] : []),
     { id: "saved_revision", label: "Saved revision", status: currentRevision ? "pass" : "blocker", message: currentRevision ? `Revision ${currentRevision.revisionNumber}` : "No saved revision exists" },
     { id: "seo", label: "Canonical SEO", status: seoReady ? "pass" : "blocker", message: seoReady ? "Current and valid" : "SEO metadata is missing, stale, or invalid" },
     { id: "destination", label: "CMS destination", status: usableDestinations.length ? "pass" : "blocker", message: usableDestinations.length ? `${usableDestinations.length} usable destination${usableDestinations.length === 1 ? "" : "s"}` : "Connect or repair a CMS destination for this site" },
     { id: "cover_image", label: "Cover image", status: post.coverImageUrl ? "pass" : "warning", message: post.coverImageUrl ? "Attached to the saved revision" : "No cover image is attached" },
-    { id: "publishing_metadata", label: "Publishing metadata", status: hasPublishingMetadata ? "pass" : "warning", message: hasPublishingMetadata ? "Saved for this revision" : "Tags, categories, or provider metadata have not been saved yet" },
+    { id: "publishing_metadata", label: "Publishing metadata", status: hasPublishingMetadata ? "pass" : "warning", message: hasPublishingMetadata ? "Saved for this revision" : "Optional: add tags and categories in Send to CMS; they are saved when you send" },
   ] as const;
   const currentSnapshot = currentRevision ? postRevisionSnapshot(currentRevision.snapshot) : null;
   const previousSnapshot = previousRevision ? postRevisionSnapshot(previousRevision.snapshot) : null;
@@ -344,6 +423,7 @@ export async function getReviewPacket(input: { userId: string; postId: string; a
     },
     changes: currentSnapshot ? revisionChangeSummary(currentSnapshot, previousSnapshot) : { changed_fields: [], word_delta: 0 },
     seo: { status: seoStatusForArticle(post.seoMetadata, post.title, post.content) },
+    research,
     preflight: { can_send: !checks.some((check) => check.status === "blocker"), has_blockers: checks.some((check) => check.status === "blocker"), checks },
     destinations: destinations.map((destination) => ({
       id: destination.id,

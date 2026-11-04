@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { classifyDraftAction, filterActionItems, generationReadiness, revisionChangeSummary, searchGrowthDigest } from "./control-plane.js";
+import { classifyDraftAction, engineEscalationOpen, filterActionItems, generationReadiness, revisionChangeSummary, searchGrowthDigest } from "./control-plane.js";
 import { seoSourceHash } from "./seo-metadata.js";
 
 const title = "A useful article title";
@@ -44,6 +44,12 @@ const base = {
 
 assert.equal(classifyDraftAction(base), null);
 assert.equal(classifyDraftAction({ ...base, content: "changed", seoStatus: "ready" }), null);
+const escalated = classifyDraftAction({ ...base, engineEscalation: "Gates still failing: overlap", revision: null })!;
+assert.equal(escalated.kind, "engine_escalated");
+assert.equal(escalated.severity, "blocker");
+assert.equal(escalated.suggested_action, "Gates still failing: overlap");
+assert.equal(escalated.reasons.length, 2);
+assert.equal(classifyDraftAction({ ...base, engineEscalation: null }), null);
 assert.equal(classifyDraftAction({ ...base, revision: null })?.kind, "missing_revision");
 assert.equal(classifyDraftAction({ ...base, seoMetadata: null })?.kind, "seo_not_ready");
 assert.equal(classifyDraftAction({ ...base, preferredIntegrationId: null, integrationSiteId: null, integrationReady: false, usableDestinationCount: 0 })?.kind, "destination_not_ready");
@@ -52,6 +58,10 @@ assert.equal(classifyDraftAction({ ...base, editorialState: "in_review" })?.kind
 assert.equal(classifyDraftAction({ ...base, editorialState: "approved", approvedRevisionId: "00000000-0000-4000-8000-000000000099" })?.kind, "stale_approval");
 assert.equal(classifyDraftAction({ ...base, coverImageUrl: null })?.kind, "missing_cover");
 assert.equal(classifyDraftAction({ ...base, publishingMetadata: null })?.kind, "publishing_metadata_missing");
+assert.equal(engineEscalationOpen(1, "in_review"), true);
+assert.equal(engineEscalationOpen(2, "in_review"), false, "a human edit answers the escalation");
+assert.equal(engineEscalationOpen(1, "approved"), false, "an approval answers the escalation");
+assert.equal(classifyDraftAction({ ...base, publishingMetadata: { engine: { runId: "r" } } })?.kind, "publishing_metadata_missing");
 assert.equal(classifyDraftAction({ ...base, updatedAt: new Date("2026-08-01T00:00:00.000Z") })?.kind, "stale_draft");
 assert.equal(classifyDraftAction({ ...base, seoMetadata: null, editorialState: "changes_requested", coverImageUrl: null })?.severity, "blocker");
 const mixed = classifyDraftAction({ ...base, seoMetadata: null, coverImageUrl: null })!;

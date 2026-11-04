@@ -11,6 +11,8 @@ import { readJsonObject, requiredString, safeError } from "../http/error-contrac
 import type { GenerateOpts } from "../services/generation-types.js";
 import type { ExtractOpts } from "../services/extract-content.js";
 import type { FetchOpts } from "../services/fetch-social-content.js";
+import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
+import { StageInputError } from "../engine/types.js";
 import { SEO_PLAN_MODE } from "../services/seo-growth-plan.js";
 
 export const contentRoutes = new Hono();
@@ -49,27 +51,63 @@ export function fetchSocialSourceUrl(body: Record<string, any>) {
   return config.url || config.channelUrl || config.subredditUrl || "";
 }
 
+/** An SEO-plan item must come with its campaign and site, and belong to this user's plan for that site. */
+async function campaignItemError(userId: string, body: Record<string, any>): Promise<{ error: string; status: 400 | 404 } | null> {
+  const campaignId = body.campaignId || null;
+  const campaignItemId = body.campaignItemId || null;
+  if (!campaignId && !campaignItemId) return null;
+  if (!campaignId || !campaignItemId || !body.siteId) return { error: "Campaign, item, and site must be supplied together", status: 400 };
+  const [planItem] = await db.select({ id: campaignItems.id }).from(campaignItems).innerJoin(campaigns, eq(campaigns.id, campaignItems.campaignId)).where(and(
+    eq(campaignItems.id, campaignItemId),
+    eq(campaignItems.campaignId, campaignId),
+    eq(campaignItems.userId, userId),
+    eq(campaigns.userId, userId),
+    eq(campaigns.siteId, body.siteId),
+    eq(campaigns.mode, SEO_PLAN_MODE),
+  )).limit(1);
+  return planItem ? null : { error: "SEO plan item not found", status: 404 };
+}
+
 contentRoutes.post("/generate", async (c) => {
   const userId = getUserId(c);
   const body = await generationBody(c);
   let feedRunClaim: FeedRunClaim | null = null;
   let releaseScheduled = false;
 
+  const mode = (body as { mode?: unknown }).mode;
+  if (mode !== undefined && mode !== "fast") {
+    if (mode !== "normal" && mode !== "deep") return c.json({ error: "mode must be fast, normal or deep" }, 400);
+    const siteId = body.siteId || body.site_id;
+    if (!siteId) return c.json({ error: "siteId is required for normal and deep modes" }, 400);
+    if (body.sourceType !== "article_keyword" && body.sourceType !== "article_title") {
+      return c.json({ error: "Normal and deep modes support article_keyword and article_title sources only." }, 400);
+    }
+    const campaignError = await campaignItemError(userId, body);
+    if (campaignError) return c.json({ error: campaignError.error }, campaignError.status);
+    try {
+      const started = await startArticleRun({
+        userId, siteId, mode, sourceType: body.sourceType, topic: body.sourceValue,
+        preferredIntegrationId: body.preferredIntegrationId || body.preferred_integration_id || null,
+        origin: "web",
+        campaign: body.campaignId && body.campaignItemId ? { campaignId: body.campaignId, campaignItemId: body.campaignItemId } : null,
+        guidance: { angle: typeof body.articleDirection === "string" ? body.articleDirection : null, instructions: typeof body.customInstructions === "string" ? body.customInstructions : null },
+        cover: Boolean(body.generateImages && (body.imageConfig as { cover?: { enabled?: boolean } } | undefined)?.cover && (body.imageConfig as { cover: { enabled?: boolean } }).cover.enabled !== false),
+      });
+      return c.json({ jobId: started.jobId, runId: started.runId, status: "running", mode, estimateUsd: started.estimateUsd, postIds: [] }, 202);
+    } catch (err: any) {
+      if (err instanceof EngineUnavailableError) return c.json({ error: err.message, code: err.code }, 400);
+      if (err?.message === "Site not found") return c.json({ error: "Site not found" }, 404);
+      if (err instanceof StageInputError) return c.json({ error: err.message }, 400);
+      console.error("engine start error", safeError(err));
+      return c.json({ error: "Content generation failed" }, 500);
+    }
+  }
+
   try {
     const campaignId = body.campaignId || null;
     const campaignItemId = body.campaignItemId || null;
-    if (campaignId || campaignItemId) {
-      if (!campaignId || !campaignItemId || !body.siteId) return c.json({ error: "Campaign, item, and site must be supplied together" }, 400);
-      const [planItem] = await db.select({ id: campaignItems.id }).from(campaignItems).innerJoin(campaigns, eq(campaigns.id, campaignItems.campaignId)).where(and(
-        eq(campaignItems.id, campaignItemId),
-        eq(campaignItems.campaignId, campaignId),
-        eq(campaignItems.userId, userId),
-        eq(campaigns.userId, userId),
-        eq(campaigns.siteId, body.siteId),
-        eq(campaigns.mode, SEO_PLAN_MODE),
-      )).limit(1);
-      if (!planItem) return c.json({ error: "SEO plan item not found" }, 404);
-    }
+    const campaignError = await campaignItemError(userId, body);
+    if (campaignError) return c.json({ error: campaignError.error }, campaignError.status);
     const openRouterKey = await getOpenRouterKey(userId);
     if (!openRouterKey) return c.json({ error: "Add your OpenRouter API key in Settings before generating content" }, 400);
     const modelId = await resolveOpenRouterTextModel(openRouterKey, body.modelId || "openai/gpt-4o");

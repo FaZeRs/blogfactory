@@ -16,6 +16,13 @@ export function safeOperationMetadata(action: string, input: unknown): Operation
     ? input as Record<string, unknown>
     : {};
   const metadata: OperationMetadata = {};
+  if (action === "engine.stage") {
+    for (const key of ["run_id", "stage", "mode", "status", "cost_usd", "duration_ms"]) {
+      const item = value[key];
+      if (typeof item === "string" || typeof item === "number") metadata[key] = item;
+    }
+    return metadata;
+  }
   for (const key of ["status", "kind", "severity", "source_type", "variations", "page", "limit", "post_type"]) {
     const item = value[key];
     if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") metadata[key] = item;
@@ -62,12 +69,14 @@ export async function finishOperationEvent(input: {
   durationMs: number;
   siteId?: string | null;
   errorCode?: string | null;
+  metadata?: OperationMetadata;
 }) {
   await db.update(operationEvents).set({
     status: input.status,
     durationMs: Math.max(0, Math.round(input.durationMs)),
     ...(input.siteId ? { siteId: input.siteId } : {}),
     errorCode: input.errorCode?.slice(0, 120) || null,
+    ...(input.metadata ? { metadata: input.metadata } : {}),
   }).where(eq(operationEvents.id, input.id));
 }
 

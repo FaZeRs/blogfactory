@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { jobs } from "../db/schema.js";
 import { BLOG_DRAFT_SOURCE_TYPES, isBlogDraftSource } from "./generation-sources.js";
@@ -11,6 +11,12 @@ type FailedDraft = { index: number; error: string };
 
 function partialTimeoutMessage(createdCount: number, totalDrafts: number) {
   return `Generation timed out after ${createdCount}/${totalDrafts} drafts were created. The remaining drafts did not finish; try a faster model or fewer variations.`;
+}
+
+// Engine runs span hours and are failed by their own lease/stage logic, never by this wall-clock sweep.
+const NOT_ENGINE_JOB = sql`(${jobs.generationPlan} -> 'engine') is null`;
+function isEngineJobPlan(plan: unknown) {
+  return Boolean(plan && typeof plan === "object" && (plan as Record<string, unknown>).engine);
 }
 
 export function staleTimeoutUpdateForJob(job: {
@@ -95,7 +101,7 @@ export function reconciledJobForRead<T extends {
   createdAt: Date;
   completedAt: Date | null;
 }>(job: T, now = new Date()) {
-  if (!isBlogDraftSource(job.sourceType)) return job;
+  if (!isBlogDraftSource(job.sourceType) || isEngineJobPlan(job.generationPlan)) return job;
   const timedOut = job.status === "running"
     && job.createdAt.getTime() < now.getTime() - STALE_RUNNING_MS;
   const failedWithResults = job.status === "failed" && Boolean(job.resultPostIds?.length);
@@ -111,6 +117,7 @@ export async function markStaleRunningJobs(userId: string, jobId?: string) {
     eq(jobs.status, "running"),
     inArray(jobs.sourceType, [...BLOG_DRAFT_SOURCE_TYPES]),
     isNull(jobs.campaignId),
+    NOT_ENGINE_JOB,
     lt(jobs.createdAt, new Date(Date.now() - STALE_RUNNING_MS)),
   ];
   if (jobId) staleClauses.push(eq(jobs.id, jobId));
@@ -130,6 +137,7 @@ export async function markStaleRunningJobs(userId: string, jobId?: string) {
     eq(jobs.status, "failed"),
     inArray(jobs.sourceType, [...BLOG_DRAFT_SOURCE_TYPES]),
     isNull(jobs.campaignId),
+    NOT_ENGINE_JOB,
   ];
   if (jobId) failedClauses.push(eq(jobs.id, jobId));
 

@@ -1,8 +1,9 @@
 import { db } from "../db/index.js";
 import { safeError } from "../http/error-contract.js";
-import { evaluateDailyGuardrails } from "./generation-guardrails.js";
+import { checkAccountGuardrails } from "./account-guardrails.js";
 import { campaignItems, imageAssets, imageGenerationRequests, jobs, posts, feeds, generationLogs, personas, sites, siteIntegrations } from "../db/schema.js";
-import { eq, and, gte, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
+import { getObject } from "./s3-client.js";
 import { saveImageBuffer } from "./image-storage.js";
 import { getOpenRouterKey } from "./api-keys.js";
 import { extractContent } from "./extract-content.js";
@@ -15,7 +16,7 @@ import {
   resolveOpenRouterTextModel,
 } from "./openrouter-models.js";
 import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
-import { getEffectiveSettings, getGlobalSettings, getPinnedSiteSettings, updateGlobalSettings } from "./user-settings.js";
+import { getEffectiveSettings, getPinnedSiteSettings } from "./user-settings.js";
 import { buildSportsNewsInstructions, classifySportsNews, sportsMatrixRowsFromSettings } from "./sports-news.js";
 import { fetchSocialContent } from "./fetch-social-content.js";
 import { imageTargets } from "./image-slots.js";
@@ -680,52 +681,13 @@ export async function generateContent(opts: GenerateOpts) {
 
   try {
     // Budget is account-level; feed generation resolves defaults from its pinned site.
-    const accountSettings = await getGlobalSettings(userId);
     const settings = feedRecord || hasJobRoutingSnapshot
       ? await getPinnedSiteSettings(userId, resolvedSiteId)
       : await getEffectiveSettings(userId, resolvedSiteId);
-    if (accountSettings?.budgetPaused) {
-      await db.update(jobs).set({ status: "failed", errorMessage: "Generation paused — monthly budget exceeded", completedAt: new Date() }).where(eq(jobs.id, jobId));
-      return { jobId, status: "failed", error: "Budget exceeded" };
-    }
-
-    if (accountSettings?.monthlyBudget) {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-      const [costResult] = await db.select({ total: sql<number>`COALESCE(SUM(cost), 0)` })
-        .from(generationLogs)
-        .where(and(eq(generationLogs.userId, userId), sql`created_at >= ${startOfMonth.toISOString()}`));
-
-      if ((costResult?.total || 0) >= accountSettings.monthlyBudget) {
-        await updateGlobalSettings(userId, { budgetPaused: true });
-        await db.update(jobs).set({ status: "failed", errorMessage: "Monthly budget exceeded — generation paused", completedAt: new Date() }).where(eq(jobs.id, jobId));
-        return { jobId, status: "failed", error: "Budget exceeded" };
-      }
-    }
-
-    // Daily ceilings do not latch budget_paused: they clear themselves at UTC midnight.
-    if (accountSettings?.dailyCostLimit || accountSettings?.dailyRequestLimit) {
-      const startOfDay = new Date();
-      startOfDay.setUTCHours(0, 0, 0, 0);
-      const [todayUsage] = await db.select({
-        spend: sql<number>`COALESCE(SUM(${generationLogs.cost}), 0)::float8`,
-        requests: sql<number>`COUNT(*)::int`,
-        failures: sql<number>`COUNT(*) FILTER (WHERE ${generationLogs.status} IS NOT NULL AND ${generationLogs.status} <> 'success')::int`,
-      })
-        .from(generationLogs)
-        .where(and(eq(generationLogs.userId, userId), gte(generationLogs.createdAt, startOfDay)));
-
-      const blocked = evaluateDailyGuardrails(accountSettings, {
-        monthSpend: 0,
-        todaySpend: Number(todayUsage?.spend || 0),
-        todayRequests: Number(todayUsage?.requests || 0),
-        todayFailures: Number(todayUsage?.failures || 0),
-      });
-      if (blocked) {
-        await db.update(jobs).set({ status: "failed", errorMessage: blocked.message, completedAt: new Date() }).where(eq(jobs.id, jobId));
-        return { jobId, status: "failed", error: blocked.message };
-      }
+    const guard = await checkAccountGuardrails(userId);
+    if (guard.blocked) {
+      await db.update(jobs).set({ status: "failed", errorMessage: guard.message, completedAt: new Date() }).where(eq(jobs.id, jobId));
+      return { jobId, status: "failed", error: guard.error };
     }
     const promptSettings = applyGenerationOverrides((opts.settingsSnapshot || settings) as GenerationSettings | undefined, opts);
     const effectiveOpts = applyArticleDefaults(opts, promptSettings);
@@ -1751,10 +1713,13 @@ export async function createManualImagePromptRequestsForPost(userId: string, pos
 }
 
 export async function generateQueuedImageRequest(request: typeof imageGenerationRequests.$inferSelect) {
-  if (!request.jobId) throw new Error("Queued image request is missing job data");
-
   const openRouterKey = await getOpenRouterKey(request.userId);
   const modelId = await validateImageModelForRequest(openRouterKey, openRouterImageModelId(request.modelId), request.type);
+
+  const reference = request.referencePath ? await getObject(request.referencePath) : null;
+  // Uploaded covers keep their own type (png, jpeg); stored generations are webp.
+  const referenceType = reference?.contentType.startsWith("image/") ? reference.contentType : "image/webp";
+  const references = reference ? [`data:${referenceType};base64,${reference.body.toString("base64")}`] : undefined;
 
   const result = await generateSingleImage(
     request.prompt,
@@ -1767,7 +1732,9 @@ export async function generateQueuedImageRequest(request: typeof imageGeneration
     request.type,
     request.position || 0,
     request.postId || null,
-    openRouterKey || ""
+    openRouterKey || "",
+    references,
+    request.id
   );
 
   if (result?.storagePath && request.postId) {
@@ -1787,12 +1754,13 @@ export async function generateQueuedImageRequest(request: typeof imageGeneration
   return result;
 }
 
-export function openRouterImageRequestPayload(modelId: string, prompt: string, resolution: string, aspectRatio: string) {
+export function openRouterImageRequestPayload(modelId: string, prompt: string, resolution: string, aspectRatio: string, references?: string[]) {
   return {
     model: modelId,
     prompt,
     resolution: openRouterImageResolution(modelId, resolution),
     aspect_ratio: aspectRatio,
+    ...(references?.length ? { input_references: references.map((url) => ({ type: "image_url", image_url: { url } })) } : {}),
   };
 }
 
@@ -1816,11 +1784,13 @@ async function generateSingleImage(
   resolution: string,
   aspectRatio: string,
   userId: string,
-  jobId: string,
+  jobId: string | null,
   type: string,
   position: number,
   postId: string | null,
-  openRouterKey: string
+  openRouterKey: string,
+  references?: string[],
+  requestId?: string
 ): Promise<{ storagePath: string | null; cost: number } | null> {
   if (!openRouterKey) throw new Error("Add your OpenRouter API key in Settings before using AI image models");
 
@@ -1834,7 +1804,7 @@ async function generateSingleImage(
         Authorization: `Bearer ${openRouterKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(openRouterImageRequestPayload(modelId, prompt, resolution, aspectRatio)),
+      body: JSON.stringify(openRouterImageRequestPayload(modelId, prompt, resolution, aspectRatio, references)),
     });
   } catch (err) {
     if (!isAbortTimeout(err)) throw err;
@@ -1847,7 +1817,7 @@ async function generateSingleImage(
       provider: "openrouter-image",
       status: "failed",
       latencyMs: Date.now() - startedAt,
-      sessionId: jobId,
+      sessionId: jobId ?? requestId,
       responseData: { error: message },
     });
     throw new Error(message);
@@ -1863,7 +1833,7 @@ async function generateSingleImage(
       provider: "openrouter-image",
       status: "failed",
       latencyMs: Date.now() - startedAt,
-      sessionId: jobId,
+      sessionId: jobId ?? requestId,
       responseData: { status: resp.status, error: errorText.slice(0, 1000) },
     });
     throw new Error(`OpenRouter image failed (${resp.status})${errorText ? `: ${errorText.slice(0, 180)}` : ""}`);
@@ -1902,7 +1872,7 @@ async function generateSingleImage(
     totalTokens,
     cost,
     latencyMs: Date.now() - startedAt,
-    sessionId: jobId,
+    sessionId: jobId ?? requestId,
     responseData: { id: data.id, usage },
   });
 
@@ -1922,12 +1892,12 @@ async function generateSingleImage(
     altText,
     modelId,
     provider: "openrouter-image",
-    sourceKind: "ai",
+    sourceKind: references?.length ? "ai_edit" : "ai",
     aspectRatio,
     resolution,
     position,
     cost,
-    jobId,
+    jobId: jobId ?? undefined,
     postId: postId || undefined,
   });
 

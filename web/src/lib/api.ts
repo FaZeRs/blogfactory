@@ -195,3 +195,49 @@ export async function pushCmsDrafts(
 
   return { total: targets.length, failures };
 }
+
+export type EngineMode = "fast" | "normal" | "deep";
+
+export interface EngineSettings {
+  models?: Partial<Record<"research_queries" | "research_claims" | "brief" | "draft" | "revise", string>>;
+  budgetUsd?: number;
+  citationStyle?: "inline" | "references";
+}
+
+export interface EngineAvailability {
+  available: boolean;
+  reason: string | null;
+  adapters: { searxng: boolean; crawl4ai: boolean; dataforseo: boolean; gateway: "openrouter" | "custom" };
+}
+
+export interface EngineSettingsResponse {
+  settings: EngineSettings;
+  availability: EngineAvailability;
+  estimates: { normal: number; deep: number };
+}
+
+export interface EngineStageRun {
+  stage: string;
+  attempt: number;
+  status: string;
+  model: string | null;
+  costUsd: number;
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+  details?: Record<string, unknown> | null;
+}
+
+export interface EngineRunDetail {
+  run_id: string;
+  mode: "normal" | "deep";
+  state: string;
+  stage: string;
+  spent_usd: number;
+  budget_usd: number;
+  state_reason?: string | null;
+  stages: EngineStageRun[];
+  sources?: Array<{ id: string; url: string; title: string | null; fetchedVia: string | null; httpStatus: number | null; textLength: number | null }>;
+  evidence?: Array<{ claimId: string | null; sourceId: string; claim: string; quote: string; verified: boolean; method: string | null; reason: string | null }>;
+  gates?: Array<{ attempt: number; gate: string; passed: boolean; severity: string | null; issues: unknown; metrics: unknown }>;
+}
