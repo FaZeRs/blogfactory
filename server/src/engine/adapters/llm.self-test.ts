@@ -61,6 +61,21 @@ function stub(responses: Response[]) {
   assert.match(bodies[1].body.messages.at(-1).content, /title/);
 }
 {
+  // A code block inside a JSON string is article text, not a fence around the reply.
+  const article = JSON.stringify({ title: "Intro\n```python\nprint(1)\n```\nend" });
+  const raw = stub([reply(article)]);
+  assert.equal((await raw.llm.json(req)).value.title, "Intro\n```python\nprint(1)\n```\nend");
+  const fenced = stub([reply(`Here it is:\n\`\`\`json\n${article}\n\`\`\``)]);
+  assert.equal((await fenced.llm.json(req)).value.title, "Intro\n```python\nprint(1)\n```\nend");
+}
+{
+  // A failed call carries what its paid replies cost.
+  const bad = stub([reply("not json", { cost: 0.03 }), reply("still not json", { cost: 0.04 })]);
+  await assert.rejects(bad.llm.json(req), (e: any) => Math.abs(e.costUsd - 0.07) < 1e-9);
+  const late = stub([reply("not json", { cost: 0.03 }), new Response("", { status: 429 })]);
+  await assert.rejects(late.llm.json(req), (e: any) => e instanceof RateLimitError && Math.abs(e.costUsd - 0.03) < 1e-9);
+}
+{
   const fake = createFakeLlm({ brief: [{ title: "x" }] });
   assert.deepEqual((await fake.json(req)).value, { title: "x" });
   assert.equal(fake.calls.length, 1);

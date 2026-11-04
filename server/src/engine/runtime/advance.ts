@@ -163,9 +163,15 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
   let attemptCost = 0;
   const llm: EngineLlm = {
     async json(req) {
-      const r = await deps.llm.json(req);
-      attemptCost += r.costUsd;
-      return r;
+      try {
+        const r = await deps.llm.json(req);
+        attemptCost += r.costUsd;
+        return r;
+      } catch (error) {
+        // The client attaches what a failed call already spent (a bad reply twice, a late 429).
+        attemptCost += Number((error as { costUsd?: unknown } | null)?.costUsd) || 0;
+        throw error;
+      }
     },
   };
 
@@ -210,7 +216,8 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
 
     const outcome = await def.run(input, ctx);
     const usage = outcome.usage ?? [];
-    const cost = usage.reduce((sum, u) => sum + u.costUsd, 0);
+    // A stage may swallow a failed call (one unreadable research page), so the tally can exceed its usage.
+    const cost = Math.max(usage.reduce((sum, u) => sum + u.costUsd, 0), attemptCost);
     const { kind, patch } = transitionPatch(outcome.next, stage, run, now);
     return {
       kind,

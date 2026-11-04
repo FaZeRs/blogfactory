@@ -1716,9 +1716,10 @@ export async function generateQueuedImageRequest(request: typeof imageGeneration
   const openRouterKey = await getOpenRouterKey(request.userId);
   const modelId = await validateImageModelForRequest(openRouterKey, openRouterImageModelId(request.modelId), request.type);
 
-  const references = request.referencePath
-    ? [`data:image/webp;base64,${(await getObject(request.referencePath)).body.toString("base64")}`]
-    : undefined;
+  const reference = request.referencePath ? await getObject(request.referencePath) : null;
+  // Uploaded covers keep their own type (png, jpeg); stored generations are webp.
+  const referenceType = reference?.contentType.startsWith("image/") ? reference.contentType : "image/webp";
+  const references = reference ? [`data:${referenceType};base64,${reference.body.toString("base64")}`] : undefined;
 
   const result = await generateSingleImage(
     request.prompt,

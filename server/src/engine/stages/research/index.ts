@@ -248,8 +248,10 @@ function shortfall(result: ResearchResult, verified: number, needs: number): str
 export const researchStage: Stage<ResearchInput, ResearchOutput> = {
   key: "research",
   promptVersion: await promptVersion("research-queries", "research-claims"),
-  async input({ run }) {
+  async input({ run, deps }) {
     if (run.sourceType !== "article_keyword" && run.sourceType !== "article_title") throw new StageInputError(`Unsupported source type ${run.sourceType}`);
+    // Without search there is nothing to read, so every retry would pay for queries and fail the same way.
+    if (deps.search.name === "none") throw new StageInputError("No search adapter is configured: set SEARXNG_URL or DataForSEO credentials");
     const r = MODE_PRESETS[run.mode as EngineMode]?.research;
     if (!r) throw new StageInputError(`Unsupported mode ${run.mode}`);
     return {

@@ -46,9 +46,19 @@ export function engineAiEndpoint(
 }
 
 function parseJson(text: string): unknown {
-  const fenced = text.match(/```[A-Za-z0-9_-]*\s*([\s\S]*?)```/);
-  return JSON.parse((fenced ? fenced[1] : text).trim());
+  try {
+    return JSON.parse(text.trim());
+  } catch (error) {
+    // Unwrap a fence only when the reply is not JSON itself: an article's code block sits inside a JSON string.
+    const fenced = text.match(/```[A-Za-z0-9_-]*\s*([\s\S]*)```/);
+    if (!fenced) throw error;
+    return JSON.parse(fenced[1].trim());
+  }
 }
+
+/** A call that fails after a paid reply still cost money; the runtime adds `costUsd` to the run's spend. */
+const withCost = (error: unknown, costUsd: number) =>
+  error instanceof Error && costUsd > 0 ? Object.assign(error, { costUsd }) : error;
 
 function costOf(body: any, headers: Headers): number {
   const fromBody = Number(body?.usage?.cost);
@@ -84,62 +94,66 @@ export function createEngineLlm(
       let model = req.model;
       let failure = "";
 
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const res = await fetchImpl(`${endpoint.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${endpoint.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: req.model,
-            messages,
-            max_tokens: req.maxTokens,
-            response_format: {
-              type: "json_schema",
-              json_schema: { name: req.role, schema: jsonSchema, strict: true },
+      try {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const res = await fetchImpl(`${endpoint.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${endpoint.apiKey}`,
             },
-            usage: { include: true },
-          }),
-          signal: req.signal,
-        });
-        if (res.status === 429) {
-          throw new RateLimitError(`LLM rate limited (${req.role})`, retryAfterMs(res.headers));
-        }
-        if (!res.ok) {
-          // The body is not echoed: it can carry prompt fragments.
-          throw new Error(`LLM request failed (${req.role}): HTTP ${res.status}`);
-        }
-        const body: any = await res.json();
-        promptTokens += Number(body?.usage?.prompt_tokens) || 0;
-        completionTokens += Number(body?.usage?.completion_tokens) || 0;
-        costUsd += costOf(body, res.headers);
-        model = typeof body?.model === "string" ? body.model : model;
-        const content = body?.choices?.[0]?.message?.content;
-        const text = typeof content === "string" ? content : "";
+            body: JSON.stringify({
+              model: req.model,
+              messages,
+              max_tokens: req.maxTokens,
+              response_format: {
+                type: "json_schema",
+                json_schema: { name: req.role, schema: jsonSchema, strict: true },
+              },
+              usage: { include: true },
+            }),
+            signal: req.signal,
+          });
+          if (res.status === 429) {
+            throw new RateLimitError(`LLM rate limited (${req.role})`, retryAfterMs(res.headers));
+          }
+          if (!res.ok) {
+            // The body is not echoed: it can carry prompt fragments.
+            throw new Error(`LLM request failed (${req.role}): HTTP ${res.status}`);
+          }
+          const body: any = await res.json();
+          promptTokens += Number(body?.usage?.prompt_tokens) || 0;
+          completionTokens += Number(body?.usage?.completion_tokens) || 0;
+          costUsd += costOf(body, res.headers);
+          model = typeof body?.model === "string" ? body.model : model;
+          const content = body?.choices?.[0]?.message?.content;
+          const text = typeof content === "string" ? content : "";
 
-        let parsed: unknown;
-        try {
-          parsed = parseJson(text);
-        } catch {
-          failure = "reply was not valid JSON";
+          let parsed: unknown;
+          try {
+            parsed = parseJson(text);
+          } catch {
+            failure = "reply was not valid JSON";
+            messages.push({ role: "assistant", content: text }, {
+              role: "user",
+              content: `Your reply was not valid JSON. Reply with only JSON matching the schema.`,
+            });
+            continue;
+          }
+          const checked = req.schema.safeParse(parsed);
+          if (checked.success) {
+            return { value: checked.data, model, promptTokens, completionTokens, costUsd };
+          }
+          failure = `reply failed the schema: ${JSON.stringify(checked.error.issues)}`;
           messages.push({ role: "assistant", content: text }, {
             role: "user",
-            content: `Your reply was not valid JSON. Reply with only JSON matching the schema.`,
+            content: `Your reply failed schema validation. Fix these issues and reply with only the corrected JSON:\n${JSON.stringify(checked.error.issues)}`,
           });
-          continue;
         }
-        const checked = req.schema.safeParse(parsed);
-        if (checked.success) {
-          return { value: checked.data, model, promptTokens, completionTokens, costUsd };
-        }
-        failure = `reply failed the schema: ${JSON.stringify(checked.error.issues)}`;
-        messages.push({ role: "assistant", content: text }, {
-          role: "user",
-          content: `Your reply failed schema validation. Fix these issues and reply with only the corrected JSON:\n${JSON.stringify(checked.error.issues)}`,
-        });
+        throw new Error(`LLM ${req.role}: ${failure}`);
+      } catch (error) {
+        throw withCost(error, costUsd);
       }
-      throw new Error(`LLM ${req.role}: ${failure}`);
     },
   };
 }

@@ -7,6 +7,7 @@ const html = (body: string) => `<html><head><title>My &amp; Title</title></head>
 const htmlRes = (body: string, init: ResponseInit = {}) =>
   new Response(body, { ...init, headers: { "content-type": "text/html; charset=utf-8", ...init.headers } });
 const never = (async () => { throw new Error("must not fetch"); }) as never;
+const publicHost = async () => [];
 
 // Crawl4AI path, with bearer token.
 {
@@ -15,7 +16,7 @@ const never = (async () => { throw new Error("must not fetch"); }) as never;
     seen = { url, init };
     return new Response(JSON.stringify({ markdown: "# Crawled\n\nbody", success: true }));
   }) as unknown as typeof fetch;
-  const page = await createPageReader({ CRAWL4AI_URL: "http://crawl:11235/", CRAWL4AI_TOKEN: "tok" }, { fetchImpl, safeFetch: never }).read(URL1);
+  const page = await createPageReader({ CRAWL4AI_URL: "http://crawl:11235/", CRAWL4AI_TOKEN: "tok" }, { fetchImpl, safeFetch: never, resolveHost: publicHost }).read(URL1);
   assert.equal(page.fetchedVia, "crawl4ai");
   assert.equal(page.title, "Crawled");
   assert.equal(seen!.url, "http://crawl:11235/md");
@@ -27,7 +28,7 @@ const never = (async () => { throw new Error("must not fetch"); }) as never;
 for (const crawl of [new Response("boom", { status: 500 }), new Response(JSON.stringify({ markdown: "  " }))]) {
   const page = await createPageReader(
     { CRAWL4AI_URL: "http://crawl" },
-    { fetchImpl: (async () => crawl) as never, safeFetch: (async () => htmlRes(html("Hello world"))) as never },
+    { fetchImpl: (async () => crawl) as never, safeFetch: (async () => htmlRes(html("Hello world"))) as never, resolveHost: publicHost },
   ).read(URL1);
   assert.equal(page.fetchedVia, "safe-fetch");
   assert.equal(page.status, 200);
@@ -57,6 +58,15 @@ const read = (res: Response | Error) =>
 await assert.rejects(
   createPageReader({ CRAWL4AI_URL: "http://crawl" }, { fetchImpl: never, safeFetch: never }).read("http://192.168.0.1/"),
   /public/,
+);
+
+// Crawl4AI never sees a name that resolves to a private address.
+await assert.rejects(
+  createPageReader({ CRAWL4AI_URL: "http://crawl" }, {
+    fetchImpl: never, safeFetch: never,
+    resolveHost: async () => { throw new Error("URL host resolves to a non-public address"); },
+  }).read(URL1),
+  /non-public/,
 );
 
 // Fakes

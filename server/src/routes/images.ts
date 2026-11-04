@@ -258,9 +258,8 @@ function coverResolution(settings: { imageAdvancedOptions?: unknown }) {
   return options && options.coverResolution === "512" ? "512" : "1K";
 }
 
-async function coverImageCost(userId: string, modelId: string, resolution: string) {
+async function coverImageCost(apiKey: string | null, modelId: string, resolution: string) {
   try {
-    const apiKey = await getOpenRouterKey(userId);
     if (!apiKey) return null;
     const model = (await getOpenRouterModels(apiKey, "image")).find((m: { id: string }) => m.id === modelId);
     const price = model?.rawPricing.imageByResolution[resolution as "512" | "1K"] || model?.rawPricing.image;
@@ -311,7 +310,7 @@ imagesRoutes.get("/posts/:postId/covers", async (c) => {
     prompt_drafts: Object.fromEntries(COVER_PRESETS.map((p) => [p.id, coverPromptDraft({ title: post.title, content: post.content || "", preset: p.id, settings })])),
     image_model: settings.imageModel || null,
     can_edit: Boolean(apiKey && settings.imageModel && await imageModelCanEdit(apiKey, settings.imageModel)),
-    cost_per_image: settings.imageModel ? await coverImageCost(userId, settings.imageModel, coverResolution(settings)) : null,
+    cost_per_image: settings.imageModel ? await coverImageCost(apiKey, settings.imageModel, coverResolution(settings)) : null,
   });
 });
 

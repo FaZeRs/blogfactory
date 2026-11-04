@@ -35,6 +35,7 @@ import {
 } from "../services/search-console.js";
 import { drainSeoMetadata, enqueueSeoMetadata, seoMetadata, seoStatusForArticle } from "../services/seo-metadata.js";
 import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
+import { StageInputError } from "../engine/types.js";
 import { hasMcpScope, type McpPrincipal } from "./auth.js";
 import { ACTIVE_MCP_TOOL_NAMES, MCP_SCOPES, MCP_SERVER_VERSION, MCP_TOOL_NAMES, type McpScope } from "./contracts.js";
 
@@ -693,6 +694,7 @@ async function generateDraft(principal: McpPrincipal, input: GenerateDraftInput)
       };
     } catch (error) {
       if (error instanceof EngineUnavailableError) throw new McpToolError("configuration_missing", error.message, "Ask the workspace owner to fix the engine configuration.");
+      if (error instanceof StageInputError) throw new McpToolError("validation_error", error.message, "Call list_publish_targets and choose a connected target for this site.");
       throw error;
     }
   }

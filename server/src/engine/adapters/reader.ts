@@ -1,5 +1,5 @@
 import { extractMainText } from "../../services/internal-linking.js";
-import { safeFetch as defaultSafeFetch, validatePublicUrl } from "../../services/safe-fetch.js";
+import { resolvePublicAddresses, safeFetch as defaultSafeFetch, validatePublicUrl } from "../../services/safe-fetch.js";
 
 export const MAX_PAGE_BYTES = 2_000_000;
 export const MAX_PAGE_CHARS = 200_000;
@@ -51,10 +51,11 @@ async function readCapped(res: Response): Promise<string | null> {
 
 export function createPageReader(
   env: Env,
-  deps: { fetchImpl?: typeof fetch; safeFetch?: typeof defaultSafeFetch } = {},
+  deps: { fetchImpl?: typeof fetch; safeFetch?: typeof defaultSafeFetch; resolveHost?: (hostname: string) => Promise<unknown> } = {},
 ): PageReader {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const safe = deps.safeFetch ?? defaultSafeFetch;
+  const resolveHost = deps.resolveHost ?? resolvePublicAddresses;
   const crawlBase = env.CRAWL4AI_URL?.trim().replace(/\/+$/, "");
 
   async function viaCrawl4ai(url: string, signal?: AbortSignal): Promise<ReadPage | null> {
@@ -114,7 +115,9 @@ export function createPageReader(
 
   return {
     async read(url, signal) {
-      validatePublicUrl(url);
+      const parsed = validatePublicUrl(url);
+      // Crawl4AI fetches from its own network, so a public name that resolves to a private address is refused here.
+      if (crawlBase) await resolveHost(parsed.hostname);
       const crawled = crawlBase ? await viaCrawl4ai(url, signal) : null;
       return crawled ?? viaSafeFetch(url, signal);
     },

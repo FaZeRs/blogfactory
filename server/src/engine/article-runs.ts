@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { articleEvidence, articleGateResults, articleRuns, articleSources, articleStageRuns, jobs, siteIntegrations } from "../db/schema.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
-import { finishOperationEvent, startOperationEvent } from "../services/operation-events.js";
+import { finishOperationEvent, safeOperationMetadata, startOperationEvent } from "../services/operation-events.js";
 import { resolveOpenRouterTextModel } from "../services/openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../services/user-settings.js";
 import { engineAiEndpoint } from "./adapters/llm.js";
@@ -114,15 +115,18 @@ export async function startArticleRun(input: {
   });
 }
 
-/** Claims due runs and advances each one stage; every advance leaves one sanitized ledger event. */
-export async function drainArticleRuns(limit: number, workerId = `worker-${process.pid}`): Promise<number> {
+/**
+ * Claims due runs and advances each one stage; every advance leaves one sanitized ledger event.
+ * The lease owner is unique per drain: a pid alone repeats across containers (often 1), which would defeat the fence.
+ */
+export async function drainArticleRuns(limit: number, workerId = `worker-${process.pid}-${randomUUID()}`): Promise<number> {
   const runs = await claimArticleRuns(workerId, limit, new Date());
   await Promise.allSettled(runs.map(async (run) => {
     const started = Date.now();
     const eventId = await startOperationEvent({
       userId: run.userId, siteId: run.siteId, origin: "system", action: "engine.stage",
       objectType: "article_run", objectId: run.id,
-      metadata: { run_id: run.id, stage: run.currentStage, mode: run.mode, status: "started" },
+      metadata: safeOperationMetadata("engine.stage", { run_id: run.id, stage: run.currentStage, mode: run.mode, status: "started" }),
     });
     let status: "succeeded" | "failed" = "failed";
     let outcome = "failed";
@@ -144,7 +148,7 @@ export async function drainArticleRuns(limit: number, workerId = `worker-${proce
     }
     await finishOperationEvent({
       id: eventId, status, durationMs: Date.now() - started, siteId: run.siteId,
-      metadata: { run_id: run.id, stage: run.currentStage, mode: run.mode, status: outcome, cost_usd: costUsd, duration_ms: Date.now() - started },
+      metadata: safeOperationMetadata("engine.stage", { run_id: run.id, stage: run.currentStage, mode: run.mode, status: outcome, cost_usd: costUsd, duration_ms: Date.now() - started }),
     });
   }));
   return runs.length;
