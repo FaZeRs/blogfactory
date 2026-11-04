@@ -1,0 +1,53 @@
+{
+  "id": "10-whatsapp-enquiry-drafts",
+  "topic": "Answering WhatsApp enquiries faster without losing control",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://messaging-survey.example/expectations",
+      "title": "Reply expectations",
+      "markdown": "# Reply expectations\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nMost customers who contact a business through a messaging app expect an answer within the same working day."
+    },
+    {
+      "url": "https://retail-chat.example/questions",
+      "title": "What customers ask",
+      "markdown": "# What customers ask\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nQuestions about prices, opening hours and delivery made up the majority of incoming chat messages for the small shops studied."
+    },
+    {
+      "url": "https://messaging-docs.example/business-api",
+      "title": "Business messaging integrations",
+      "markdown": "# Business messaging integrations\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nReplies can be prepared by an integration and held for an agent to review before they are sent from the business account."
+    },
+    {
+      "url": "https://consumer-trust.example/pricing",
+      "title": "Wrong prices and trust",
+      "markdown": "# Wrong prices and trust\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nCustomers who received an incorrect price in a chat reply were far less likely to buy from the shop again."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Messaging customers expect a same-day answer.",
+      "kind": "fact",
+      "quote": "Most customers who contact a business through a messaging app expect an answer within the same working day.",
+      "url": "https://messaging-survey.example/expectations"
+    },
+    {
+      "claim": "Prices, hours and delivery dominate chat questions.",
+      "kind": "fact",
+      "quote": "Questions about prices, opening hours and delivery made up the majority of incoming chat messages for the small shops studied.",
+      "url": "https://retail-chat.example/questions"
+    },
+    {
+      "claim": "Business messaging replies can be held for review.",
+      "kind": "fact",
+      "quote": "Replies can be prepared by an integration and held for an agent to review before they are sent from the business account.",
+      "url": "https://messaging-docs.example/business-api"
+    },
+    {
+      "claim": "A wrong price in a reply loses repeat customers.",
+      "kind": "fact",
+      "quote": "Customers who received an incorrect price in a chat reply were far less likely to buy from the shop again.",
+      "url": "https://consumer-trust.example/pricing"
+    }
+  ]
+}

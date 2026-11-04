@@ -1,0 +1,53 @@
+{
+  "id": "03-sales-follow-up-drafts",
+  "topic": "Sales follow-ups that go out on time, checked by you",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://sales-study.example/quotes",
+      "title": "Quote follow-up study",
+      "markdown": "# Quote follow-up study\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nAcross the 300 small firms surveyed, 44 percent of sent quotes never received a single follow-up message."
+    },
+    {
+      "url": "https://b2b-research.example/timing",
+      "title": "Follow-up timing",
+      "markdown": "# Follow-up timing\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nBuyers were noticeably more likely to answer when the follow-up arrived within three working days of the quote."
+    },
+    {
+      "url": "https://crm-docs.example/drafts",
+      "title": "Drafted follow-ups",
+      "markdown": "# Drafted follow-ups\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nThe assistant prepares each follow-up from the quote, the customer record and the salesperson's last notes, and leaves it as a draft."
+    },
+    {
+      "url": "https://email-lab.example/trust",
+      "title": "Edited messages and trust",
+      "markdown": "# Edited messages and trust\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nRecipients rated messages that a salesperson had edited by hand as more trustworthy than unedited templates."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Many sent quotes never get a follow-up.",
+      "kind": "statistic",
+      "quote": "Across the 300 small firms surveyed, 44 percent of sent quotes never received a single follow-up message.",
+      "url": "https://sales-study.example/quotes"
+    },
+    {
+      "claim": "An early follow-up is answered more often.",
+      "kind": "fact",
+      "quote": "Buyers were noticeably more likely to answer when the follow-up arrived within three working days of the quote.",
+      "url": "https://b2b-research.example/timing"
+    },
+    {
+      "claim": "Follow-ups can be drafted from the quote and CRM notes.",
+      "kind": "fact",
+      "quote": "The assistant prepares each follow-up from the quote, the customer record and the salesperson's last notes, and leaves it as a draft.",
+      "url": "https://crm-docs.example/drafts"
+    },
+    {
+      "claim": "Hand-edited messages are trusted more.",
+      "kind": "fact",
+      "quote": "Recipients rated messages that a salesperson had edited by hand as more trustworthy than unedited templates.",
+      "url": "https://email-lab.example/trust"
+    }
+  ]
+}

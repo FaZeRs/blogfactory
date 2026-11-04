@@ -1,0 +1,53 @@
+{
+  "id": "07-build-story-blog-engine",
+  "topic": "How this blog is researched, checked and published",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://ml-safety.example/hallucination",
+      "title": "Confident errors",
+      "markdown": "# Confident errors\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nLanguage models can produce fluent text that states incorrect facts with confidence, so their output needs checking against sources."
+    },
+    {
+      "url": "https://factcheck-lab.example/quotes",
+      "title": "Checking quotes",
+      "markdown": "# Checking quotes\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nComparing each quoted passage with the text of the page it came from caught most misattributed quotes in the test set."
+    },
+    {
+      "url": "https://media-trust.example/sources",
+      "title": "Sources and trust",
+      "markdown": "# Sources and trust\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nReaders rated articles as more trustworthy when every factual claim linked to the source it came from."
+    },
+    {
+      "url": "https://newsroom-practice.example/editors",
+      "title": "Editors and AI drafting",
+      "markdown": "# Editors and AI drafting\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nPublishers that used AI drafting kept a named editor responsible for approving every piece before publication."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Language models can state wrong facts confidently.",
+      "kind": "fact",
+      "quote": "Language models can produce fluent text that states incorrect facts with confidence, so their output needs checking against sources.",
+      "url": "https://ml-safety.example/hallucination"
+    },
+    {
+      "claim": "Comparing quotes with their pages catches misattribution.",
+      "kind": "fact",
+      "quote": "Comparing each quoted passage with the text of the page it came from caught most misattributed quotes in the test set.",
+      "url": "https://factcheck-lab.example/quotes"
+    },
+    {
+      "claim": "Linked sources make articles more trustworthy to readers.",
+      "kind": "fact",
+      "quote": "Readers rated articles as more trustworthy when every factual claim linked to the source it came from.",
+      "url": "https://media-trust.example/sources"
+    },
+    {
+      "claim": "Publishers using AI drafting keep a named editor responsible.",
+      "kind": "fact",
+      "quote": "Publishers that used AI drafting kept a named editor responsible for approving every piece before publication.",
+      "url": "https://newsroom-practice.example/editors"
+    }
+  ]
+}

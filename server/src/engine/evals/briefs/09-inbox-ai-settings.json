@@ -1,0 +1,53 @@
+{
+  "id": "09-inbox-ai-settings",
+  "topic": "Three settings to check before AI touches your inbox",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://email-tools.example/autosend",
+      "title": "Automatic sending",
+      "markdown": "# Automatic sending\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nSeveral popular email assistants can be configured to send replies automatically without anyone reviewing them first."
+    },
+    {
+      "url": "https://assistant-help.example/draft-mode",
+      "title": "Draft-only mode",
+      "markdown": "# Draft-only mode\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nIn draft-only mode, every reply the assistant writes waits in the drafts folder until a person sends it."
+    },
+    {
+      "url": "https://provider-terms.example/retention",
+      "title": "Retention settings",
+      "markdown": "# Retention settings\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nThe retention setting controls how long the provider keeps copies of processed messages on its servers."
+    },
+    {
+      "url": "https://admin-guide.example/scopes",
+      "title": "Access scopes",
+      "markdown": "# Access scopes\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nAccess scopes decide which mailboxes and folders the assistant may read, so it can be kept away from finance or HR mail."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Some email assistants can send replies without review.",
+      "kind": "fact",
+      "quote": "Several popular email assistants can be configured to send replies automatically without anyone reviewing them first.",
+      "url": "https://email-tools.example/autosend"
+    },
+    {
+      "claim": "In draft-only mode replies wait for a person.",
+      "kind": "fact",
+      "quote": "In draft-only mode, every reply the assistant writes waits in the drafts folder until a person sends it.",
+      "url": "https://assistant-help.example/draft-mode"
+    },
+    {
+      "claim": "Retention settings control how long copies are kept.",
+      "kind": "fact",
+      "quote": "The retention setting controls how long the provider keeps copies of processed messages on its servers.",
+      "url": "https://provider-terms.example/retention"
+    },
+    {
+      "claim": "Access scopes limit which folders the assistant reads.",
+      "kind": "fact",
+      "quote": "Access scopes decide which mailboxes and folders the assistant may read, so it can be kept away from finance or HR mail.",
+      "url": "https://admin-guide.example/scopes"
+    }
+  ]
+}

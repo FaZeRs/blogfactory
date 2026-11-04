@@ -1,0 +1,53 @@
+{
+  "id": "02-eu-ai-act-small-firms",
+  "topic": "What the EU AI Act means for a small Baltic business",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://eu-law.example/ai-act-overview",
+      "title": "AI Act overview",
+      "markdown": "# AI Act overview\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nThe regulation follows a risk-based approach, setting stricter obligations for systems that pose higher risks to health, safety or fundamental rights."
+    },
+    {
+      "url": "https://deployer-guide.example/roles",
+      "title": "Providers and deployers",
+      "markdown": "# Providers and deployers\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nCompanies that only use an AI system under their own authority are treated as deployers and carry fewer obligations than providers."
+    },
+    {
+      "url": "https://ai-office.example/timeline",
+      "title": "Application timeline",
+      "markdown": "# Application timeline\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nMost of the transparency obligations, including telling people when they interact with an AI system, apply from 2 August 2026."
+    },
+    {
+      "url": "https://compliance-notes.example/ai-literacy",
+      "title": "AI literacy",
+      "markdown": "# AI literacy\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nOrganisations deploying AI systems should ensure that staff dealing with them have a sufficient level of AI literacy for their role."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "The AI Act sorts systems by risk.",
+      "kind": "fact",
+      "quote": "The regulation follows a risk-based approach, setting stricter obligations for systems that pose higher risks to health, safety or fundamental rights.",
+      "url": "https://eu-law.example/ai-act-overview"
+    },
+    {
+      "claim": "Firms that only use AI systems are deployers with fewer duties.",
+      "kind": "fact",
+      "quote": "Companies that only use an AI system under their own authority are treated as deployers and carry fewer obligations than providers.",
+      "url": "https://deployer-guide.example/roles"
+    },
+    {
+      "claim": "Most transparency duties apply from August 2026.",
+      "kind": "fact",
+      "quote": "Most of the transparency obligations, including telling people when they interact with an AI system, apply from 2 August 2026.",
+      "url": "https://ai-office.example/timeline"
+    },
+    {
+      "claim": "Staff using AI systems need sufficient AI literacy.",
+      "kind": "fact",
+      "quote": "Organisations deploying AI systems should ensure that staff dealing with them have a sufficient level of AI literacy for their role.",
+      "url": "https://compliance-notes.example/ai-literacy"
+    }
+  ]
+}

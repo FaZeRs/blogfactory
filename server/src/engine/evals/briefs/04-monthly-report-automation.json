@@ -1,0 +1,53 @@
+{
+  "id": "04-monthly-report-automation",
+  "topic": "Automating the monthly sales report from your spreadsheets",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://finance-survey.example/reporting",
+      "title": "Time spent on reporting",
+      "markdown": "# Time spent on reporting\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nFinance staff in small companies reported spending between six and ten hours each month assembling the same sales report."
+    },
+    {
+      "url": "https://spreadsheet-risk.example/errors",
+      "title": "Spreadsheet errors",
+      "markdown": "# Spreadsheet errors\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nErrors most often appeared when formulas were copied between monthly files and silently pointed at the wrong range."
+    },
+    {
+      "url": "https://automation-docs.example/scheduled",
+      "title": "Scheduled workflows",
+      "markdown": "# Scheduled workflows\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nA scheduled workflow can collect the latest exports from several systems, merge them into one table and refresh the summary each month."
+    },
+    {
+      "url": "https://audit-guide.example/signoff",
+      "title": "Report sign-off",
+      "markdown": "# Report sign-off\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nAuditors recommend that a named person checks the totals against the source systems before a management report is shared."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Assembling the monthly report takes hours.",
+      "kind": "statistic",
+      "quote": "Finance staff in small companies reported spending between six and ten hours each month assembling the same sales report.",
+      "url": "https://finance-survey.example/reporting"
+    },
+    {
+      "claim": "Copied formulas cause silent errors.",
+      "kind": "fact",
+      "quote": "Errors most often appeared when formulas were copied between monthly files and silently pointed at the wrong range.",
+      "url": "https://spreadsheet-risk.example/errors"
+    },
+    {
+      "claim": "A scheduled workflow can merge exports and refresh the summary.",
+      "kind": "fact",
+      "quote": "A scheduled workflow can collect the latest exports from several systems, merge them into one table and refresh the summary each month.",
+      "url": "https://automation-docs.example/scheduled"
+    },
+    {
+      "claim": "A named person should check report totals.",
+      "kind": "fact",
+      "quote": "Auditors recommend that a named person checks the totals against the source systems before a management report is shared.",
+      "url": "https://audit-guide.example/signoff"
+    }
+  ]
+}

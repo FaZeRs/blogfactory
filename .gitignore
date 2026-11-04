@@ -43,3 +43,6 @@ web/node_modules
 
 # Vercel
 .vercel
+
+# Engine eval reports
+server/.eval/

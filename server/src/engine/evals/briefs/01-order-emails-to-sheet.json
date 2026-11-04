@@ -1,0 +1,53 @@
+{
+  "id": "01-order-emails-to-sheet",
+  "topic": "Turn order emails into spreadsheet rows you can trust",
+  "locale": "en",
+  "sources": [
+    {
+      "url": "https://ops-research.example/order-entry-errors",
+      "title": "Order entry errors",
+      "markdown": "# Order entry errors\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nIn our review of 1,200 manually keyed purchase orders, one in every 40 lines contained a quantity or product code error."
+    },
+    {
+      "url": "https://docs-vendor.example/extraction",
+      "title": "Document extraction",
+      "markdown": "# Document extraction\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nModern document extraction tools can read line items, quantities and delivery dates from order emails and attachments in a structured format."
+    },
+    {
+      "url": "https://smb-guide.example/human-review",
+      "title": "Human review of extracted data",
+      "markdown": "# Human review of extracted data\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nTeams that kept a person approving each extracted row before saving it caught nearly all extraction mistakes before they reached the ledger."
+    },
+    {
+      "url": "https://baltic-trade.example/orders",
+      "title": "How Baltic wholesalers receive orders",
+      "markdown": "# How Baltic wholesalers receive orders\n\nSynthetic evaluation fixture: a fictional source with invented figures, written for the BlogFactory engine eval suite.\n\nMost small wholesalers in Latvia still receive the majority of their customer orders as plain emails or attached spreadsheets."
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "Orders keyed in by hand often contain errors.",
+      "kind": "statistic",
+      "quote": "In our review of 1,200 manually keyed purchase orders, one in every 40 lines contained a quantity or product code error.",
+      "url": "https://ops-research.example/order-entry-errors"
+    },
+    {
+      "claim": "Extraction tools can read line items from order emails.",
+      "kind": "fact",
+      "quote": "Modern document extraction tools can read line items, quantities and delivery dates from order emails and attachments in a structured format.",
+      "url": "https://docs-vendor.example/extraction"
+    },
+    {
+      "claim": "A person approving each row catches most extraction mistakes.",
+      "kind": "fact",
+      "quote": "Teams that kept a person approving each extracted row before saving it caught nearly all extraction mistakes before they reached the ledger.",
+      "url": "https://smb-guide.example/human-review"
+    },
+    {
+      "claim": "Latvian wholesalers still receive most orders by email.",
+      "kind": "fact",
+      "quote": "Most small wholesalers in Latvia still receive the majority of their customer orders as plain emails or attached spreadsheets.",
+      "url": "https://baltic-trade.example/orders"
+    }
+  ]
+}
