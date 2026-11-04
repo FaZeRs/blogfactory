@@ -286,3 +286,22 @@ export async function resolveOpenRouterTextModel(apiKey: string, modelId: string
   if (fallback) return fallback;
   throw new Error(requested ? OPENROUTER_AUTO_MODEL_MESSAGE : OPENROUTER_MODEL_UNAVAILABLE_MESSAGE);
 }
+
+const EDIT_CACHE_TTL = 60 * 60 * 1000;
+let editableImageModels: { ids: Set<string>; ts: number } | null = null;
+
+/** True when the model's OpenRouter image listing accepts at least one input reference. False on fetch errors. */
+export async function imageModelCanEdit(apiKey: string, modelId: string) {
+  try {
+    if (!editableImageModels || Date.now() - editableImageModels.ts > EDIT_CACHE_TTL) {
+      const payload = await fetchOpenRouterJson(OPENROUTER_IMAGE_MODELS_URL, apiKey);
+      const ids = new Set<string>((payload.data || [])
+        .filter((model: any) => Number(model.supported_parameters?.input_references?.max) >= 1)
+        .map((model: any) => String(model.id)));
+      editableImageModels = { ids, ts: Date.now() };
+    }
+    return editableImageModels.ids.has(modelId);
+  } catch {
+    return false;
+  }
+}

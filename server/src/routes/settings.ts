@@ -25,6 +25,7 @@ import { chunkKnowledgeContent } from "../services/knowledge.js";
 import { readJsonObject, safeError } from "../http/error-contract.js";
 import { engineSettingsResponse } from "../engine/article-runs.js";
 import { parseEngineSettings } from "../engine/modes.js";
+import { COVER_STYLE_DEFAULTS, siteDefaultCoverStyle } from "../services/cover-tools.js";
 import { normalizeOpenRouterImageModelId } from "../services/openrouter-models.js";
 import {
   ensureGlobalSettings,
@@ -92,7 +93,9 @@ function normalizeImageAdvancedOptions(value: unknown) {
   const imageDeliveryMode = options.imageDeliveryMode;
   const manualImageProvider = options.manualImageProvider;
   const manualPromptSuffix = options.manualPromptSuffix;
+  const coverStylePreset = options.coverStylePreset;
   return {
+    ...(typeof coverStylePreset === "string" && COVER_STYLE_DEFAULTS.includes(coverStylePreset) ? { coverStylePreset } : {}),
     ...(inlineModel !== undefined ? { inlineImageModel: normalizeInlineImageModelId(inlineModel) } : {}),
     ...(inlineSource !== undefined ? { inlineImageSource: normalizeInlineImageSource(inlineSource) } : {}),
     ...(coverResolution !== undefined ? { coverResolution: normalizeImageResolution(coverResolution) } : {}),
@@ -192,6 +195,7 @@ function serializeSettings(settings: typeof userSettings.$inferSelect | undefine
   const imageDeliveryMode = normalizeImageDeliveryMode(imageAdvancedOptions.imageDeliveryMode);
   const manualImageProvider = normalizeManualImageProvider(imageAdvancedOptions.manualImageProvider);
   const manualPromptSuffix = normalizeManualPromptSuffix(imageAdvancedOptions.manualPromptSuffix);
+  const coverStylePreset = siteDefaultCoverStyle(settings);
 
   return {
     id: settings.id,
@@ -207,6 +211,8 @@ function serializeSettings(settings: typeof userSettings.$inferSelect | undefine
     inlineImageModel,
     inline_image_source: inlineImageSource,
     inlineImageSource,
+    cover_style_preset: coverStylePreset,
+    coverStylePreset,
     cover_image_resolution: coverImageResolution,
     coverImageResolution: coverImageResolution,
     inline_image_resolution: inlineImageResolution,
@@ -352,6 +358,11 @@ function buildSettingsUpdate(body: Record<string, unknown>): SettingsUpdate {
       ? update.imageAdvancedOptions as Record<string, unknown>
       : {};
     update.imageAdvancedOptions = { ...imageAdvancedOptions, inlineImageSource } as never;
+  }
+  const coverStylePreset = body.cover_style_preset ?? body.coverStylePreset;
+  if (coverStylePreset !== undefined) {
+    if (!COVER_STYLE_DEFAULTS.includes(coverStylePreset as string)) throw new Error("Invalid cover style");
+    update.imageAdvancedOptions = { ...(update.imageAdvancedOptions as object | undefined), coverStylePreset } as never;
   }
   const imageDeliveryMode = body.image_delivery_mode ?? body.imageDeliveryMode;
   if (imageDeliveryMode !== undefined) {
@@ -818,6 +829,7 @@ settingsRoutes.put("/", async (c) => {
     return c.json({ error: "No supported settings fields provided" }, 400);
   }
 
+  const directCoverStylePreset = body.cover_style_preset ?? body.coverStylePreset;
   const directInlineImageModel = asOptionalText(body.inline_image_model ?? body.inlineImageModel);
   const directInlineImageSource = body.inline_image_source ?? body.inlineImageSource;
   const directCoverImageResolution = body.cover_image_resolution ?? body.coverImageResolution;
@@ -825,12 +837,13 @@ settingsRoutes.put("/", async (c) => {
   const directImageDeliveryMode = body.image_delivery_mode ?? body.imageDeliveryMode;
   const directManualImageProvider = body.manual_image_provider ?? body.manualImageProvider;
   const directManualPromptSuffix = body.manual_prompt_suffix ?? body.manualPromptSuffix;
-  if (directInlineImageModel !== undefined || directInlineImageSource !== undefined || directCoverImageResolution !== undefined || directInlineImageResolution !== undefined || directImageDeliveryMode !== undefined || directManualImageProvider !== undefined || directManualPromptSuffix !== undefined) {
+  if (directCoverStylePreset !== undefined || directInlineImageModel !== undefined || directInlineImageSource !== undefined || directCoverImageResolution !== undefined || directInlineImageResolution !== undefined || directImageDeliveryMode !== undefined || directManualImageProvider !== undefined || directManualPromptSuffix !== undefined) {
     const siteId = asOptionalText(body.siteId ?? body.site_id) || await getActiveSiteId(userId);
     const existing = siteId ? await ensureSiteSettings(userId, siteId) : await ensureGlobalSettings(userId);
     const imageAdvancedOptions = normalizeImageAdvancedOptions(existing?.imageAdvancedOptions);
     update.imageAdvancedOptions = {
       ...imageAdvancedOptions,
+      ...(directCoverStylePreset !== undefined ? { coverStylePreset: directCoverStylePreset } : {}),
       ...(directInlineImageModel !== undefined ? { inlineImageModel: normalizeInlineImageModelId(directInlineImageModel) } : {}),
       ...(directInlineImageSource !== undefined ? { inlineImageSource: normalizeInlineImageSource(directInlineImageSource) } : {}),
       ...(directCoverImageResolution !== undefined ? { coverResolution: normalizeImageResolution(directCoverImageResolution) } : {}),

@@ -5,7 +5,13 @@ import { imageAssets, imageGenerationRequests, posts } from "../db/schema.js";
 import { eq, and, inArray, desc, or, lt, ne, gte, ilike, sql, type SQL } from "drizzle-orm";
 import { getUserId } from "../middleware/auth.js";
 import { deleteFile, imageAssetValues, storeImageBuffer } from "../services/image-storage.js";
-import { attachImageRequestToPost, drainDeferredImages, kickDeferredImageWorker, resolveLowCostImages } from "../services/low-cost-images.js";
+import { attachImageRequestToPost, drainDeferredImages, kickDeferredImageWorker } from "../services/low-cost-images.js";
+import { attachPostImage } from "../services/image-post-attachments.js";
+import { queueDeferredImageRequest } from "../services/ai-image-queue.js";
+import { buildImageAltText } from "../services/image-slots.js";
+import { COVER_PRESETS, adjustCoverPrompt, cleanCoverPrompt, coverPromptDraft, isCoverPresetId } from "../services/cover-tools.js";
+import { getOpenRouterModels, imageModelCanEdit } from "../services/openrouter-models.js";
+import { getOpenRouterKey } from "../services/api-keys.js";
 import { getEffectiveSettings } from "../services/user-settings.js";
 import { canRestartImageRequest } from "./image-request-controls.js";
 import { createManualImagePromptRequestsForPost } from "../services/generate-content.js";
@@ -239,35 +245,139 @@ imagesRoutes.post("/posts/:postId/manual-prompts", async (c) => {
   }
 });
 
+type CoverPost = { id: string; title: string; content: string | null; siteId: string | null; jobId: string | null; coverImageUrl: string | null };
+
+async function loadCoverPost(postId: string, userId: string): Promise<CoverPost | undefined> {
+  const [post] = await db.select({ id: posts.id, title: posts.title, content: posts.content, siteId: posts.siteId, jobId: posts.jobId, coverImageUrl: posts.coverImageUrl })
+    .from(posts).where(and(eq(posts.id, postId), eq(posts.userId, userId))).limit(1);
+  return post;
+}
+
+function coverResolution(settings: { imageAdvancedOptions?: unknown }) {
+  const options = settings.imageAdvancedOptions as Record<string, unknown> | null | undefined;
+  return options && options.coverResolution === "512" ? "512" : "1K";
+}
+
+async function coverImageCost(userId: string, modelId: string, resolution: string) {
+  try {
+    const apiKey = await getOpenRouterKey(userId);
+    if (!apiKey) return null;
+    const model = (await getOpenRouterModels(apiKey, "image")).find((m: { id: string }) => m.id === modelId);
+    const price = model?.rawPricing.imageByResolution[resolution as "512" | "1K"] || model?.rawPricing.image;
+    return price || null;
+  } catch {
+    return null;
+  }
+}
+
+const coverUrl = (path: string) => `/api/storage/${path}`;
+
+imagesRoutes.get("/posts/:postId/covers", async (c) => {
+  const userId = getUserId(c);
+  const post = await loadCoverPost(c.req.param("postId"), userId);
+  if (!post) return c.json({ error: "Post not found" }, 404);
+  const settings = await getEffectiveSettings(userId, post.siteId);
+  const [versions, pending] = await Promise.all([
+    db.select().from(imageAssets)
+      .where(and(eq(imageAssets.userId, userId), eq(imageAssets.postId, post.id), eq(imageAssets.type, "cover")))
+      .orderBy(desc(imageAssets.createdAt), desc(imageAssets.id)),
+    db.select({ id: imageGenerationRequests.id, status: imageGenerationRequests.status, referencePath: imageGenerationRequests.referencePath })
+      .from(imageGenerationRequests)
+      .where(and(
+        eq(imageGenerationRequests.userId, userId),
+        eq(imageGenerationRequests.postId, post.id),
+        eq(imageGenerationRequests.type, "cover"),
+        inArray(imageGenerationRequests.status, ["queued", "processing"]),
+      ))
+      .orderBy(desc(imageGenerationRequests.createdAt)),
+  ]);
+  const apiKey = settings.imageModel ? await getOpenRouterKey(userId) : null;
+  const defaultPreset = "site_default";
+  return c.json({
+    cover: post.coverImageUrl ? { path: post.coverImageUrl, url: coverUrl(post.coverImageUrl) } : null,
+    versions: versions.map((v) => ({
+      id: v.id,
+      path: v.storagePath,
+      url: coverUrl(v.storagePath),
+      source_kind: v.sourceKind,
+      prompt: v.prompt,
+      model_id: v.modelId,
+      created_at: v.createdAt,
+    })),
+    pending: pending.map((r) => ({ id: r.id, status: r.status, kind: r.referencePath ? "adjust" : "generate" })),
+    presets: COVER_PRESETS.map(({ id, label }) => ({ id, label })),
+    default_preset: defaultPreset,
+    prompt_draft: coverPromptDraft({ title: post.title, content: post.content || "", preset: defaultPreset, settings }),
+    image_model: settings.imageModel || null,
+    can_edit: Boolean(apiKey && settings.imageModel && await imageModelCanEdit(apiKey, settings.imageModel)),
+    cost_per_image: settings.imageModel ? await coverImageCost(userId, settings.imageModel, coverResolution(settings)) : null,
+  });
+});
+
 /**
- * Queues one AI cover for an existing post with the account's image model and style prompt.
- * Rendering takes 10-30s, longer than proxies and Bun's idle timeout allow, so this returns at once
- * and the image worker attaches the cover; the editor watches the post until it appears.
+ * Queues AI covers for an existing post. Rendering takes 10-30s, longer than proxies and Bun's idle timeout allow,
+ * so this returns at once; the image worker stores each result as a version and the editor polls /covers.
  */
 imagesRoutes.post("/posts/:postId/cover", async (c) => {
   const userId = getUserId(c);
-  const postId = c.req.param("postId");
-  const [post] = await db.select({ id: posts.id, title: posts.title, content: posts.content, siteId: posts.siteId, jobId: posts.jobId })
-    .from(posts).where(and(eq(posts.id, postId), eq(posts.userId, userId))).limit(1);
+  const post = await loadCoverPost(c.req.param("postId"), userId);
   if (!post) return c.json({ error: "Post not found" }, 404);
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const count = body.count === undefined ? 1 : body.count;
+  if (count !== 1 && count !== 3) return c.json({ error: "count must be 1 or 3", code: "invalid_count" }, 400);
+  if (body.preset !== undefined && !isCoverPresetId(body.preset)) return c.json({ error: "Unknown cover style", code: "invalid_preset" }, 400);
   const settings = await getEffectiveSettings(userId, post.siteId);
   if (!settings.imageModel) return c.json({ error: "Choose an image model in Article Settings first.", code: "image_model_missing" }, 400);
-  const result = await resolveLowCostImages({
-    content: post.content || "",
-    title: post.title,
-    userId,
-    postId: post.id,
-    jobId: post.jobId,
-    imageConfig: { cover: { enabled: true }, inline: { enabled: false } },
-    imageModel: settings.imageModel,
-    stylePrompt: settings.imageStylePrompt,
-    immediateAi: false,
-    force: true,
-  });
-  const cover = result.results.find((r) => r.slot.type === "cover");
-  if (!cover || cover.status === "failed") return c.json({ error: cover?.error || "Cover image could not be queued" }, 502);
-  if (cover.status === "queued") await kickDeferredImageWorker(userId);
-  return c.json({ status: cover.status, request_id: cover.queuedRequestId ?? null }, cover.status === "queued" ? 202 : 200);
+  let prompt: string;
+  if (body.prompt !== undefined) {
+    const cleaned = cleanCoverPrompt(body.prompt);
+    if (!cleaned) return c.json({ error: "Prompt must be at least 10 characters.", code: "invalid_prompt" }, 400);
+    prompt = cleaned;
+  } else {
+    prompt = coverPromptDraft({ title: post.title, content: post.content || "", preset: (body.preset as string | undefined) ?? "site_default", settings });
+  }
+  const slot = { type: "cover" as const, position: 0, aspectRatio: "16:9", resolution: coverResolution(settings), prompt, altText: buildImageAltText({ title: post.title, type: "cover", content: post.content || "" }) };
+  const requestIds: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const queued = await queueDeferredImageRequest({ userId, postId: post.id, jobId: post.jobId, imageModel: settings.imageModel, slot, force: true, replacesCover: post.coverImageUrl ?? null });
+    if (queued.id) requestIds.push(queued.id);
+  }
+  await kickDeferredImageWorker(userId);
+  return c.json({ request_ids: requestIds }, 202);
+});
+
+imagesRoutes.post("/posts/:postId/cover/adjust", async (c) => {
+  const userId = getUserId(c);
+  const post = await loadCoverPost(c.req.param("postId"), userId);
+  if (!post) return c.json({ error: "Post not found" }, 404);
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const instruction = typeof body.instruction === "string" ? body.instruction.replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, "").trim() : "";
+  if (instruction.length < 3 || instruction.length > 500) return c.json({ error: "Instruction must be 3 to 500 characters.", code: "invalid_instruction" }, 400);
+  if (!post.coverImageUrl) return c.json({ error: "This post has no cover to adjust.", code: "cover_missing" }, 400);
+  const settings = await getEffectiveSettings(userId, post.siteId);
+  if (!settings.imageModel) return c.json({ error: "Choose an image model in Article Settings first.", code: "image_model_missing" }, 400);
+  const apiKey = await getOpenRouterKey(userId);
+  if (!apiKey || !(await imageModelCanEdit(apiKey, settings.imageModel))) {
+    return c.json({ error: "This image model cannot edit images. Choose another in Article Settings.", code: "image_edit_unsupported" }, 400);
+  }
+  const slot = { type: "cover" as const, position: 0, aspectRatio: "16:9", resolution: coverResolution(settings), prompt: adjustCoverPrompt(instruction), altText: buildImageAltText({ title: post.title, type: "cover", content: post.content || "" }) };
+  const queued = await queueDeferredImageRequest({ userId, postId: post.id, jobId: post.jobId, imageModel: settings.imageModel, slot, force: true, referencePath: post.coverImageUrl, replacesCover: post.coverImageUrl });
+  await kickDeferredImageWorker(userId);
+  return c.json({ request_ids: queued.id ? [queued.id] : [] }, 202);
+});
+
+imagesRoutes.put("/posts/:postId/cover", async (c) => {
+  const userId = getUserId(c);
+  const post = await loadCoverPost(c.req.param("postId"), userId);
+  if (!post) return c.json({ error: "Post not found" }, 404);
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const assetId = typeof body.asset_id === "string" ? body.asset_id : "";
+  const [asset] = assetId && /^[0-9a-f-]{36}$/i.test(assetId)
+    ? await db.select().from(imageAssets).where(and(eq(imageAssets.id, assetId), eq(imageAssets.userId, userId), eq(imageAssets.postId, post.id), eq(imageAssets.type, "cover"))).limit(1)
+    : [];
+  if (!asset) return c.json({ error: "Cover version not found" }, 404);
+  await attachPostImage(post.id, { type: "cover", position: 0, aspectRatio: "16:9", resolution: asset.resolution || "1K", prompt: asset.prompt || "", altText: asset.altText || "" }, asset.storagePath, "auto", userId);
+  return c.json({ cover_image_url: asset.storagePath });
 });
 
 imagesRoutes.post("/requests/:id/retry", async (c) => {
