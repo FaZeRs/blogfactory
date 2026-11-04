@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { PAIN_POINT_IDS, SERVICE_IDS } from "../../components/component-spec.js";
 import { ENGINE_CONFIG } from "../../config.js";
+import type { ComponentProfile } from "../../profile.js";
 
 const g = ENGINE_CONFIG.gates;
 /** The article shape the brief plans: section budgets plus an opening and the FAQ fit this band. */
@@ -10,6 +12,8 @@ export const PLAN = {
   outline: { min: 4, max: 10 },
   faq: { min: 3, max: 6 },
   takeaways: { min: 3, max: 6 },
+  /** Lindevo's `key-takeaways` accepts 3-5 list items. */
+  lindevoTakeaways: { min: 3, max: 5 },
   links: { min: 0, max: 4 },
 } as const;
 
@@ -30,6 +34,9 @@ export const BriefModelSchema = z.object({
   faq: z.array(z.object({ question: z.string().min(10).max(160), answerPoints: z.array(z.string().min(3)).min(1).max(4) })).max(12),
   takeaways: z.array(z.string().min(10).max(200)).min(1).max(8),
   internalLinks: z.array(z.object({ url: z.string(), anchorText: z.string().min(2).max(80) })).max(12),
+  /** The call to action's service and pain point, or "none". Required (checked in `validateBrief`) for the Lindevo profile. */
+  service: z.enum([...SERVICE_IDS, "none"]).optional(),
+  painPoint: z.enum([...PAIN_POINT_IDS, "none"]).optional(),
 });
 export type Brief = z.infer<typeof BriefModelSchema>;
 
@@ -55,14 +62,19 @@ export function fitLengthPlan(b: Brief): Brief {
 }
 
 /** What code checks and the model cannot be trusted with. The messages join the repair feedback. */
-export function validateBrief(b: Brief, ctx: { verifiedIds: Set<string>; links: Set<string>; minClaims: number }): string[] {
+export function validateBrief(b: Brief, ctx: { verifiedIds: Set<string>; links: Set<string>; minClaims: number; profile?: ComponentProfile }): string[] {
   const issues: string[] = [];
   const range = (name: string, n: number, r: { min: number; max: number }) => {
     if (n < r.min || n > r.max) issues.push(`${name}: ${n} given, ${r.min}-${r.max} allowed`);
   };
   range("outline sections", b.outline.length, PLAN.outline);
   range("FAQ questions", b.faq.length, PLAN.faq);
-  range("takeaways", b.takeaways.length, PLAN.takeaways);
+  const lindevo = ctx.profile === "lindevo";
+  range("takeaways", b.takeaways.length, lindevo ? PLAN.lindevoTakeaways : PLAN.takeaways);
+  if (lindevo) {
+    if (!b.service) issues.push(`service is required: one of ${SERVICE_IDS.join(", ")} or "none"`);
+    if (!b.painPoint) issues.push(`painPoint is required: one of ${PAIN_POINT_IDS.join(", ")} or "none"`);
+  }
   range("internal links", b.internalLinks.length, PLAN.links);
   if (!b.titleOptions.includes(b.chosenTitle)) issues.push("chosenTitle must be one of titleOptions");
   for (const [name, t] of [["chosenTitle", b.chosenTitle], ...b.titleOptions.map((t, i) => [`titleOptions[${i}]`, t] as const)] as const) {

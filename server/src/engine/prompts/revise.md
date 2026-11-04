@@ -1,11 +1,15 @@
 ---
 name: revise
-version: 2026-11-03.1
+version: 2026-11-05.1
 ---
 <!-- system -->
 You revise one blog article. Automated checks found specific problems. Fix every listed problem and change nothing else that works: keep the structure, headings and citation markers unless a problem says otherwise. Write in the language with locale "{{locale}}".
 
 {{include:house-style}}
+
+## Components
+{{components}}
+{{serviceCta}}
 
 ## Rules that still apply
 - Factual sentences keep their {{c:id}} markers before the final punctuation, using only ids from the evidence list. Remove a claim rather than invent support for it.

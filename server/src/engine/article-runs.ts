@@ -9,6 +9,7 @@ import { resolveOpenRouterTextModel } from "../services/openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../services/user-settings.js";
 import { engineAiEndpoint } from "./adapters/llm.js";
 import { estimateRunUsd, parseEngineSettings, resolveRunSettings } from "./modes.js";
+import { resolveDestinationProvider } from "./profile.js";
 import { claimArticleRuns } from "./runtime/claim.js";
 import { advanceArticleRun, failRunWithoutStage } from "./runtime/advance.js";
 import { loadEngineDeps } from "./runtime/deps.js";
@@ -95,7 +96,9 @@ export async function startArticleRun(input: {
     angle: input.guidance?.angle?.trim().slice(0, 500) || undefined,
     instructions: input.guidance?.instructions?.trim().slice(0, 1500) || undefined,
   };
+  const destinationProvider = await resolveDestinationProvider(input.userId, input.siteId, input.preferredIntegrationId);
   const frozen = {
+    destinationProvider,
     models, budgetUsd: resolved.budgetUsd, citationStyle: resolved.citationStyle,
     ...(guidance.angle || guidance.instructions ? { guidance } : {}),
     ...(input.cover ? { cover: true } : {}),

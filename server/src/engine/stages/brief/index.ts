@@ -1,4 +1,6 @@
+import { briefComponents } from "../../components/guide.js";
 import { ENGINE_CONFIG } from "../../config.js";
+import { componentProfile, type ComponentProfile } from "../../profile.js";
 import type { KeywordOverview } from "../../adapters/types.js";
 import { MODE_PRESETS } from "../../modes.js";
 import { DATA_RULE, fenceData, preparePrompt, promptVersion } from "../../prompts/load.js";
@@ -21,6 +23,8 @@ export type BriefInput = {
   minClaims: number;
   /** Angle and instructions the editor typed on Create Content; planning guidance, never facts. */
   guidance?: string;
+  /** The component profile frozen at run start; missing means "markdown". */
+  profile?: ComponentProfile;
 };
 
 const MAX_LINK_CANDIDATES = 60;
@@ -66,6 +70,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
       links: linkCandidates(settings),
       guidance: editorGuidance(run.settings),
+      profile: componentProfile(run),
       keywordData: r.useKeywordData,
       minClaims: Math.min(r.minVerifiedClaims, verified.length),
     };
@@ -77,8 +82,11 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
     if (input.keywordData && dataForSeo) {
       keyword = await dataForSeo.keywordOverview(input.topic, { locale: input.locale, signal: ctx.signal }).catch(() => null);
     }
+    const lindevo = input.profile === "lindevo";
+    const takeaways = lindevo ? PLAN.lindevoTakeaways : PLAN.takeaways;
     const prompt = await preparePrompt("brief", {
       dataRule: DATA_RULE,
+      components: briefComponents(lindevo),
       voice: input.voice || "No custom voice rules.",
       openingWords: PLAN.openingWords,
       faqWordsEach: PLAN.faqWordsEach,
@@ -87,8 +95,8 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       maxWords: ENGINE_CONFIG.gates.maxWords,
       faqMin: PLAN.faq.min,
       faqMax: PLAN.faq.max,
-      takeawaysMin: PLAN.takeaways.min,
-      takeawaysMax: PLAN.takeaways.max,
+      takeawaysMin: takeaways.min,
+      takeawaysMax: takeaways.max,
       titleMax: ENGINE_CONFIG.gates.titleMax,
       descriptionMax: ENGINE_CONFIG.gates.descriptionMax,
       topic: fenceData("topic", input.topic),
@@ -98,7 +106,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       guidance: fenceData("editor-direction", input.guidance || "None."),
       today: now().toISOString().slice(0, 10),
     });
-    const check = { links: new Set(input.links.map((l) => l.url)), verifiedIds: new Set(input.evidence.map((e) => e.id)), minClaims: input.minClaims };
+    const check = { links: new Set(input.links.map((l) => l.url)), verifiedIds: new Set(input.evidence.map((e) => e.id)), minClaims: input.minClaims, profile: input.profile };
     const usage: NonNullable<Awaited<ReturnType<Stage<unknown, unknown>["run"]>>["usage"]> = [];
     let feedback = "";
     let issues: string[] = [];

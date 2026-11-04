@@ -52,6 +52,14 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES === "1") {
     const [run] = await db.select().from(articleRuns).where(eq(articleRuns.id, started.runId));
     assert.equal(run.jobId, job.id);
     assert.equal((run.settings as any).models.draft, "anthropic/claude-sonnet-5.5", "custom gateway keeps ids as given");
+    assert.equal((run.settings as any).destinationProvider, null, "no destination, no provider");
+    const { siteIntegrations } = await import("../db/schema.js");
+    const [integration] = await db.insert(siteIntegrations).values({ userId: user.id, siteId: site.id, provider: "lindevo", displayName: "L", credentialsEncrypted: "x" }).returning();
+    for (const preferredIntegrationId of [undefined, integration.id]) {
+      const again = await startArticleRun({ ...input, preferredIntegrationId });
+      const [r] = await db.select().from(articleRuns).where(eq(articleRuns.id, again.runId));
+      assert.equal((r.settings as any).destinationProvider, "lindevo", "frozen from the only or preferred connected destination");
+    }
     assert.equal((await getArticleRunForJob(user.id, started.jobId))?.stages.length, 0);
     assert.equal(await getArticleRunForJob(randomUUID(), started.jobId), null, "other users see nothing");
     // Key vanishes after the run started: one drain fails the run and its job with the reason.

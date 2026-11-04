@@ -4,7 +4,7 @@ import { DATA_RULE, fenceData, preparePrompt, promptVersion } from "../../prompt
 import type { Stage } from "../../runtime/stage.js";
 import { StageInputError } from "../../types.js";
 import { sanitizeText } from "../../util.js";
-import { loadWriterContext, toDraftOutput, type DraftInput } from "../draft/index.js";
+import { componentVars, loadWriterContext, toDraftOutput, type DraftInput } from "../draft/index.js";
 import { DraftSchema, type DraftOutput } from "../draft/schema.js";
 import type { GatesOutput } from "../gates/schema.js";
 import { evidenceText, latestDraft, latestStageOutput, linksText, modelFor } from "../shared.js";
@@ -43,6 +43,7 @@ export const reviseStage: Stage<ReviseInput, DraftOutput> = {
     const { keywordData: _k, ...brief } = input.brief;
     const prompt = await preparePrompt("revise", {
       dataRule: DATA_RULE,
+      ...componentVars(input),
       locale: input.locale,
       voice: input.voice || "No custom voice rules.",
       minWords: g.minWords,

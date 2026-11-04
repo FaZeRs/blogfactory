@@ -6,6 +6,7 @@ import { BywordCard, FactoryMark, WorkspaceBackground } from "@/components/layou
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { resolveImagePath } from "@/hooks/useSignedUrl";
+import { componentsToMarkdown } from "@/lib/preview-components";
 import type { PostRevision } from "@/components/posts/EditorialSafetyPanel";
 
 type PreviewPost = {
@@ -63,7 +64,7 @@ export default function PostPreviewPage() {
               unwrapDisallowed={true}
               components={{ img: ({ src, alt }) => <img src={resolveImagePath(src) || src || ""} alt={alt || ""} /> }}
             >
-              {post.content}
+              {componentsToMarkdown(post.content)}
             </ReactMarkdown>
           </article>
         </BywordCard>

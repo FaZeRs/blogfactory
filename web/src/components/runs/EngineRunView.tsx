@@ -29,6 +29,7 @@ const ORDER = ["research", "brief", "draft", "gates", "deliver"];
 
 const GATES: Record<string, string> = {
   citations: "Claims cite verified sources",
+  components: "Lindevo components",
   faq: "FAQ answers the planned questions",
   links: "Links work",
   "links-warnings": "Link warnings",

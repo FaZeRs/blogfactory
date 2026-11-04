@@ -32,6 +32,8 @@ export interface SourceItem {
 export interface GateInput {
   description: string;
   evidence: EvidenceItem[];
+  /** Set for the Lindevo profile only: the brief's CTA choice. Its presence turns the `components` gate on. */
+  components?: { painPoint: string | null; service: string | null };
   existingPosts: { content: string; id: string; title: string }[];
   markdown: string;
   raw: string;
