@@ -87,6 +87,7 @@ import {
   ImageDeliveryMode,
   ManualImageProvider,
 } from "@/components/content/ImageGenerationSettings";
+import { EngineSettingsCard } from "@/components/content/EngineSettingsCard";
 import { LiveImageModelSelect } from "@/components/content/LiveImageModelSelect";
 import {
   BywordCard,
@@ -961,6 +962,8 @@ export default function Settings() {
               </div>
             </BywordCard>
           )}
+
+          {activeSection === "basics" && <EngineSettingsCard siteId={activeSiteId} />}
 
           {activeSection === "api-keys" && (
             <BywordCard>

@@ -1,10 +1,11 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, type EngineStageRun } from "@/lib/api";
 import { asArray, asRecord, asStringArray } from "@/lib/api-shape";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { BywordCard, BywordPageShell, SectionHeader } from "@/components/layout/BywordSurface";
+import { StageTimeline } from "@/components/runs/StageTimeline";
 import { RunWaterfall } from "@/components/runs/RunWaterfall";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/patterns/EmptyState";
@@ -484,6 +485,13 @@ export default function Jobs() {
     enabled: !!selectedJob?.result_post_ids?.length,
   });
 
+  const { data: jobDetail } = useQuery({
+    queryKey: ["job-engine", selectedJob?.id, selectedJob?.status],
+    queryFn: () => api.get<{ engine?: { stages: EngineStageRun[] } }>(`/jobs/${selectedJob!.id}`),
+    enabled: !!selectedJob,
+    refetchInterval: selectedJob?.status === "running" ? 5000 : false,
+  });
+
   const jobRows = useMemo(() => aggregateJobRows(jobs), [jobs]);
   const selectedJobId = selectedJob?.id;
   const selectedBatchId = selectedJob?.generation_plan?.batchId;
@@ -857,6 +865,13 @@ export default function Jobs() {
                   </Button>
                 </div>
               </SheetHeader>
+
+              {jobDetail?.engine && jobDetail.engine.stages.length > 0 && (
+                <div className="mb-6 space-y-2">
+                  <h3 className="text-sm font-semibold">Stages</h3>
+                  <StageTimeline stages={jobDetail.engine.stages} />
+                </div>
+              )}
 
               {/* Live Progress for running jobs */}
               {(selectedJob.status === "running" || selectedJob.status === "pending") && (

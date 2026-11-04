@@ -195,3 +195,34 @@ export async function pushCmsDrafts(
 
   return { total: targets.length, failures };
 }
+
+export type EngineMode = "fast" | "normal" | "deep";
+
+export interface EngineSettings {
+  models?: Partial<Record<"research_queries" | "research_claims" | "brief" | "draft" | "revise", string>>;
+  budgetUsd?: number;
+  citationStyle?: "inline" | "references";
+}
+
+export interface EngineAvailability {
+  available: boolean;
+  reason: string | null;
+  adapters: { searxng: boolean; crawl4ai: boolean; dataforseo: boolean; gateway: "openrouter" | "custom" };
+}
+
+export interface EngineSettingsResponse {
+  settings: EngineSettings;
+  availability: EngineAvailability;
+  estimates: { normal: number; deep: number };
+}
+
+export interface EngineStageRun {
+  stage: string;
+  attempt: number;
+  status: string;
+  model: string | null;
+  costUsd: number;
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+}

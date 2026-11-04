@@ -1,3 +1,4 @@
+import { statusTone } from "@/components/runs/status-tone";
 import { formatSourceType } from "@/lib/source-labels";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -15,13 +16,6 @@ type RunSpan = {
   duration: number;
   open: boolean;
 };
-
-function statusTone(status: string) {
-  if (status === "failed") return { bar: "bg-status-error", text: "text-status-error" };
-  if (status === "running") return { bar: "bg-status-running", text: "text-status-running" };
-  if (status === "pending") return { bar: "bg-byword-border", text: "text-muted-foreground" };
-  return { bar: "bg-status-success", text: "text-status-success" };
-}
 
 function percentile(sorted: number[], fraction: number) {
   if (!sorted.length) return 0;

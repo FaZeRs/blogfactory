@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, type EngineMode } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Input } from "@/components/ui/input";
 import { InputAffordance } from "@/components/ui/input-affordance";
@@ -51,6 +51,8 @@ import { normalizeHttpUrl, stripHttpProtocol } from "@/lib/url-validation";
 import { safeFormatDistanceToNow } from "@/lib/date-format";
 import { useAuth } from "@/hooks/useAuth";
 import { SourceType } from "@/components/content/GenerationProgress";
+import { GenerationModeSelect } from "@/components/content/GenerationModeSelect";
+import { useEngineSettings } from "@/hooks/useEngineSettings";
 import { LiveTextModelSelect, isUnavailableModel, preferredTextModelId } from "@/components/content/LiveTextModelSelect";
 import {
   SplitImageGenerationSettings,
@@ -406,7 +408,12 @@ export default function ContentCreator() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [personaId, setPersonaId] = useState("");
   const [modelId, setModelId] = useState("anthropic/claude-3.5-sonnet");
-  const [variations, setVariations] = useState<1 | 3 | 5>(1);
+  const [pickedVariations, setVariations] = useState<1 | 3 | 5>(1);
+  const [pickedMode, setGenerationMode] = useState<EngineMode>("fast");
+  const { data: engineInfo } = useEngineSettings(activeSiteId);
+  const engineEligible = (sourceType === "article_keyword" || sourceType === "article_title") && !!engineInfo?.availability.available;
+  const generationMode: EngineMode = engineEligible ? pickedMode : "fast";
+  const variations = generationMode === "fast" ? pickedVariations : 1; // normal/deep generate one draft
   const [imageConfig, setImageConfig] = useState<SplitImageConfig>(DEFAULT_SPLIT_CONFIG);
   const [imageDeliveryMode, setImageDeliveryMode] = useState<ImageDeliveryMode>("generate");
   const [manualImageProvider, setManualImageProvider] = useState<ManualImageProvider>("midjourney");
@@ -744,6 +751,7 @@ export default function ContentCreator() {
       personaId: personaId || null,
       modelId,
       variations: 1,
+      mode: generationMode === "fast" ? undefined : generationMode,
       draftBatchId,
       draftVariationIndex: draftIndex,
       draftVariationCount: variations > 1 ? variations : undefined,
@@ -1390,6 +1398,17 @@ export default function ContentCreator() {
             />
 
             <div className="space-y-3">
+              <Label>Generation mode</Label>
+              <GenerationModeSelect
+                value={generationMode}
+                onChange={setGenerationMode}
+                availability={engineInfo?.availability}
+                estimates={engineInfo?.estimates}
+                sourceType={sourceType}
+              />
+            </div>
+
+            {generationMode === "fast" && <div className="space-y-3">
               <Label>Output variations</Label>
               <div className="grid grid-cols-3 gap-3">
                 {([1, 3, 5] as const).map((num) => (
@@ -1414,7 +1433,7 @@ export default function ContentCreator() {
                   </button>
                 ))}
               </div>
-            </div>
+            </div>}
 
             <ActiveJobsPanel jobs={activeJobs} onDismiss={dismissJob} />
 
