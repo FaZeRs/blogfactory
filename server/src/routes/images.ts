@@ -239,7 +239,11 @@ imagesRoutes.post("/posts/:postId/manual-prompts", async (c) => {
   }
 });
 
-/** One AI cover for an existing post, using the account's image model and style prompt. */
+/**
+ * Queues one AI cover for an existing post with the account's image model and style prompt.
+ * Rendering takes 10-30s, longer than proxies and Bun's idle timeout allow, so this returns at once
+ * and the image worker attaches the cover; the editor watches the post until it appears.
+ */
 imagesRoutes.post("/posts/:postId/cover", async (c) => {
   const userId = getUserId(c);
   const postId = c.req.param("postId");
@@ -257,12 +261,13 @@ imagesRoutes.post("/posts/:postId/cover", async (c) => {
     imageConfig: { cover: { enabled: true }, inline: { enabled: false } },
     imageModel: settings.imageModel,
     stylePrompt: settings.imageStylePrompt,
-    immediateAi: true,
+    immediateAi: false,
+    force: true,
   });
   const cover = result.results.find((r) => r.slot.type === "cover");
-  if (cover?.status === "queued") await kickDeferredImageWorker(userId);
-  if (cover?.status === "failed") return c.json({ error: cover.error || "Cover image generation failed" }, 502);
-  return c.json({ status: cover?.status ?? "failed", cover_image_url: result.coverPath });
+  if (!cover || cover.status === "failed") return c.json({ error: cover?.error || "Cover image could not be queued" }, 502);
+  if (cover.status === "queued") await kickDeferredImageWorker(userId);
+  return c.json({ status: cover.status, request_id: cover.queuedRequestId ?? null }, cover.status === "queued" ? 202 : 200);
 });
 
 imagesRoutes.post("/requests/:id/retry", async (c) => {

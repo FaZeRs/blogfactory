@@ -24,6 +24,8 @@ export async function queueDeferredImageRequest(opts: {
   jobId: string | null;
   imageModel: string;
   slot: ImageSlot;
+  /** An explicit user request always renders a new image instead of reusing a finished identical one. */
+  force?: boolean;
 }) {
   const [existing] = await db
     .select({
@@ -60,7 +62,7 @@ export async function queueDeferredImageRequest(opts: {
     return { id: existing.id, created: false, status: "queued" };
   }
 
-  if (existing?.status === "processing" || (existing && existing.prompt === opts.slot.prompt && existing.modelId === opts.imageModel)) {
+  if (existing?.status === "processing" || (!opts.force && existing && existing.prompt === opts.slot.prompt && existing.modelId === opts.imageModel)) {
     return { id: existing.id, created: false, status: existing.status };
   }
 

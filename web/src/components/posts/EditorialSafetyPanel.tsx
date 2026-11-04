@@ -229,22 +229,39 @@ function DestinationPicker({ postId, siteId }: { postId: string; siteId?: string
   );
 }
 
-/** Generates one AI cover with the account's image model; the editor picks it up from the refreshed post. */
+const COVER_WAIT_MS = 90_000;
+
+/** Queues one AI cover, then refreshes the post until it appears; the button unmounts once the check passes. */
 function GenerateCoverButton({ postId }: { postId: string }) {
   const queryClient = useQueryClient();
+  const [waitingSince, setWaitingSince] = useState<number | null>(null);
   const generate = useMutation({
     mutationFn: () => api.post<{ status: string }>(`/images/posts/${postId}/cover`),
     onSuccess: (result) => {
+      if (result.status === "queued") setWaitingSince(Date.now());
       queryClient.invalidateQueries({ queryKey: ["post", postId] });
       queryClient.invalidateQueries({ queryKey: ["post-preflight", postId] });
-      toast.success(result.status === "attached" ? "Cover image added" : "Cover image queued; it appears when ready");
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Cover image could not be generated"),
   });
+  useEffect(() => {
+    if (waitingSince === null) return;
+    const timer = setInterval(() => {
+      if (Date.now() - waitingSince > COVER_WAIT_MS) {
+        setWaitingSince(null);
+        toast.error("The cover is taking longer than expected. Check the Image Gallery for its status.");
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["post", postId] });
+      queryClient.invalidateQueries({ queryKey: ["post-preflight", postId] });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [postId, queryClient, waitingSince]);
+  const busy = generate.isPending || waitingSince !== null;
   return (
-    <Button type="button" variant="outline" size="sm" className="mt-2 h-8 text-xs" onClick={() => generate.mutate()} disabled={generate.isPending}>
-      {generate.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="mr-1.5 h-3.5 w-3.5" />}
-      {generate.isPending ? "Generating…" : "Generate cover"}
+    <Button type="button" variant="outline" size="sm" className="mt-2 h-8 text-xs" onClick={() => generate.mutate()} disabled={busy}>
+      {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="mr-1.5 h-3.5 w-3.5" />}
+      {busy ? "Generating cover…" : "Generate cover"}
     </Button>
   );
 }

@@ -53,6 +53,7 @@ export async function resolvePostImages(opts: {
   stylePrompt?: string | null;
   settings?: LowCostImageSettings | null;
   immediateAi?: boolean;
+  force?: boolean;
 }): Promise<ImageResolutionResult> {
   const settings = opts.settings || {};
   const imageModel = opts.imageModel || "";
