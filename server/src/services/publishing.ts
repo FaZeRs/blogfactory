@@ -73,6 +73,7 @@ interface PublishOptions {
   publishingMetadata?: unknown;
   expectedUpdatedAt?: Date;
   reviewOverride?: boolean;
+  publishAt?: Date;
 }
 
 export class SeoMetadataNotReadyError extends Error {
@@ -537,6 +538,9 @@ export async function publishPost(userId: string, postId: string, integrationId:
       }
     }
 
+    if (publishOptions.publishAt && provider !== "lindevo") {
+      validation.warnings.push("This destination does not support scheduled publishing; the draft has no publish date.");
+    }
     externalResult =
       provider === "wordpress"
         ? await publishWordPress(credentials as WordPressCredentials, article, mode, publishOptions)
@@ -545,7 +549,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
           : provider === "wix"
             ? await publishWix(credentials as WixCredentials, article, mode)
             : provider === "lindevo"
-              ? await publishLindevo(credentials as LindevoCredentials, article, mode, await previousLindevoArticleId(userId, postId, integration.id))
+              ? await publishLindevo(credentials as LindevoCredentials, article, mode, await previousLindevoArticleId(userId, postId, integration.id), publishOptions.publishAt)
               : await publishFramer(credentials as FramerCredentials, article, mode, integration.config as Record<string, unknown> | null);
 
     const result = externalResult;
@@ -2187,7 +2191,7 @@ async function testLindevo(credentials: LindevoCredentials) {
   return { success: true, message: `Connected to ${domainFromUrl(credentials.mcpUrl)}` };
 }
 
-export function lindevoArticleArgs(article: ArticlePayload, category: string, thumbnail?: string, uploaded = new Map<string, string>()) {
+export function lindevoArticleArgs(article: ArticlePayload, category: string, thumbnail?: string, uploaded = new Map<string, string>(), publishAt?: Date) {
   // An image Lindevo did not take keeps a link to BlogFactory storage, which must then be public.
   const inlineImages = article.inlineImages.map((image) => {
     const to = uploaded.get(image.url) || (image.url.startsWith("http") ? image.url : getPublicUrl(image.url));
@@ -2202,6 +2206,7 @@ export function lindevoArticleArgs(article: ArticlePayload, category: string, th
     category,
     tags: article.tags,
     ...(thumbnail ? { thumbnail, imageAlt: truncateAtWord(article.coverAltText, 125) } : {}),
+    ...(publishAt ? { publishAt: publishAt.toISOString() } : {}),
   };
 }
 
@@ -2234,7 +2239,7 @@ async function previousLindevoArticleId(userId: string, postId: string, integrat
   return previous?.externalId || null;
 }
 
-async function publishLindevo(credentials: LindevoCredentials, article: ArticlePayload, mode: PublishMode, previousId: string | null): Promise<PublishResult> {
+async function publishLindevo(credentials: LindevoCredentials, article: ArticlePayload, mode: PublishMode, previousId: string | null, publishAt?: Date): Promise<PublishResult> {
   if (mode === "publish") throw new Error("Lindevo receives drafts only; publish the article from the Lindevo dashboard");
   const existing = previousId
     ? (await lindevoCall(credentials, "get_article", { id: previousId })).article as { isDraft?: boolean } | null
@@ -2249,7 +2254,7 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
     const url = await uploadLindevoImage(credentials, image.url, `${article.slug}-${index + 1}`).catch(() => null);
     if (url) uploaded.set(image.url, url);
   }
-  const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded);
+  const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded, publishAt);
   const data = existing && previousId
     ? await lindevoCall(credentials, "update_article", { id: previousId, ...args })
     : await lindevoCall(credentials, "create_article", args);

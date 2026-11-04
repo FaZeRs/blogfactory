@@ -459,9 +459,13 @@ postsRoutes.post("/:id/publish", async (c) => {
   const expectedValue = body.expected_updated_at ?? body.expectedUpdatedAt;
   const expectedUpdatedAt = typeof expectedValue === "string" ? new Date(expectedValue) : undefined;
   if (expectedUpdatedAt && Number.isNaN(expectedUpdatedAt.getTime())) return c.json({ error: "expected_updated_at must be an ISO timestamp" }, 400);
+  const publishAtValue = body.publish_at ?? body.publishAt;
+  const publishAt = typeof publishAtValue === "string" ? new Date(publishAtValue) : undefined;
+  if (publishAtValue !== undefined && (!publishAt || Number.isNaN(publishAt.getTime()) || publishAt.getTime() <= Date.now())) return c.json({ error: "publish_at must be a future ISO timestamp" }, 400);
   let result;
   try {
     result = await publishPost(userId, id, integrationId, {
+      publishAt,
       mode,
       postType,
       tags: parseList(body.tags),

@@ -939,11 +939,14 @@ type PushDraftInput = {
   tags?: string[];
   categories?: string[];
   excerpt?: string;
+  publish_at?: string;
   mode?: unknown;
 };
 
 async function pushToCmsDraft(principal: McpPrincipal, input: PushDraftInput) {
   if (input.mode !== undefined) throw new McpToolError("validation_error", "mode is not accepted; MCP always sends a CMS draft.", "Remove mode and retry.");
+  const publishAt = input.publish_at ? new Date(input.publish_at) : undefined;
+  if (publishAt && publishAt.getTime() <= Date.now()) throw new McpToolError("validation_error", "publish_at must be in the future.", "Choose a later publish_at or omit it.");
   const [post] = await db.select({ siteId: posts.siteId }).from(posts).where(and(
     eq(posts.id, input.post_id),
     eq(posts.userId, principal.userId),
@@ -968,6 +971,7 @@ async function pushToCmsDraft(principal: McpPrincipal, input: PushDraftInput) {
       categories: input.categories,
       excerpt: input.excerpt,
       expectedUpdatedAt: new Date(input.expected_updated_at),
+      publishAt,
     });
   } catch (error) {
     if (error instanceof ExpectedPostVersionError) throw new McpToolError("conflict", error.message, "Call get_post and retry with its updated_at.");
@@ -1673,6 +1677,7 @@ export const MCP_TOOL_REGISTRY = {
       tags: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
       categories: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
       excerpt: z.string().trim().max(500).optional(),
+      publish_at: z.iso.datetime().optional(),
     },
     outputSchema: successOutputSchema({
       success: z.literal(true),

@@ -62,6 +62,7 @@ generate_draft
 - `update_draft` and `push_to_cms_draft` require the current `expected_updated_at` value. A version conflict writes nothing and requires a refresh.
 - Revision, SEO, and destination failures block CMS draft delivery. Cover-image and publishing-metadata warnings do not.
 - Multiple destinations require explicit selection.
+- `push_to_cms_draft` accepts an optional future `publish_at` (ISO datetime). Only Lindevo forwards it, as a draft publish date; other destinations ignore it and return a warning. The article stays a draft.
 - Repeating the same post/version/destination delivery is deduplicated and does not create a second external draft.
 
 ## Review Card MCP App
