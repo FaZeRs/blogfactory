@@ -3,6 +3,7 @@ import { safeError } from "../http/error-contract.js";
 import { checkAccountGuardrails } from "./account-guardrails.js";
 import { campaignItems, imageAssets, imageGenerationRequests, jobs, posts, feeds, generationLogs, personas, sites, siteIntegrations } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
+import { getObject } from "./s3-client.js";
 import { saveImageBuffer } from "./image-storage.js";
 import { getOpenRouterKey } from "./api-keys.js";
 import { extractContent } from "./extract-content.js";
@@ -1712,10 +1713,12 @@ export async function createManualImagePromptRequestsForPost(userId: string, pos
 }
 
 export async function generateQueuedImageRequest(request: typeof imageGenerationRequests.$inferSelect) {
-  if (!request.jobId) throw new Error("Queued image request is missing job data");
-
   const openRouterKey = await getOpenRouterKey(request.userId);
   const modelId = await validateImageModelForRequest(openRouterKey, openRouterImageModelId(request.modelId), request.type);
+
+  const references = request.referencePath
+    ? [`data:image/webp;base64,${(await getObject(request.referencePath)).body.toString("base64")}`]
+    : undefined;
 
   const result = await generateSingleImage(
     request.prompt,
@@ -1728,7 +1731,9 @@ export async function generateQueuedImageRequest(request: typeof imageGeneration
     request.type,
     request.position || 0,
     request.postId || null,
-    openRouterKey || ""
+    openRouterKey || "",
+    references,
+    request.id
   );
 
   if (result?.storagePath && request.postId) {
@@ -1748,12 +1753,13 @@ export async function generateQueuedImageRequest(request: typeof imageGeneration
   return result;
 }
 
-export function openRouterImageRequestPayload(modelId: string, prompt: string, resolution: string, aspectRatio: string) {
+export function openRouterImageRequestPayload(modelId: string, prompt: string, resolution: string, aspectRatio: string, references?: string[]) {
   return {
     model: modelId,
     prompt,
     resolution: openRouterImageResolution(modelId, resolution),
     aspect_ratio: aspectRatio,
+    ...(references?.length ? { input_references: references.map((url) => ({ type: "image_url", image_url: { url } })) } : {}),
   };
 }
 
@@ -1777,11 +1783,13 @@ async function generateSingleImage(
   resolution: string,
   aspectRatio: string,
   userId: string,
-  jobId: string,
+  jobId: string | null,
   type: string,
   position: number,
   postId: string | null,
-  openRouterKey: string
+  openRouterKey: string,
+  references?: string[],
+  requestId?: string
 ): Promise<{ storagePath: string | null; cost: number } | null> {
   if (!openRouterKey) throw new Error("Add your OpenRouter API key in Settings before using AI image models");
 
@@ -1795,7 +1803,7 @@ async function generateSingleImage(
         Authorization: `Bearer ${openRouterKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(openRouterImageRequestPayload(modelId, prompt, resolution, aspectRatio)),
+      body: JSON.stringify(openRouterImageRequestPayload(modelId, prompt, resolution, aspectRatio, references)),
     });
   } catch (err) {
     if (!isAbortTimeout(err)) throw err;
@@ -1808,7 +1816,7 @@ async function generateSingleImage(
       provider: "openrouter-image",
       status: "failed",
       latencyMs: Date.now() - startedAt,
-      sessionId: jobId,
+      sessionId: jobId ?? requestId,
       responseData: { error: message },
     });
     throw new Error(message);
@@ -1824,7 +1832,7 @@ async function generateSingleImage(
       provider: "openrouter-image",
       status: "failed",
       latencyMs: Date.now() - startedAt,
-      sessionId: jobId,
+      sessionId: jobId ?? requestId,
       responseData: { status: resp.status, error: errorText.slice(0, 1000) },
     });
     throw new Error(`OpenRouter image failed (${resp.status})${errorText ? `: ${errorText.slice(0, 180)}` : ""}`);
@@ -1863,7 +1871,7 @@ async function generateSingleImage(
     totalTokens,
     cost,
     latencyMs: Date.now() - startedAt,
-    sessionId: jobId,
+    sessionId: jobId ?? requestId,
     responseData: { id: data.id, usage },
   });
 
@@ -1883,12 +1891,12 @@ async function generateSingleImage(
     altText,
     modelId,
     provider: "openrouter-image",
-    sourceKind: "ai",
+    sourceKind: references?.length ? "ai_edit" : "ai",
     aspectRatio,
     resolution,
     position,
     cost,
-    jobId,
+    jobId: jobId ?? undefined,
     postId: postId || undefined,
   });
 

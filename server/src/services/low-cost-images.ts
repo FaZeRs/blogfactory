@@ -54,6 +54,7 @@ export async function resolvePostImages(opts: {
   settings?: LowCostImageSettings | null;
   immediateAi?: boolean;
   force?: boolean;
+  replacesCover?: string | null;
 }): Promise<ImageResolutionResult> {
   const settings = opts.settings || {};
   const imageModel = opts.imageModel || "";

@@ -302,6 +302,10 @@ export const imageGenerationRequests = pgTable("image_generation_requests", {
   importedAssetId: uuid("imported_asset_id").references(() => imageAssets.id, { onDelete: "set null" }),
   lastError: text("last_error"),
   completedVia: text("completed_via"),
+  /** Stored image an Adjust request starts from. */
+  referencePath: text("reference_path"),
+  /** Cover path when the request was queued ("" = no cover); null on requests that predate cover versions. */
+  replacesCover: text("replaces_cover"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
