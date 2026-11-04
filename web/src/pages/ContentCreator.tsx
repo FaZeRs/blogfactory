@@ -290,7 +290,9 @@ function GenerationBrief({
   onLinkDensityChange,
   topicFit,
   blockers,
+  costLabel,
 }: {
+  costLabel?: string;
   title: string;
   source: string;
   persona: string;
@@ -308,7 +310,7 @@ function GenerationBrief({
     { label: "Source", value: source || "Missing" },
     { label: "Voice", value: persona || "No persona" },
     { label: "Model", value: model || "No model" },
-    { label: "Cost", value: formatCompactCurrency(estimate.totalExpected) },
+    { label: "Cost", value: costLabel ?? formatCompactCurrency(estimate.totalExpected) },
     { label: "Images", value: imagePlan },
     { label: "Links", value: linkState },
   ];
@@ -788,6 +790,7 @@ export default function ContentCreator() {
         sourceType: sourceType as SourceType,
         sourceLabel: variations > 1 ? `${getSourceLabel()} · Draft ${draftIndex}/${variations}` : getSourceLabel(),
         variations: 1,
+        engine: generationMode !== "fast",
       });
 
       try {
@@ -1374,8 +1377,9 @@ export default function ContentCreator() {
               title="Generation brief"
               source={getSourceLabel()}
               persona={selectedPersona?.name || "Default editorial voice"}
-              model={selectedTextModel?.name || modelId}
+              model={generationMode === "fast" ? selectedTextModel?.name || modelId : `${generationMode === "deep" ? "Deep" : "Normal"} mode picks a model per step`}
               estimate={articleCostEstimate}
+              costLabel={generationMode === "fast" ? undefined : `≈ $${(engineInfo?.estimates?.[generationMode] ?? 0).toFixed(2)}`}
               imagePlan={imagePlanLabel}
               linkState={contractLinkLabel}
               linksEnabled={internalLinksEnabled}
@@ -1437,7 +1441,7 @@ export default function ContentCreator() {
 
             <ActiveJobsPanel jobs={activeJobs} onDismiss={dismissJob} />
 
-            <CostEstimateCard estimate={articleCostEstimate} />
+            {generationMode === "fast" && <CostEstimateCard estimate={articleCostEstimate} />}
 
             <Button
               onClick={handleGenerate}
@@ -1450,7 +1454,7 @@ export default function ContentCreator() {
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
 
-            {!isGenerating && (
+            {!isGenerating && generationMode === "fast" && (
               <p className="flex items-center justify-center gap-1.5 text-center text-sm text-muted-foreground">
                 <Clock className="h-4 w-4" />
                 Estimated generation time: about {variations * 15} seconds.

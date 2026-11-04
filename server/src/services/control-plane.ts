@@ -110,9 +110,14 @@ type DraftActionInput = {
 const severityRank: Record<ActionSeverity, number> = { blocker: 0, review: 1, warning: 2 };
 const kindRank = new Map<ActionKind, number>(ACTION_KINDS.map((kind, index) => [kind, index]));
 
+/** Engine bookkeeping lives under `engine`; it is not tags, categories or provider metadata. */
+function savedPublishingMetadata(value: unknown) {
+  return Boolean(value && typeof value === "object" && Object.keys(value).some((key) => key !== "engine"));
+}
+
 export function classifyDraftAction(input: DraftActionInput): ActionItem | null {
   const reasons: ActionReason[] = [];
-  const hasPublishingMetadata = Boolean(input.publishingMetadata && typeof input.publishingMetadata === "object" && Object.keys(input.publishingMetadata).some((key) => key !== "engine"));
+  const hasPublishingMetadata = savedPublishingMetadata(input.publishingMetadata);
   const preferredRoutingReady = Boolean(
     input.preferredIntegrationId
     && input.integrationSiteId === input.siteId
@@ -370,7 +375,7 @@ export async function getReviewPacket(input: { userId: string; postId: string; a
   const previousRevision = revisionRows[1] || null;
   const seoReady = Boolean(readySeoMetadataForArticle(post.seoMetadata, post.title, post.content));
   const usableDestinations = destinations.filter(testedConnectionReady);
-  const hasPublishingMetadata = Boolean(post.publishingMetadata && typeof post.publishingMetadata === "object" && Object.keys(post.publishingMetadata).length);
+  const hasPublishingMetadata = savedPublishingMetadata(post.publishingMetadata);
   const checks = [
     { id: "saved_revision", label: "Saved revision", status: currentRevision ? "pass" : "blocker", message: currentRevision ? `Revision ${currentRevision.revisionNumber}` : "No saved revision exists" },
     { id: "seo", label: "Canonical SEO", status: seoReady ? "pass" : "blocker", message: seoReady ? "Current and valid" : "SEO metadata is missing, stale, or invalid" },

@@ -198,7 +198,8 @@ jobsRoutes.get("/:id", async (c) => {
     ...(engine ? {
       engine: {
         run_id: engine.run.id, mode: engine.run.mode, state: engine.run.state, stage: engine.run.currentStage,
-        spent_usd: engine.run.spentUsd, budget_usd: engine.run.budgetUsd, stages: engine.stages,
+        spent_usd: engine.run.spentUsd, budget_usd: engine.run.budgetUsd, state_reason: engine.run.stateReason,
+        stages: engine.stages, sources: engine.sources, evidence: engine.evidence, gates: engine.gates,
       },
     } : {}),
     routing_status: result.site_id && result.preferred_integration_id && integration_site_id === result.site_id && result.integration_status === "connected" ? "ready" : "needs_routing",

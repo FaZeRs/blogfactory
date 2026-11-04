@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { articleRuns, articleStageRuns, jobs, siteIntegrations } from "../db/schema.js";
+import { articleEvidence, articleGateResults, articleRuns, articleSources, articleStageRuns, jobs, siteIntegrations } from "../db/schema.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { finishOperationEvent, startOperationEvent } from "../services/operation-events.js";
@@ -12,6 +12,7 @@ import { claimArticleRuns } from "./runtime/claim.js";
 import { advanceArticleRun, failRunWithoutStage } from "./runtime/advance.js";
 import { loadEngineDeps } from "./runtime/deps.js";
 import type { ArticleRunRow } from "./runtime/stage.js";
+import { claimIdsByEvidence, stageDetails } from "./run-view.js";
 import { STAGES } from "./stages/index.js";
 import { StageInputError, type EngineMode, type ModelRole, type StageKey } from "./types.js";
 
@@ -28,11 +29,14 @@ export class EngineUnavailableError extends Error {
   }
 }
 
-export function engineAvailability(env: Env = process.env) {
+export function engineAvailability(env: Env = process.env, hasOpenRouterKey = true) {
   const has = (key: string) => Boolean(env[key]?.trim());
+  const reason = !persistentBackgroundExecution(env) ? "worker_required"
+    : !engineAiEndpoint(env, hasOpenRouterKey ? "key" : null) ? "ai_key_missing"
+    : null;
   return {
-    available: persistentBackgroundExecution(env),
-    reason: persistentBackgroundExecution(env) ? null : "worker_required",
+    available: reason === null,
+    reason,
     adapters: {
       searxng: has("SEARXNG_URL"),
       crawl4ai: has("CRAWL4AI_URL"),
@@ -42,10 +46,10 @@ export function engineAvailability(env: Env = process.env) {
   };
 }
 
-export function engineSettingsResponse(raw: unknown, env: Env = process.env) {
+export function engineSettingsResponse(raw: unknown, env: Env = process.env, hasOpenRouterKey = true) {
   return {
     settings: parseEngineSettings(raw),
-    availability: engineAvailability(env),
+    availability: engineAvailability(env, hasOpenRouterKey),
     estimates: { normal: estimateRunUsd("normal"), deep: estimateRunUsd("deep") },
   };
 }
@@ -148,21 +152,50 @@ export async function drainArticleRuns(limit: number, workerId = `worker-${proce
 
 export type StageRunSummary = {
   stage: StageKey; attempt: number; status: string; model: string | null; costUsd: number;
-  startedAt: string; finishedAt: string | null; error: string | null;
+  startedAt: string; finishedAt: string | null; error: string | null; details: Record<string, unknown> | null;
 };
 
-export async function getArticleRunForJob(userId: string, jobId: string): Promise<{ run: ArticleRunRow; stages: StageRunSummary[] } | null> {
+export type RunSourceView = { id: string; url: string; title: string | null; fetchedVia: string | null; httpStatus: number | null; textLength: number | null };
+export type RunEvidenceView = { claimId: string | null; sourceId: string; claim: string; quote: string; verified: boolean; method: string | null; reason: string | null };
+export type RunGateView = { attempt: number; gate: string; passed: boolean; severity: string | null; issues: unknown; metrics: unknown };
+
+export async function getArticleRunForJob(userId: string, jobId: string): Promise<{
+  run: ArticleRunRow; stages: StageRunSummary[]; sources: RunSourceView[]; evidence: RunEvidenceView[]; gates: RunGateView[];
+} | null> {
   const [run] = await db.select().from(articleRuns)
     .where(and(eq(articleRuns.jobId, jobId), eq(articleRuns.userId, userId))).limit(1);
   if (!run) return null;
-  const rows = await db.select().from(articleStageRuns)
-    .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId)))
-    .orderBy(asc(articleStageRuns.startedAt));
+  const scope = (t: typeof articleSources | typeof articleEvidence | typeof articleGateResults) => and(eq(t.runId, run.id), eq(t.userId, userId));
+  const [rows, sources, evidence, gates] = await Promise.all([
+    db.select().from(articleStageRuns)
+      .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId)))
+      .orderBy(asc(articleStageRuns.startedAt)),
+    db.select({
+      id: articleSources.id, url: articleSources.url, title: articleSources.title, fetchedVia: articleSources.fetchedVia,
+      httpStatus: articleSources.httpStatus, textLength: articleSources.textLength,
+    }).from(articleSources).where(scope(articleSources)).orderBy(asc(articleSources.fetchedAt)),
+    db.select({
+      id: articleEvidence.id, sourceId: articleEvidence.sourceId, claim: articleEvidence.claim, quote: articleEvidence.quote,
+      verified: articleEvidence.verified, method: articleEvidence.method, reason: articleEvidence.reason,
+    }).from(articleEvidence).where(scope(articleEvidence)),
+    db.select({
+      attempt: articleGateResults.attempt, gate: articleGateResults.gate, passed: articleGateResults.passed,
+      severity: articleGateResults.severity, issues: articleGateResults.issues, metrics: articleGateResults.metrics,
+    }).from(articleGateResults).where(scope(articleGateResults)).orderBy(asc(articleGateResults.attempt), asc(articleGateResults.gate)),
+  ]);
+  const research = rows.findLast((r) => r.stage === "research" && r.status === "succeeded");
+  const claimIds = claimIdsByEvidence(research?.output);
   return {
     run,
     stages: rows.map((r) => ({
       stage: r.stage as StageKey, attempt: r.attempt, status: r.status, model: r.model, costUsd: r.costUsd,
       startedAt: r.startedAt.toISOString(), finishedAt: r.finishedAt?.toISOString() ?? null, error: r.error,
+      details: r.status === "succeeded" || r.status === "reused" ? stageDetails(r.stage as StageKey, r.output) : null,
     })),
+    sources,
+    evidence: evidence
+      .map(({ id, ...e }) => ({ claimId: claimIds.get(id) ?? null, ...e }))
+      .sort((a, b) => Number(a.claimId?.slice(1) ?? 1e9) - Number(b.claimId?.slice(1) ?? 1e9)),
+    gates,
   };
 }

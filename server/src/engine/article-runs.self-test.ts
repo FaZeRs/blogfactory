@@ -14,6 +14,12 @@ const custom = engineAvailability({ BACKGROUND_EXECUTION_MODE: "worker", ENGINE_
 assert.equal(custom.adapters.gateway, "custom");
 assert.equal(custom.adapters.searxng, true);
 assert.equal(custom.adapters.dataforseo, false, "needs login and password");
+assert.equal(custom.available, false, "a custom gateway needs its API key");
+assert.deepEqual(
+  { ...engineAvailability({ BACKGROUND_EXECUTION_MODE: "worker" }, false), adapters: undefined },
+  { available: false, reason: "ai_key_missing", adapters: undefined },
+  "no OpenRouter key means the engine is not ready",
+);
 
 assert.deepEqual(
   safeOperationMetadata("engine.stage", { prompt: "x", quote: "y", stage: "draft", run_id: "r", mode: "normal", status: "advanced", cost_usd: 0.1, duration_ms: 5, source_value: "s" }),

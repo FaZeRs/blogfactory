@@ -3,6 +3,13 @@ import type { EngineAvailability, EngineMode } from "@/lib/api";
 
 const REASONS: Record<string, string> = {
   worker_required: "Needs a background worker",
+  ai_key_missing: "Add an OpenRouter key in Settings first",
+};
+
+const ABOUT: Record<EngineMode, { text: string; time: string }> = {
+  fast: { text: "One AI pass from your source. No web research or fact checks.", time: "About 15 seconds per draft" },
+  normal: { text: "Researches the web, keeps only claims backed by a quote, plans, writes and checks the draft.", time: "Usually 2–4 minutes" },
+  deep: { text: "More sources, search data and a stronger writer, with up to two revision passes.", time: "Usually 4–8 minutes" },
 };
 
 const adapter = (name: string, on: boolean) => `${name} ${on ? "✓" : "—"}`;
@@ -40,10 +47,13 @@ export function GenerationModeSelect({
           ))}
         </TabsList>
       </Tabs>
+      <p className="text-sm text-muted-foreground">
+        {ABOUT[value].text} <span className="whitespace-nowrap">{ABOUT[value].time}.</span>
+      </p>
       {disabledReason && disabledReason !== "Loading" && (
         <p className="text-xs text-muted-foreground">{disabledReason}</p>
       )}
-      {availability && (
+      {availability && value !== "fast" && (
         <p className="text-xs text-muted-foreground">
           {estimate != null && `≈ $${estimate.toFixed(2)} estimated · `}
           {adapter("SearXNG", availability.adapters.searxng)} · {adapter("Crawl4AI", availability.adapters.crawl4ai)} ·{" "}

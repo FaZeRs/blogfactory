@@ -3,8 +3,7 @@ import { createHash } from "node:crypto";
 import { duplicateSeoSlugs, generateValidatedCandidate, mergeManualSeoMetadata, normalizeAiSeoCandidate, normalizeSeoSlug, parseSeoCandidate, readySeoMetadataForArticle, SEO_LIMITS, SEO_MODEL_ID, SEO_RESPONSE_FORMAT, SeoGenerationAttemptError, seoSourceHash, seoStatusForArticle, validateSeoForArticle, validateSeoMetadata } from "./seo-metadata.js";
 
 assert.equal(SEO_MODEL_ID, "openai/gpt-4.1-mini");
-assert.deepEqual(SEO_RESPONSE_FORMAT.json_schema.schema.properties.metaTitle, { type: "string", minLength: 48, maxLength: 56 });
-assert.deepEqual(SEO_RESPONSE_FORMAT.json_schema.schema.properties.metaDescription, { type: "string", minLength: 125, maxLength: 138 });
+assert.equal(JSON.stringify(SEO_RESPONSE_FORMAT).match(/minLength|maxLength|pattern/), null, "length rules break strict decoding; validation enforces them");
 
 const valid = parseSeoCandidate({
   slug: "twitter-yirmi-yil-memler-toplumsal-hareketler",
@@ -123,7 +122,13 @@ await assert.rejects(
   }),
   /remained invalid after repair/i,
 );
-assert.equal(failedCalls, 2);
+assert.equal(failedCalls, 3, "one generation and two repair rounds");
+let nearMissCalls = 0;
+const secondRepair = await generateValidatedCandidate(generationInput, async () => {
+  nearMissCalls += 1;
+  return response(nearMissCalls < 3 ? { ...valid, metaDescription: "Geçersiz." } : valid);
+});
+assert.equal(secondRepair.attempts, 3);
 
 const screenshotRegressions = [
   {

@@ -64,6 +64,18 @@ test("deep mode looks the keyword up once; it lands in the output", async () => 
   expect(out.output.keywordData?.volume).toBe(900);
 });
 
+test("deep mode falls back to the chosen keyword when the topic has no search data", async () => {
+  const asked: string[] = [];
+  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordOverview: async (keyword: string) => {
+    asked.push(keyword);
+    return asked.length === 1 ? null : { keyword, volume: 4400, difficulty: 31, intent: "commercial", aiOverview: false };
+  } };
+  const { ctx } = fakeCtx({ llm: { brief: [good()] }, dataForSeo });
+  const out = await briefStage.run({ ...input, topic: "how to pick solar panels for a small roof", keywordData: true }, ctx);
+  expect(asked).toEqual(["how to pick solar panels for a small roof", good().primaryKeyword]);
+  expect(out.output.keywordData?.volume).toBe(4400);
+});
+
 test("link candidates come from the index only, deduped", () => {
   expect(linkCandidates({ internalLinkIndex: { pages: [{ url: "https://s.example/a", title: "A" }, { url: "https://s.example/a", title: "A2" }, { title: "no url" }] } })).toEqual([{ url: "https://s.example/a", title: "A" }]);
   expect(linkCandidates({})).toEqual([]);

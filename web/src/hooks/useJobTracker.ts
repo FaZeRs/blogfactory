@@ -13,6 +13,8 @@ export interface TrackedJob {
   error: string;
   draftProgress: DraftProgress | null;
   backendStep?: string;
+  /** Normal or deep run: progress comes from the engine's stages. */
+  engine?: boolean;
   startedAt: Date;
 }
 
@@ -187,6 +189,7 @@ export function useJobTracker(onJobComplete?: (result: JobTerminalResult) => voi
       sourceLabel: string;
       variations: number;
       immediateComplete?: boolean;
+      engine?: boolean;
     }) => {
       const trackId = `track_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -200,6 +203,7 @@ export function useJobTracker(onJobComplete?: (result: JobTerminalResult) => voi
         error: "",
         draftProgress: params.variations > 1 ? { current: 1, total: params.variations, completed: 0 } : null,
         backendStep: "starting",
+        engine: params.engine,
         startedAt: new Date(),
       };
 

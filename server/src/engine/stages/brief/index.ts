@@ -105,6 +105,10 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       const brief: Brief = fitLengthPlan(r.value);
       issues = validateBrief(brief, check).map(sanitizeText);
       if (issues.length === 0) {
+        // Long topics rarely have search data; the chosen keyword usually does. Recorded for the reviewer, not the prompt.
+        if (!keyword && input.keywordData && dataForSeo && brief.primaryKeyword.toLowerCase() !== input.topic.toLowerCase()) {
+          keyword = await dataForSeo.keywordOverview(brief.primaryKeyword, { locale: input.locale, signal: ctx.signal }).catch(() => null);
+        }
         return { next: { type: "advance", to: "draft" }, output: { ...brief, keywordData: keyword }, usage };
       }
       // The problems quote model text that began as untrusted evidence, so the list is data too.
