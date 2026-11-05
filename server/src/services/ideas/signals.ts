@@ -3,7 +3,7 @@ import type { DataForSeoClient } from "../../engine/adapters/types.js";
 import { sanitizeText, truncate } from "../../engine/util.js";
 import { tokens } from "./novelty.js";
 
-export const SIGNAL_SOURCES = ["gsc", "news", "keywords", "paa", "rss", "competitor"] as const;
+export const SIGNAL_SOURCES = ["gsc", "news", "keywords", "paa", "rss", "competitor", "ai_gap"] as const;
 export type SignalSource = typeof SIGNAL_SOURCES[number];
 export type Signal = {
   id: string;
@@ -34,6 +34,8 @@ export type CollectorDeps = {
   fetchFeed: (url: string, limit: number, days: number) => Promise<FeedItem[]>;
   gscQueries: () => Promise<GscQueryRow[]>;
   feedUrls: () => Promise<string[]>;
+  /** AI-answer gaps the site could fill; absent means the source is skipped. */
+  aiGaps?: () => Promise<{ question: string; competitorHosts: string[]; otherHosts: string[] }[]>;
 };
 
 const clean = (t: string | null | undefined, max: number) => truncate(sanitizeText(t ?? "").replace(/\s+/g, " ").trim(), max);
@@ -168,6 +170,17 @@ const collectors: Record<SignalSource, Collector> = {
       }
     }
     return out;
+  },
+
+  async ai_gap(d) {
+    return ((await d.aiGaps?.()) ?? []).slice(0, 20).map((g) => {
+      const hosts = [...g.competitorHosts, ...g.otherHosts].slice(0, 5);
+      return {
+        source: "ai_gap" as const,
+        title: clean(g.question, 200),
+        summary: `AI answer gap: AI assistants answered without citing this site${hosts.length ? `; they cited ${hosts.join(", ")}` : ""}`,
+      };
+    });
   },
 };
 

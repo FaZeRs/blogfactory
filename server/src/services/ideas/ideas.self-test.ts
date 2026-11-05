@@ -84,10 +84,12 @@ const baseDeps: CollectorDeps = {
   fetchFeed: async () => [{ title: "Feed item about crm", url: "https://news.test/a", pubDate: "2026-11-04" }],
   gscQueries: async () => [{ query: "crm for plumbers", impressions: 120, clicks: 2, position: 14.26 }],
   feedUrls: async () => ["https://feed.test/rss"],
+  aiGaps: async () => [{ question: "How do I pick a CRM for a plumbing firm?", competitorHosts: ["rival.test"], otherHosts: ["wiki.test"] }],
 };
 const all = await collectSignals(baseDeps);
 const bySource = Object.fromEntries(all.reports.map((r) => [r.source, r.count]));
-assert.deepEqual(bySource, { gsc: 1, news: 1, keywords: 1, paa: 1, rss: 1, competitor: 1 });
+assert.deepEqual(bySource, { gsc: 1, news: 1, keywords: 1, paa: 1, rss: 1, competitor: 1, ai_gap: 1 });
+assert.match(all.signals.find((s) => s.source === "ai_gap")?.summary ?? "", /rival\.test, wiki\.test/);
 assert.equal(all.signals.find((s) => s.source === "gsc")?.metric?.position, 14.3);
 assert.equal(all.signals.find((s) => s.source === "keywords")?.metric?.volume, 900);
 assert.ok(all.signals.find((s) => s.source === "competitor")?.title.includes("crm onboarding checklist"));
@@ -101,7 +103,7 @@ const flaky = await collectSignals({
 }, 50);
 assert.equal(flaky.reports.find((r) => r.source === "gsc")?.error, "db down");
 assert.equal(flaky.reports.find((r) => r.source === "rss")?.error, "timed out");
-assert.equal(flaky.signals.length, 4, "the other collectors still deliver");
+assert.equal(flaky.signals.length, 5, "the other collectors still deliver");
 const scripted = await collectSignals({ ...baseDeps, fetchFeed: async () => [{ title: "Feed item with a script link", url: "javascript:alert(1)" }] });
 assert.equal(scripted.signals.find((s) => s.source === "rss")?.url, undefined, "only http(s) URLs are kept");
 const noDfs = await collectSignals({ ...baseDeps, dataForSeo: null });

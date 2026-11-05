@@ -11,7 +11,7 @@ Verified on 2026-08-22:
 - WorkOS browser OAuth and personal `bf_mcp_` connection tokens are supported.
 - OAuth requests AuthKit's standard `openid`, `profile`, `email`, and `offline_access` scopes. BlogFactory then grants its site-bound draft-only capabilities (`content:read`, `drafts:write`, and `publish:draft`) from the approved consent.
 - Protocol version is `2025-11-25`; BlogFactory MCP server version is `0.4.3`.
-- The exact active catalog contains 26 tools and is asserted by server tests.
+- The exact active catalog contains 27 tools and is asserted by server tests.
 
 ## Tool catalog
 
@@ -31,6 +31,7 @@ Verified on 2026-08-22:
 | `list_action_items` | `content:read` | Return the same prioritized work queue used by Review Queue |
 | `review_post` | `content:read` | Return the shared revision, preflight, destination, and permission packet |
 | `list_ideas` | `content:read` | List a site's ideas (status filter, sort, limit up to 50) with score breakdown, keyword data, brief, and slot |
+| `get_ai_visibility` | `content:read` | Read a site's AI answer citation share, trend, engines, competitor hosts, gaps, and per-question results (no answer text); never runs a check |
 | `discover_ideas` | `drafts:write` | Queue an idea discovery, the same as the Discover button |
 | `approve_idea` | `drafts:write` | Approve an idea and book a slot (optional `scheduled_for` and edits); never starts a run outside the schedule |
 | `reject_idea` | `drafts:write` | Reject an idea with an optional reason |
@@ -128,6 +129,6 @@ MCP_PILOT_TOKEN=bf_mcp_REPLACE_WITH_SECRET \
 npm run test:mcp:pilot
 ```
 
-Required client acceptance covers OAuth, discovery of exactly 26 tools, `review_post` rendering, version conflict handling, explicit approval, and idempotent CMS draft delivery in Codex and ChatGPT.
+Required client acceptance covers OAuth, discovery of exactly 27 tools, `review_post` rendering, version conflict handling, explicit approval, and idempotent CMS draft delivery in Codex and ChatGPT.
 
 The original research and implementation sequence remains in the [historical MCP roadmap](../BLOGFACTORY_MCP_ROADMAP.md).

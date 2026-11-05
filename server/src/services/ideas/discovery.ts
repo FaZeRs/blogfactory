@@ -17,6 +17,7 @@ import { resolveOpenRouterTextModel } from "../openrouter-models.js";
 import { safeFetch } from "../safe-fetch.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { generateCandidates, type Candidate, type SiteContext } from "./candidates.js";
+import { visibilitySummary } from "../ai-visibility/summary.js";
 import { assessNovelty, similarity, IDEA_REPEAT_SIMILARITY, REJECT_SIMILARITY } from "./novelty.js";
 import { runAutopilot } from "./schedule.js";
 import { combineScore, demandFactor, feasibilityFactor, trendFactor, type Factors } from "./score.js";
@@ -27,7 +28,7 @@ export type DiscoveryDeps = {
   llm: EngineLlm;
   /** Model id for the candidate call (the normal-mode brief model). */
   model: string;
-  collectors: Omit<CollectorDeps, "seeds" | "competitors" | "locale" | "gscQueries" | "feedUrls">;
+  collectors: Omit<CollectorDeps, "seeds" | "competitors" | "locale" | "gscQueries" | "feedUrls" | "aiGaps">;
   /** Adds its spend to the discovery's cost; the engine's monthly DataForSEO cap is shared. */
   dataForSeo: DataForSeoClient | null;
   dataForSeoSpent: () => number;
@@ -257,6 +258,10 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
       locale, seeds, competitors: settings.competitors,
       gscQueries: () => readGscQueries(userId, siteId, now),
       feedUrls: () => readFeedUrls(userId, siteId),
+      aiGaps: async () => {
+        const s = await visibilitySummary(userId, siteId);
+        return s.trend.length < 2 ? s.gaps : s.gaps.filter((g) => g.twoWeeks);
+      },
     });
     sources = reports.filter((r) => r.count > 0).map((r) => r.source).join(",");
     failedCollectors = reports.filter((r) => r.error).length;

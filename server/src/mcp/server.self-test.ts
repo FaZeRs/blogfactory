@@ -83,7 +83,7 @@ const list = await post(
 );
 assert.equal(list.status, 200);
 const listedTools = (await list.json() as any).result.tools;
-assert.equal(listedTools.length, 26);
+assert.equal(listedTools.length, 27);
 assert.deepEqual(listedTools.map((tool: any) => tool.name), ACTIVE_MCP_TOOL_NAMES);
 assert.equal(listedTools.find((tool: any) => tool.name === "review_post")._meta.ui.resourceUri, "ui://blogfactory/review-post.html");
 assert.ok(listedTools.find((tool: any) => tool.name === "get_workspace_digest").outputSchema.properties.data.properties.workspace.properties.connections.properties.generation);
@@ -93,6 +93,7 @@ assert.equal(MCP_TOOL_REGISTRY.review_post.requiredScope, "content:read");
 assert.equal(MCP_TOOL_REGISTRY.create_draft.requiredScope, "drafts:write");
 assert.equal(MCP_TOOL_REGISTRY.import_drafts.requiredScope, "drafts:write");
 assert.equal(MCP_TOOL_REGISTRY.list_ideas.requiredScope, "content:read");
+assert.equal(MCP_TOOL_REGISTRY.get_ai_visibility.requiredScope, "content:read");
 for (const name of ["discover_ideas", "approve_idea", "reject_idea"] as const) assert.equal(MCP_TOOL_REGISTRY[name].requiredScope, "drafts:write");
 assert.equal(MCP_BATCH_DRAFT_LIMIT, 20);
 assert.equal(mcpDraftContentHash("Title", "Content"), mcpDraftContentHash("Title", "Content"));
@@ -376,8 +377,8 @@ const forbiddenOrigin = await handleMcpHttpRequest(new Request("https://blogfact
 }), async () => principal);
 assert.equal(forbiddenOrigin.status, 403);
 
-assert.equal(MCP_TOOL_NAMES.length, 26);
-assert.equal(ACTIVE_MCP_TOOL_NAMES.length, 26);
+assert.equal(MCP_TOOL_NAMES.length, 27);
+assert.equal(ACTIVE_MCP_TOOL_NAMES.length, 27);
 assert.deepEqual(MCP_SCOPES, ["content:read", "drafts:write", "publish:draft"]);
 assert.equal(new Set(MCP_ERROR_CODES).size, 13);
 assert.equal(MCP_POST_CONTENT_LIMIT, 100_000);

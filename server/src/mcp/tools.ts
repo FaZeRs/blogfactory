@@ -37,6 +37,7 @@ import {
 import { drainSeoMetadata, enqueueSeoMetadata, seoMetadata, seoStatusForArticle } from "../services/seo-metadata.js";
 import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
 import { StageInputError } from "../engine/types.js";
+import { visibilitySummary } from "../services/ai-visibility/summary.js";
 import { IDEA_SORTS, IDEA_STATUSES, IdeaActionError, bookOwnedIdea, listIdeas, rejectOwnedIdea, serializeIdea, type IdeaRow } from "../services/ideas/actions.js";
 import { queueDiscovery } from "../services/ideas/discovery.js";
 import { hasMcpScope, type McpPrincipal } from "./auth.js";
@@ -1248,6 +1249,18 @@ async function rejectIdeaTool(principal: McpPrincipal, input: { site_id: string;
   return { site_id: input.site_id, idea: mcpIdea(row), next_action: "Call list_ideas to continue." };
 }
 
+/** The summary without answer text; the latest week's per-question rows are shortened. */
+async function getAiVisibilityTool(principal: McpPrincipal, input: { site_id: string }) {
+  await requireOwnedAllowedSite(principal, input.site_id);
+  const { checks, ...summary } = await visibilitySummary(principal.userId, input.site_id);
+  return {
+    site_id: input.site_id,
+    ...summary,
+    checks: checks.map((c) => ({ question: c.question, engine: c.engine, cited: c.cited, citedUrls: c.citedUrls, competitorHosts: c.competitorHosts })),
+    next_action: summary.gaps.length ? "Gaps are questions where AI answers cite other sites; call discover_ideas to turn them into ideas." : "Weekly checks run from the web app's Search Growth page.",
+  };
+}
+
 type ToolDefinition = {
   name: typeof ACTIVE_MCP_TOOL_NAMES[number];
   description: string;
@@ -1896,6 +1909,29 @@ export const MCP_TOOL_REGISTRY = {
     siteBound: true,
     annotations: IDEA_WRITE_ANNOTATIONS,
     handler: rejectIdeaTool,
+  },
+  get_ai_visibility: {
+    name: "get_ai_visibility",
+    description: "Read how often AI answer engines cite one allowed site: this week's share, trend, engines, competitor hosts, gaps, and per-question results without answer text. Read-only; it never runs a check.",
+    inputSchema: { site_id: uuid },
+    outputSchema: successOutputSchema({
+      site_id: uuid,
+      week: nullableText,
+      latest: z.object({
+        questions: z.number().int(), answered: z.number().int(), citedQuestions: z.number().int(), share: z.number(), mentionedShare: z.number(),
+        engines: z.array(z.object({ engine: z.string(), label: z.string(), asked: z.number().int(), cited: z.number().int(), share: z.number() })),
+      }),
+      trend: z.array(z.object({ week: z.string(), share: z.number(), answered: z.number().int() })),
+      topCompetitors: z.array(z.object({ host: z.string(), count: z.number().int(), flagged: z.boolean() })),
+      gaps: z.array(z.object({ question: z.string(), competitorHosts: z.array(z.string()), otherHosts: z.array(z.string()), twoWeeks: z.boolean() })),
+      checks: z.array(z.object({ question: z.string(), engine: z.string(), cited: z.boolean(), citedUrls: z.array(z.string()), competitorHosts: z.array(z.string()) })),
+      costThisMonth: z.number(),
+      next_action: z.string(),
+    }),
+    requiredScope: "content:read",
+    siteBound: true,
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: getAiVisibilityTool,
   },
 } satisfies Record<typeof ACTIVE_MCP_TOOL_NAMES[number], ToolDefinition>;
 

@@ -1,0 +1,95 @@
+import { Hono } from "hono";
+import { waitUntil } from "@vercel/functions";
+import { ApiError, readJsonObject, requiredString } from "../http/error-contract.js";
+import { getUserId } from "../middleware/auth.js";
+import { ENGINE_ID, ENGINE_LABELS, MAX_ENGINES, getVisibilitySettings, normalizeVisibilitySettings, saveVisibilitySettings } from "../services/ai-visibility/settings.js";
+import { runVisibility, visibilityRunning } from "../services/ai-visibility/run.js";
+import { suggestQuestions, validateQuestions } from "../services/ai-visibility/questions.js";
+import { visibilitySummary } from "../services/ai-visibility/summary.js";
+import { getOpenRouterKey } from "../services/api-keys.js";
+import { addManualIdea } from "../services/ideas/manual.js";
+import { serializeIdea } from "../services/ideas/actions.js";
+import { getOpenRouterModels } from "../services/openrouter-models.js";
+import { getSiteForUser } from "../services/user-settings.js";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const validation = (field: string, message: string) => new ApiError(400, "validation_error", `Invalid ${field}`, [{ field, message }]);
+
+async function ownedSite(c: Parameters<typeof getUserId>[0], source: string | undefined | null) {
+  const userId = getUserId(c);
+  if (!source || !UUID.test(source)) throw validation("siteId", "A site id is required");
+  const site = await getSiteForUser(userId, source);
+  if (!site) throw new ApiError(404, "not_found", "Site not found");
+  return { userId, siteId: site.id, site };
+}
+
+/** OpenRouter text models that bill web search, from the providers we label, without batch variants. */
+export const searchModels = (models: any[]) => models
+  .filter((m) => m.rawPricing?.webSearch > 0 && !m.id.includes(":batch") && (m.id.split("/")[0] ?? "") in ENGINE_LABELS)
+  .map((m) => ({ id: m.id as string, label: (m.name || m.id) as string, searchPrice: m.rawPricing.webSearch as number }));
+
+export function createAiVisibilityRoutes() {
+  const routes = new Hono();
+
+  routes.get("/", async (c) => {
+    const { userId, siteId } = await ownedSite(c, c.req.query("siteId"));
+    const hasKey = !!(await getOpenRouterKey(userId));
+    const reason = hasKey ? undefined : process.env.ENGINE_AI_BASE_URL?.trim() ? "custom_gateway" as const : "no_openrouter_key" as const;
+    const [settings, summary, running] = await Promise.all([getVisibilitySettings(userId, siteId), visibilitySummary(userId, siteId), visibilityRunning(userId, siteId)]);
+    return c.json({ available: hasKey, ...(reason ? { reason } : {}), settings, summary, running });
+  });
+
+  routes.put("/settings", async (c) => {
+    const body = await readJsonObject(c);
+    const { userId, siteId, site } = await ownedSite(c, requiredString(body, "siteId"));
+    const input = body.settings;
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw validation("settings", "Settings are required");
+    const raw = input as Record<string, unknown>;
+    if (raw.engines !== undefined) {
+      const engines = raw.engines;
+      if (!Array.isArray(engines) || !engines.length || engines.length > MAX_ENGINES || !engines.every((e) => typeof e === "string" && ENGINE_ID.test(e))) {
+        throw validation("settings.engines", `Choose 1 to ${MAX_ENGINES} models as provider/model ids`);
+      }
+    }
+    const { brandTerms } = normalizeVisibilitySettings(raw, site);
+    const { questions, errors } = validateQuestions(raw.questions, brandTerms);
+    if (errors.length) return c.json({ error: "Some questions need changes", errors }, 400);
+    return c.json({ settings: await saveVisibilitySettings(userId, siteId, { ...raw, questions }) });
+  });
+
+  routes.post("/suggest", async (c) => {
+    const { userId, siteId } = await ownedSite(c, requiredString(await readJsonObject(c), "siteId"));
+    if (!(await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
+    return c.json({ questions: await suggestQuestions(userId, siteId) });
+  });
+
+  routes.post("/run", async (c) => {
+    const { userId, siteId } = await ownedSite(c, requiredString(await readJsonObject(c), "siteId"));
+    if (await visibilityRunning(userId, siteId)) throw new ApiError(409, "conflict", "A check is already running");
+    if (!(await getVisibilitySettings(userId, siteId)).questions.length) throw validation("questions", "Add questions first");
+    if (!(await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
+    // Detached: the check takes minutes. Errors are logged without bodies; the weekly drain is the scheduled path.
+    const started = runVisibility(userId, siteId).catch(() => console.error("[ai-visibility] Manual run failed"));
+    waitUntil(started);
+    return c.json({ started: true }, 202);
+  });
+
+  routes.get("/models", async (c) => {
+    const userId = getUserId(c);
+    const apiKey = await getOpenRouterKey(userId);
+    if (!apiKey) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
+    return c.json({ models: searchModels(await getOpenRouterModels(apiKey, "text")) });
+  });
+
+  routes.post("/gap-idea", async (c) => {
+    const body = await readJsonObject(c);
+    const { userId, siteId } = await ownedSite(c, requiredString(body, "siteId"));
+    const question = typeof body.question === "string" ? body.question.trim().slice(0, 160) : "";
+    if (question.length < 5) throw validation("question", "A question of at least 5 characters is required");
+    return c.json({ idea: serializeIdea(await addManualIdea({ userId, siteId, title: question })) }, 201);
+  });
+
+  return routes;
+}
+
+export const aiVisibilityRoutes = createAiVisibilityRoutes();

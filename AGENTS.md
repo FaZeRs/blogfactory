@@ -113,7 +113,7 @@ The action queue contains only real work: editorial review states, requested cha
 - Transport: Streamable HTTP; protocol `2025-11-25`; server `0.4.3`.
 - Authentication: WorkOS browser OAuth or site-scoped personal `bf_mcp_` tokens. Tokens are hashed and shown once.
 - Scopes remain `content:read`, `drafts:write`, and `publish:draft`.
-- The exact active catalog has 26 tools. Control-plane additions are `get_workspace_digest`, `list_action_items`, and `review_post`; idea tools are `list_ideas` (`content:read`), `discover_ideas`, `approve_idea`, and `reject_idea` (`drafts:write`). `approve_idea` books a slot and never starts a run outside the schedule.
+- The exact active catalog has 27 tools. Control-plane additions are `get_workspace_digest`, `list_action_items`, and `review_post`; idea tools are `list_ideas` (`content:read`), `discover_ideas`, `approve_idea`, and `reject_idea` (`drafts:write`). `approve_idea` books a slot and never starts a run outside the schedule. `get_ai_visibility` (`content:read`) is a read-only summary of AI answer citations and never runs a check.
 - `review_post` links the standalone `ui://blogfactory/review-post.html` MCP App resource. Unsupported clients receive the same structured result as text.
 - `generate_draft` is asynchronous and takes `mode` (`fast` default, `normal`/`deep` need the persistent worker); `push_to_cms_draft` takes optional `publish_at` (Lindevo only). `update_draft` requires `expected_updated_at`; `push_to_cms_draft` requires current version, explicit destination, valid preflight, and remains idempotent/draft-only.
 - Connections UI reads scope/tool counts from `/api/mcp/capabilities`; never hardcode catalog counts in product UI.

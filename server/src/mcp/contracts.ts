@@ -35,6 +35,7 @@ export const MCP_TOOL_NAMES = [
   "discover_ideas",
   "approve_idea",
   "reject_idea",
+  "get_ai_visibility",
 ] as const;
 
 export const ACTIVE_MCP_TOOL_NAMES = [
@@ -64,6 +65,7 @@ export const ACTIVE_MCP_TOOL_NAMES = [
   "discover_ideas",
   "approve_idea",
   "reject_idea",
+  "get_ai_visibility",
 ] as const satisfies readonly (typeof MCP_TOOL_NAMES[number])[];
 
 export const MCP_ERROR_CODES = [
