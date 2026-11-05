@@ -15,7 +15,16 @@ export type IdeaSettings = {
   seedTopics: string[];
   /** Competitor domains whose sitemaps are scanned for new pages. */
   competitors: string[];
+  /** Monthly weight learning from search results; off freezes the weights. */
+  learnWeights: boolean;
+  /** UTC month (YYYY-MM) the weights last moved; written by learning only. */
+  weightsLearnedMonth: string | null;
+  /** The last 24 learning runs; written by learning only. */
+  weightHistory: WeightHistoryEntry[];
 };
+
+export type WeightHistoryEntry = { month: string; weights: ScoreWeights; samples: number };
+export const WEIGHT_HISTORY_LIMIT = 24;
 
 export const DEFAULT_WEIGHTS: ScoreWeights = { trend: 1, fit: 1, demand: 1, feasibility: 1, novelty: 1, gain: 1 };
 
@@ -27,6 +36,9 @@ export const DEFAULT_IDEA_SETTINGS: IdeaSettings = {
   weights: DEFAULT_WEIGHTS,
   seedTopics: [],
   competitors: [],
+  learnWeights: true,
+  weightsLearnedMonth: null,
+  weightHistory: [],
 };
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
@@ -42,6 +54,18 @@ export function isValidTimezone(tz: unknown): tz is string {
   try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; }
 }
 
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function weightsOf(raw: unknown): ScoreWeights {
+  const w = obj(raw);
+  const weights = { ...DEFAULT_WEIGHTS };
+  for (const f of SCORE_FACTORS) {
+    const n = w[f];
+    if (typeof n === "number" && Number.isFinite(n)) weights[f] = Math.min(5, Math.max(0, n));
+  }
+  return weights;
+}
+
 /** Any stored or submitted value in, a complete valid settings object out. Never throws. */
 export function normalizeIdeaSettings(raw: unknown): IdeaSettings {
   const d = DEFAULT_IDEA_SETTINGS;
@@ -51,12 +75,13 @@ export function normalizeIdeaSettings(raw: unknown): IdeaSettings {
     ? [...new Set(cad.weekdays.filter((n): n is number => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
     : [];
   const auto = obj(r.autopilot);
-  const w = obj(r.weights);
-  const weights = { ...DEFAULT_WEIGHTS };
-  for (const f of SCORE_FACTORS) {
-    const n = w[f];
-    if (typeof n === "number" && Number.isFinite(n)) weights[f] = Math.min(5, Math.max(0, n));
-  }
+  const history: WeightHistoryEntry[] = Array.isArray(r.weightHistory)
+    ? r.weightHistory.flatMap((e) => {
+      const h = obj(e);
+      return typeof h.month === "string" && MONTH.test(h.month) && typeof h.samples === "number"
+        ? [{ month: h.month, weights: weightsOf(h.weights), samples: Math.max(0, Math.round(h.samples)) }] : [];
+    }).slice(-WEIGHT_HISTORY_LIMIT)
+    : [];
   return {
     cadence: {
       weekdays: weekdays.length ? weekdays : d.cadence.weekdays,
@@ -70,9 +95,12 @@ export function normalizeIdeaSettings(raw: unknown): IdeaSettings {
       approvePerWeek: int(auto.approvePerWeek, 1, 14, d.autopilot.approvePerWeek),
       minScore: int(auto.minScore, 0, 100, d.autopilot.minScore),
     },
-    weights,
+    weights: weightsOf(r.weights),
     seedTopics: strings(r.seedTopics, 20, 120),
     competitors: strings(r.competitors, 10, 253),
+    learnWeights: r.learnWeights !== false,
+    weightsLearnedMonth: typeof r.weightsLearnedMonth === "string" && MONTH.test(r.weightsLearnedMonth) ? r.weightsLearnedMonth : null,
+    weightHistory: history,
   };
 }
 
@@ -80,8 +108,10 @@ export async function getIdeaSettings(userId: string, siteId: string): Promise<I
   return normalizeIdeaSettings((await getEffectiveSettings(userId, siteId)).ideaSettings);
 }
 
+/** The web save: learning's own fields (month, history) always keep their stored values. */
 export async function saveIdeaSettings(userId: string, siteId: string, input: unknown): Promise<IdeaSettings> {
-  const ideaSettings = normalizeIdeaSettings(input);
+  const stored = await getIdeaSettings(userId, siteId);
+  const ideaSettings = { ...normalizeIdeaSettings(input), weightsLearnedMonth: stored.weightsLearnedMonth, weightHistory: stored.weightHistory };
   await updateSiteSettings(userId, siteId, { ideaSettings });
   return ideaSettings;
 }

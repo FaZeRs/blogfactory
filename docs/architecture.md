@@ -136,7 +136,9 @@ Research also reads the top-ranking pages for the topic (`article_sources.kind =
 - **Approval:** ideas wait in `ideas` (status `new`) for the owner. Approving books a cadence slot (`schedule.ts`, which never double-books).
 - **Generation:** `startDueIdeas` starts a normal or deep run `leadDays` before the slot. The delivered draft carries `posts.publish_at`, which the Send to CMS dialog pre-fills. Delivery stays draft-only.
 
-The routes are under `/api/ideas`, with settings at `/api/settings/ideas`. The web surface is `/ideas` (Inbox, Planned, Calendar, Settings). Ideas have no MCP tools.
+The routes are under `/api/ideas`, with settings at `/api/settings/ideas`. The web surface is `/ideas` (Inbox, Planned, Calendar, Settings). The MCP tools `list_ideas`, `discover_ideas`, `approve_idea`, and `reject_idea` call the same `services/ideas/actions.ts` functions as the routes.
+
+**Weight learning** (`learning.ts`): the worker's daily task, once per UTC month per site, nudges each score weight (at most 10%, bounds 0.1-3) by its Pearson correlation with ln(1 + Search Console clicks) in days 30-58 after publication, needing at least 5 published ideas. State lives in `idea_settings` (`learnWeights`, `weightsLearnedMonth`, `weightHistory`).
 
 ## Hosting and routing
 

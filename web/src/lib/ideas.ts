@@ -32,6 +32,8 @@ export interface IdeaSettings {
   autopilot: { enabled: boolean; approvePerWeek: number; minScore: number };
   weights: { trend: number; fit: number; demand: number; feasibility: number; novelty: number; gain: number };
   seedTopics: string[]; competitors: string[];
+  learnWeights: boolean; weightsLearnedMonth: string | null;
+  weightHistory: { month: string; samples: number; weights: IdeaSettings["weights"] }[];
 }
 
 export const FACTORS = [

@@ -83,7 +83,7 @@ const list = await post(
 );
 assert.equal(list.status, 200);
 const listedTools = (await list.json() as any).result.tools;
-assert.equal(listedTools.length, 22);
+assert.equal(listedTools.length, 26);
 assert.deepEqual(listedTools.map((tool: any) => tool.name), ACTIVE_MCP_TOOL_NAMES);
 assert.equal(listedTools.find((tool: any) => tool.name === "review_post")._meta.ui.resourceUri, "ui://blogfactory/review-post.html");
 assert.ok(listedTools.find((tool: any) => tool.name === "get_workspace_digest").outputSchema.properties.data.properties.workspace.properties.connections.properties.generation);
@@ -92,6 +92,8 @@ assert.equal(MCP_TOOL_REGISTRY.list_action_items.requiredScope, "content:read");
 assert.equal(MCP_TOOL_REGISTRY.review_post.requiredScope, "content:read");
 assert.equal(MCP_TOOL_REGISTRY.create_draft.requiredScope, "drafts:write");
 assert.equal(MCP_TOOL_REGISTRY.import_drafts.requiredScope, "drafts:write");
+assert.equal(MCP_TOOL_REGISTRY.list_ideas.requiredScope, "content:read");
+for (const name of ["discover_ideas", "approve_idea", "reject_idea"] as const) assert.equal(MCP_TOOL_REGISTRY[name].requiredScope, "drafts:write");
 assert.equal(MCP_BATCH_DRAFT_LIMIT, 20);
 assert.equal(mcpDraftContentHash("Title", "Content"), mcpDraftContentHash("Title", "Content"));
 assert.equal(MCP_TOOL_REGISTRY.push_to_cms_draft.requiredScope, "publish:draft");
@@ -110,6 +112,9 @@ for (const tool of listedTools) {
     refresh_search_console: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     update_draft: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     push_to_cms_draft: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    discover_ideas: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    approve_idea: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    reject_idea: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   };
   assert.deepEqual(tool.annotations, mutationAnnotations[tool.name] || {
     readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false,
@@ -244,6 +249,35 @@ for (const name of [
   assert.equal(result.structuredContent.error.code, "forbidden");
 }
 
+// idea tools: scope and site-token scoping are enforced before any database access
+const IDEA_CALLS = {
+  list_ideas: {},
+  discover_ideas: {},
+  approve_idea: { idea_id: "00000000-0000-4000-8000-000000000050" },
+  reject_idea: { idea_id: "00000000-0000-4000-8000-000000000050" },
+} as const;
+for (const [name, extra] of Object.entries(IDEA_CALLS)) {
+  const call = (site_id: string, as: typeof principal) => postAs(
+    { jsonrpc: "2.0", id: `idea-${name}`, method: "tools/call", params: { name, arguments: { site_id, ...extra } } },
+    as, { "mcp-protocol-version": MCP_PROTOCOL_VERSION },
+  ).then(async (r) => (await r.json() as any).result.structuredContent.error.code);
+  assert.equal(await call("00000000-0000-4000-8000-000000000099", principal), "forbidden", `${name}: a site outside the token is refused`);
+  if (name !== "list_ideas") assert.equal(await call("00000000-0000-4000-8000-000000000003", { ...principal, scopes: new Set(["content:read"] as const) }), "insufficient_scope", `${name} needs drafts:write`);
+  else assert.equal(await call("00000000-0000-4000-8000-000000000003", { ...principal, scopes: new Set(["drafts:write"] as const) }), "insufficient_scope", "list_ideas needs content:read");
+}
+{
+  const { z } = await import("zod");
+  const list = z.object(MCP_TOOL_REGISTRY.list_ideas.inputSchema);
+  const site = "00000000-0000-4000-8000-000000000003";
+  assert.deepEqual([list.parse({ site_id: site }).sort, list.parse({ site_id: site }).limit], ["score", 20]);
+  assert.equal(list.safeParse({ site_id: site, limit: 51 }).success, false);
+  assert.equal(list.safeParse({ site_id: site, status: ["live"] }).success, false);
+  const approve = z.object(MCP_TOOL_REGISTRY.approve_idea.inputSchema);
+  assert.equal(approve.safeParse({ site_id: site, idea_id: "x" }).success, false);
+  assert.equal(approve.safeParse({ site_id: site, idea_id: "00000000-0000-4000-8000-000000000050", outline: ["a", "b"] }).success, false);
+  assert.equal(approve.safeParse({ site_id: site, idea_id: "00000000-0000-4000-8000-000000000050", scheduled_for: "2030-01-01" }).success, true);
+}
+
 const invalidInput = await post(
   {
     jsonrpc: "2.0",
@@ -342,8 +376,8 @@ const forbiddenOrigin = await handleMcpHttpRequest(new Request("https://blogfact
 }), async () => principal);
 assert.equal(forbiddenOrigin.status, 403);
 
-assert.equal(MCP_TOOL_NAMES.length, 22);
-assert.equal(ACTIVE_MCP_TOOL_NAMES.length, 22);
+assert.equal(MCP_TOOL_NAMES.length, 26);
+assert.equal(ACTIVE_MCP_TOOL_NAMES.length, 26);
 assert.deepEqual(MCP_SCOPES, ["content:read", "drafts:write", "publish:draft"]);
 assert.equal(new Set(MCP_ERROR_CODES).size, 13);
 assert.equal(MCP_POST_CONTENT_LIMIT, 100_000);

@@ -59,10 +59,21 @@ export default function IdeasSettings() {
         </div>
       </BywordCard>
       <BywordCard className="space-y-3 p-4">
-        <h2 className="type-panel-title">Scoring weights</h2>
+        <div className="flex items-center justify-between"><h2 className="type-panel-title">Scoring weights</h2>
+          <div className="flex items-center gap-2"><Label htmlFor="learn" className="text-xs">Learn from results</Label>
+            <Switch id="learn" checked={s.learnWeights} onCheckedChange={(v) => set({ learnWeights: v })} /></div></div>
+        <p className="text-xs text-muted-foreground">
+          {s.learnWeights ? "Once a month, weights move up to 10% toward what earned search clicks (at least 5 published ideas)." : "Learning is off. Weights stay as you set them."}
+          {" "}{s.weightsLearnedMonth ? `Last learned ${s.weightsLearnedMonth}.` : "Not learned yet."}
+        </p>
         <div className="grid gap-3 sm:grid-cols-3">
-          {FACTORS.map(([k, label, hint]) => <div key={k}><Label htmlFor={`w-${k}`}>{label}</Label><Input id={`w-${k}`} type="number" min={0} max={1} step={0.05} value={s.weights[k]} onChange={(e) => set({ weights: { ...s.weights, [k]: num(e.target.value) } })} /><p className="mt-1 text-[11px] text-muted-foreground">{hint}</p></div>)}
+          {FACTORS.map(([k, label, hint]) => <div key={k}><Label htmlFor={`w-${k}`}>{label}</Label><Input id={`w-${k}`} type="number" min={0} max={3} step={0.05} value={s.weights[k]} onChange={(e) => set({ weights: { ...s.weights, [k]: num(e.target.value) } })} /><p className="mt-1 text-[11px] text-muted-foreground">{hint}</p></div>)}
         </div>
+        {s.weightHistory.length > 0 && <div className="overflow-x-auto"><table className="w-full text-left text-[11px]">
+          <caption className="sr-only">Weight learning history</caption>
+          <thead className="text-muted-foreground"><tr><th className="py-1 pr-3 font-medium">Month</th><th className="pr-3 font-medium">Samples</th>{FACTORS.map(([k, label]) => <th key={k} className="pr-3 font-medium">{label}</th>)}</tr></thead>
+          <tbody>{[...s.weightHistory].reverse().map((h) => <tr key={h.month} className="border-t"><td className="py-1 pr-3">{h.month}</td><td className="pr-3">{h.samples}</td>{FACTORS.map(([k]) => <td key={k} className="pr-3 tabular-nums">{h.weights[k].toFixed(2)}</td>)}</tr>)}</tbody>
+        </table></div>}
       </BywordCard>
       <BywordCard className="space-y-3 p-4">
         <div><Label htmlFor="seeds">Seed topics</Label><TagInput id="seeds" value={s.seedTopics} onChange={(v) => set({ seedTopics: v })} placeholder="Add a topic" /></div>
