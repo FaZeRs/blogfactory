@@ -129,6 +129,7 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
     { drainSearchConsoleSync },
     { purgeExpiredOperationEvents },
     { drainWeightLearning },
+    { drainVisibility },
     { readCronDrainConfig },
   ] = await Promise.all([
     import("./scheduler.js"),
@@ -136,6 +137,7 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
     import("./search-console.js"),
     import("./operation-events.js"),
     import("./ideas/learning.js"),
+    import("./ai-visibility/run.js"),
     import("../routes/cron.js"),
   ]);
   const config = readCronDrainConfig(() => undefined, env);
@@ -164,6 +166,7 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
           daily("search-console", () => drainSearchConsoleSync(config.searchConsole.limit)),
           daily("operation-events", () => purgeExpiredOperationEvents()),
           daily("idea-weights", () => drainWeightLearning()),
+          daily("ai-visibility", () => drainVisibility()),
         ]);
         if (results.some((result) => result.status === "rejected")) throw new Error("Daily drain failed");
       },

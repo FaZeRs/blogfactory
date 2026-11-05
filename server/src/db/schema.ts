@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
@@ -327,6 +328,7 @@ export const sites = pgTable("sites", {
   cta: text("cta"),
   internalLinkIndex: jsonb("internal_link_index"),
   internalLinkLastSyncedAt: timestamp("internal_link_last_synced_at", { withTimezone: true }),
+  aiVisibilityRunStartedAt: timestamp("ai_visibility_run_started_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -584,6 +586,7 @@ export const userSettings = pgTable("user_settings", {
   dailyFailureLimit: integer("daily_failure_limit"),
   engineSettings: jsonb("engine_settings"),
   ideaSettings: jsonb("idea_settings"),
+  aiVisibility: jsonb("ai_visibility"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -756,3 +759,28 @@ export const ideas = pgTable("ideas", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ── ai_answer_checks ──
+export const aiAnswerChecks = pgTable("ai_answer_checks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  week: text("week").notNull(),
+  question: text("question").notNull(),
+  questionHash: text("question_hash").notNull(),
+  engine: text("engine").notNull(),
+  engineLabel: text("engine_label").notNull(),
+  status: text("status").default("ok").notNull(),
+  error: text("error"),
+  answer: text("answer"),
+  cited: boolean("cited").default(false).notNull(),
+  citedUrls: text("cited_urls").array().default(sql`'{}'`).notNull(),
+  mentioned: boolean("mentioned").default(false).notNull(),
+  otherHosts: text("other_hosts").array().default(sql`'{}'`).notNull(),
+  competitorHosts: text("competitor_hosts").array().default(sql`'{}'`).notNull(),
+  costUsd: real("cost_usd").default(0).notNull(),
+  askedAt: timestamp("asked_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("ai_answer_checks_unique_idx").on(t.siteId, t.week, t.engine, t.questionHash),
+  index("ai_answer_checks_site_idx").on(t.userId, t.siteId, t.week),
+]);

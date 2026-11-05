@@ -30,6 +30,13 @@ export function safeOperationMetadata(action: string, input: unknown): Operation
     }
     return metadata;
   }
+  if (action === "ai_visibility.run") {
+    for (const key of ["asked", "cited", "failed", "cost_usd"]) {
+      const item = value[key];
+      if (typeof item === "number") metadata[key] = item;
+    }
+    return metadata;
+  }
   for (const key of ["status", "kind", "severity", "source_type", "variations", "page", "limit", "post_type"]) {
     const item = value[key];
     if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") metadata[key] = item;
