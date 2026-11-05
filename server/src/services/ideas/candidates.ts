@@ -56,6 +56,8 @@ export async function generateCandidates(input: {
   model: string;
   site: SiteContext;
   postTitles: string[];
+  /** Ideas already in the pipeline or rejected; never proposed again, even reworded. */
+  ideaTitles?: string[];
   signals: Signal[];
   /** How many ideas to ask for; defaults to MAX_CANDIDATES. */
   max?: number;
@@ -74,6 +76,7 @@ export async function generateCandidates(input: {
     max: input.max ?? MAX_CANDIDATES,
     site: fenceData("site", site),
     posts: fenceData("posts", input.postTitles.slice(0, 200).map((t) => `- ${t}`).join("\n") || "(none)"),
+    ideas: fenceData("ideas", (input.ideaTitles ?? []).slice(0, 300).map((t) => `- ${t}`).join("\n") || "(none)"),
     signals: fenceData("signals", signals || "(none)"),
   });
   const res = await input.llm.json({

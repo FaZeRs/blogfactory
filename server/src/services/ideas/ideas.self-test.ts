@@ -142,10 +142,27 @@ const scored = scoreCandidates({
   weights: DEFAULT_WEIGHTS,
   now: NOW,
 });
-assert.deepEqual(scored.map((s) => s.candidate.title), ["Plumber CRM onboarding checklist"].concat(["Why dashboards fail"]),
+assert.deepEqual(scored.map((s) => s.candidate.title), ["Why dashboards fail"],
   "an existing idea, and near-duplicates of a post, are skipped");
-assert.equal(scored[1].score, 0, "a zero fit sinks the idea");
+assert.equal(scored[0].score, 0, "a zero fit sinks the idea");
 assert.equal(scored[0].origin, "discovered");
+// A reworded repeat of an existing idea, or one aiming at the same keyword, is dropped.
+const repeats = scoreCandidates({
+  candidates: [
+    cand({ title: "Document Processing With AI: Turning Reading Into a Verification Task", primaryKeyword: "ai document verification" }),
+    cand({ title: "A completely different headline about invoices", primaryKeyword: "AI Document Processing" }),
+    cand({ title: "Meeting notes for small teams", primaryKeyword: "automate meeting notes" }),
+  ],
+  signals: [], metrics: new Map(), existingPosts: [],
+  existingIdeaTitles: ["AI Document Processing: From Reading to Verification Task"],
+  existingIdeaKeywords: ["ai document processing"],
+  weights: DEFAULT_WEIGHTS, now: NOW,
+});
+assert.deepEqual(repeats.map((s) => s.candidate.title), ["Meeting notes for small teams"]);
+const llm2 = createFakeLlm({ brief: [{ ideas: [] }] });
+await generateCandidates({ llm: llm2, model: "m", site: { name: "S", domain: "s.test", topics: ["crm"] }, postTitles: [], signals: all.signals, ideaTitles: ["Old idea (rejected)"] });
+assert.ok(llm2.calls[0].user.includes("Old idea (rejected)"), "existing and rejected ideas are shown to the model");
+
 const refreshed = scoreCandidates({ candidates: [cand({ title: "CRM tools for startups compared" })], signals: [], metrics: new Map(), existingPosts: [{ id: "p1", title: "Best CRM tools for startups" }], existingIdeaTitles: [], weights: DEFAULT_WEIGHTS, now: NOW });
 assert.equal(refreshed[0].origin, "refresh");
 assert.equal(refreshed[0].nearest?.id, "p1");

@@ -17,7 +17,7 @@ import { resolveOpenRouterTextModel } from "../openrouter-models.js";
 import { safeFetch } from "../safe-fetch.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { generateCandidates, type Candidate, type SiteContext } from "./candidates.js";
-import { assessNovelty, similarity, REJECT_SIMILARITY } from "./novelty.js";
+import { assessNovelty, similarity, IDEA_REPEAT_SIMILARITY, REJECT_SIMILARITY } from "./novelty.js";
 import { runAutopilot } from "./schedule.js";
 import { combineScore, demandFactor, feasibilityFactor, trendFactor, type Factors } from "./score.js";
 import { effectiveSeedTopics, getIdeaSettings, type IdeaSettings } from "./settings.js";
@@ -88,14 +88,19 @@ export function scoreCandidates(input: {
   metrics: Map<string, KeywordOverview | null>;
   existingPosts: { id: string; title: string }[];
   existingIdeaTitles: string[];
+  /** Main keywords of existing ideas; a candidate targeting the same keyword is a repeat. */
+  existingIdeaKeywords?: string[];
   weights: IdeaSettings["weights"];
   now: Date;
 }): ScoredIdea[] {
   const byId = new Map(input.signals.map((s) => [s.id, s]));
   const accepted: string[] = [...input.existingIdeaTitles];
+  const acceptedKeywords: string[] = [...(input.existingIdeaKeywords ?? [])];
   const out: ScoredIdea[] = [];
   for (const c of input.candidates) {
-    if (accepted.some((t) => similarity(c.title, t) >= REJECT_SIMILARITY)) continue;
+    // Ideas compete for the same slots, so near-repeats are dropped earlier than near-repeats of posts.
+    if (accepted.some((t) => similarity(c.title, t) >= IDEA_REPEAT_SIMILARITY)) continue;
+    if (acceptedKeywords.some((k) => similarity(c.primaryKeyword, k) >= REJECT_SIMILARITY)) continue;
     const nov = assessNovelty({ title: c.title, keyword: c.primaryKeyword }, input.existingPosts);
     if (nov.decision === "reject") continue;
     const used = c.signalIds.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
@@ -114,6 +119,7 @@ export function scoreCandidates(input: {
       gain: c.gain / 10,
     };
     accepted.push(c.title);
+    acceptedKeywords.push(c.primaryKeyword);
     out.push({
       candidate: c,
       factors,
@@ -262,15 +268,22 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
         name: site.name, domain: site.domain, language: site.language, topics: seeds,
         description: effective.brandDescription, audience: effective.brandTargetAudience,
       };
-      const gen = await generateCandidates({ llm: deps.llm, model: deps.model, site: context, postTitles: existingPosts.map((p) => p.title), signals });
+      // Every idea the site already has, rejected ones included: the model skips them even when reworded.
+      const existingIdeas = await db.select({ title: ideas.title, keyword: ideas.primaryKeyword, status: ideas.status }).from(ideas)
+        .where(and(eq(ideas.userId, userId), eq(ideas.siteId, siteId), ne(ideas.status, "archived")))
+        .orderBy(desc(ideas.createdAt)).limit(300);
+      const gen = await generateCandidates({
+        llm: deps.llm, model: deps.model, site: context, postTitles: existingPosts.map((p) => p.title), signals,
+        ideaTitles: existingIdeas.map((i) => `${i.title}${i.status === "rejected" ? " (rejected)" : ""}`),
+      });
       llmCost = gen.costUsd;
       model = gen.model;
       const metrics = await fetchKeywordMetrics({ dataForSeo: deps.dataForSeo, locale, keywords: gen.candidates.map((c) => c.primaryKeyword), signals });
-      const existingIdeas = await db.select({ title: ideas.title }).from(ideas)
-        .where(and(eq(ideas.userId, userId), eq(ideas.siteId, siteId), ne(ideas.status, "rejected")));
       const scored = scoreCandidates({
         candidates: gen.candidates, signals, metrics, existingPosts,
-        existingIdeaTitles: existingIdeas.map((i) => i.title), weights: settings.weights, now,
+        existingIdeaTitles: existingIdeas.map((i) => i.title),
+        existingIdeaKeywords: existingIdeas.flatMap((i) => (i.keyword ? [i.keyword] : [])),
+        weights: settings.weights, now,
       });
       if (scored.length) {
         await db.insert(ideas).values(scored.map((s) => ({

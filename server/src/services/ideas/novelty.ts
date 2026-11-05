@@ -27,6 +27,8 @@ export function similarity(a: string, b: string): number {
 
 export const REJECT_SIMILARITY = 0.85;
 export const REFRESH_SIMILARITY = 0.6;
+/** Between two ideas: reworded repeats score 0.55-0.8 ("AI Document Processing: From Reading to Verification" vs "Document Processing With AI: …Verification Task" is 0.575). */
+export const IDEA_REPEAT_SIMILARITY = 0.55;
 
 export type NoveltyDecision = {
   decision: "ok" | "refresh" | "reject";
