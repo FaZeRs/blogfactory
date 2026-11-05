@@ -61,7 +61,8 @@ function weightsOf(raw: unknown): ScoreWeights {
   const weights = { ...DEFAULT_WEIGHTS };
   for (const f of SCORE_FACTORS) {
     const n = w[f];
-    if (typeof n === "number" && Number.isFinite(n)) weights[f] = Math.min(5, Math.max(0, n));
+    // 3 is learning's MAX_WEIGHT and the form's max, so a monthly nudge never cuts an owner's weight.
+    if (typeof n === "number" && Number.isFinite(n)) weights[f] = Math.min(3, Math.max(0, n));
   }
   return weights;
 }

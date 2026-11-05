@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -33,9 +33,12 @@ export default function Ideas() {
   });
   const last = discoveries.data?.items[0];
   const active = last?.status === "queued" || last?.status === "running";
-  const wasActive = useState({ v: false })[0];
-  if (wasActive.v && !active) { wasActive.v = false; qc.invalidateQueries({ queryKey: ideasKey(siteId, "inbox") }); }
-  if (active) wasActive.v = true;
+  // Reload the inbox when a discovery finishes.
+  const wasActive = useRef(false);
+  useEffect(() => {
+    if (wasActive.current && !active) qc.invalidateQueries({ queryKey: ideasKey(siteId, "inbox") });
+    wasActive.current = active;
+  }, [active, qc, siteId]);
   const discover = useMutation({
     mutationFn: () => api.post(`/ideas/discover`, { siteId }),
     onSuccess: () => { toast.success("Discovery started"); qc.invalidateQueries({ queryKey: ideasKey(siteId, "discoveries") }); },

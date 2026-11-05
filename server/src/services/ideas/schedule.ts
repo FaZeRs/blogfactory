@@ -72,6 +72,8 @@ export function slotsBetween(cadence: Cadence, from: Date, to: Date): Date[] {
 export function parseScheduledFor(value: unknown, cadence: Cadence): Date | null {
   if (typeof value !== "string") return null;
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  // Date.UTC rolls an impossible day over ("2026-02-30" is March 2), so such a date is refused.
+  if (day && new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))).toISOString().slice(0, 10) !== value) return null;
   const at = day
     ? zonedTimeToUtc(Number(day[1]), Number(day[2]), Number(day[3]), Number(cadence.time.slice(0, 2)), Number(cadence.time.slice(3)), cadence.timezone)
     : new Date(value);

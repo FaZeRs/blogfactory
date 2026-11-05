@@ -40,6 +40,13 @@ describe("ideas", () => {
     expect(el.querySelectorAll('[role="img"]')).toHaveLength(6);
   });
 
+  it("renders an unscored manual idea with an empty brief, and a sitemap match as an external link", async () => {
+    const el = await mount(<IdeaCard idea={{ ...idea, origin: "manual", brief: {}, score: null, scoreBreakdown: null }} />);
+    expect(el.textContent).toContain("Not scored yet.");
+    const page = await mount(<IdeaCard idea={{ ...idea, scoreBreakdown: { ...idea.scoreBreakdown!, nearestPost: { id: "https://s.example/old", title: "Sitemap page", similarity: 0.7 } } }} />);
+    expect(page.querySelector('a[href="https://s.example/old"]')?.textContent).toBe("Sitemap page");
+  });
+
   it("approves with the server-picked slot when no date is chosen", async () => {
     apiMocks.post.mockResolvedValue({ idea: { ...idea, scheduledFor: "2027-01-05T08:00:00Z" } });
     const el = await mount(<IdeaCard idea={idea} />);

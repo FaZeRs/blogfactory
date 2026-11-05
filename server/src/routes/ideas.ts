@@ -82,8 +82,9 @@ export function createIdeasRoutes(deps: IdeasRouteDeps = {}) {
   routes.get("/calendar", async (c) => {
     const { userId, siteId } = await ownedSite(c, c.req.query("siteId"));
     const settings = await getIdeaSettings(userId, siteId);
+    // A range day starts at local midnight, not at the cadence time, so a slot booked earlier that day is in its month.
     const parse = (field: string) => {
-      const at = parseScheduledFor(c.req.query(field), settings.cadence);
+      const at = parseScheduledFor(c.req.query(field), { ...settings.cadence, time: "00:00" });
       if (!at) throw validation(field, "Expected an ISO date (YYYY-MM-DD) or timestamp");
       return at;
     };

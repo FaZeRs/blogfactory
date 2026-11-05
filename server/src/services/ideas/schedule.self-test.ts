@@ -18,6 +18,7 @@ const day = [...cadenceSlots({ weekdays: [1, 4], time: "08:00", timezone: "UTC" 
 assert.equal(day.toISOString(), "2026-11-02T08:00:00.000Z", "a slot at exactly `from` counts");
 assert.equal(parseScheduledFor("2026-11-10", berlin)!.toISOString(), "2026-11-10T07:00:00.000Z", "a date takes the cadence time in the site zone");
 assert.equal(parseScheduledFor("nope", berlin), null);
+assert.equal(parseScheduledFor("2026-02-30", berlin), null, "an impossible day is refused, not rolled over");
 
 if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
   console.log("ideas schedule self-test: pure parts passed; lifecycle skipped (set POSTGRES_INTEGRATION_ALLOW_WRITES=1 with a disposable database)");

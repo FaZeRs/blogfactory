@@ -21,7 +21,8 @@ export default function IdeasSettings() {
   const qc = useQueryClient();
   const [s, setS] = useState<IdeaSettings | null>(null);
   const { data } = useQuery({ queryKey: ideasKey(siteId, "settings"), queryFn: () => api.get<{ settings: IdeaSettings }>(`/settings/ideas?siteId=${siteId}`), enabled: Boolean(siteId) });
-  useEffect(() => { if (data) setS(data.settings); }, [data]);
+  // Reset while another site's settings load, so Save never writes one site's settings to another.
+  useEffect(() => { setS(data?.settings ?? null); }, [data]);
   const save = useMutation({
     mutationFn: () => api.put<{ settings: IdeaSettings }>(`/settings/ideas`, { siteId, settings: s }),
     onSuccess: () => { toast.success("Settings saved"); qc.invalidateQueries({ queryKey: ["ideas"] }); },

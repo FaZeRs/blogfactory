@@ -11,7 +11,8 @@ export interface IdeaScoreBreakdown {
 export interface Idea {
   id: string; siteId: string; status: IdeaStatus; title: string; angle: string | null; primaryKeyword: string | null;
   alternateKeywords: string[]; searchIntent: string | null; audienceQuestion: string | null;
-  brief: { whyNow: string; outline: string[]; informationGain: string[]; sources: { url: string; title: string }[]; suggestedMode: IdeaMode };
+  /** Empty (`{}`) for an unscored manual idea. */
+  brief: Partial<{ whyNow: string; outline: string[]; informationGain: string[]; sources: { url: string; title: string }[]; suggestedMode: IdeaMode }>;
   score: number | null; scoreBreakdown: IdeaScoreBreakdown | null;
   origin: "discovered" | "manual" | "refresh"; discoveryId: string | null; mode: IdeaMode;
   scheduledFor: string | null; jobId: string | null; postId: string | null; rejectedReason: string | null; error: string | null;

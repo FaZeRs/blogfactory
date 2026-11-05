@@ -101,6 +101,8 @@ const flaky = await collectSignals({
 assert.equal(flaky.reports.find((r) => r.source === "gsc")?.error, "db down");
 assert.equal(flaky.reports.find((r) => r.source === "rss")?.error, "timed out");
 assert.equal(flaky.signals.length, 4, "the other collectors still deliver");
+const scripted = await collectSignals({ ...baseDeps, fetchFeed: async () => [{ title: "Feed item with a script link", url: "javascript:alert(1)" }] });
+assert.equal(scripted.signals.find((s) => s.source === "rss")?.url, undefined, "only http(s) URLs are kept");
 const noDfs = await collectSignals({ ...baseDeps, dataForSeo: null });
 assert.deepEqual([noDfs.reports.find((r) => r.source === "keywords")?.count, noDfs.reports.find((r) => r.source === "paa")?.count], [0, 0]);
 

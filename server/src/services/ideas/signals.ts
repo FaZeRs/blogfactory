@@ -183,7 +183,8 @@ export async function collectSignals(d: CollectorDeps, timeoutMs = COLLECTOR_TIM
         collectors[source](d, ctl.signal),
         new Promise<never>((_, reject) => ctl.signal.addEventListener("abort", () => reject(ctl.signal.reason), { once: true })),
       ]);
-      return { source, raw: raw.filter((s) => s.title) };
+      // Feeds and sitemaps are third-party: only http(s) URLs may reach the brief, where the web renders them as links.
+      return { source, raw: raw.filter((s) => s.title).map((s) => (s.url && !/^https?:\/\//i.test(s.url) ? { ...s, url: undefined } : s)) };
     } catch (error) {
       return { source, raw: [] as RawSignal[], error: error instanceof Error ? error.message.slice(0, 120) : "failed" };
     } finally {

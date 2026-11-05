@@ -1237,7 +1237,7 @@ async function approveIdeaTool(principal: McpPrincipal, input: {
   return {
     site_id: input.site_id,
     idea: mcpIdea(row),
-    next_action: "The idea is booked and BlogFactory writes it at its slot. Use generate_draft to write immediately.",
+    next_action: "The idea is booked and BlogFactory writes it at its slot. Do not also call generate_draft for it, or it is written twice.",
   };
 }
 
@@ -1867,7 +1867,7 @@ export const MCP_TOOL_REGISTRY = {
   },
   approve_idea: {
     name: "approve_idea",
-    description: "Approve a new idea and book it into a schedule slot (the next free slot, or scheduled_for). Optional edits apply first. It never starts a run outside the schedule; use generate_draft to write immediately.",
+    description: "Approve a new idea and book it into a schedule slot (the next free slot, or scheduled_for). Optional edits apply first. It never starts a run outside the schedule; to write immediately, call generate_draft instead of approving.",
     inputSchema: {
       site_id: uuid,
       idea_id: uuid,

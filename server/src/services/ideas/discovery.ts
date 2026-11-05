@@ -315,16 +315,18 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
     } }).catch(() => undefined);
     throw error;
   } finally {
-    const costUsd = llmCost + (deps?.dataForSeoSpent?.() ?? 0);
-    // Logged so the account's monthly and daily guardrails count discovery spend.
-    if (costUsd > 0) {
-      await db.insert(generationLogs).values({
-        userId, usageType: "text", modelId: model, provider: model?.split("/")[0] ?? null,
-        status: result.ideaCount > 0 || result.signalCount > 0 ? "success" : "failed", cost: costUsd, sessionId: row.id,
-        responseData: { ideas: { discoveryId: row.id } },
-      }).catch(() => console.error("[ideas] Could not log discovery cost"));
-    }
+    await logIdeaSpend({ userId, model, costUsd: llmCost + (deps?.dataForSeoSpent?.() ?? 0), ok: result.ideaCount > 0 || result.signalCount > 0, discoveryId: row.id });
   }
+}
+
+/** Logged so the account's monthly and daily guardrails count idea spend: a discovery's, or a manual idea's rating call. */
+export async function logIdeaSpend(input: { userId: string; model: string | null; costUsd: number; ok: boolean; discoveryId?: string }) {
+  if (!(input.costUsd > 0)) return;
+  await db.insert(generationLogs).values({
+    userId: input.userId, usageType: "text", modelId: input.model, provider: input.model?.split("/")[0] ?? null,
+    status: input.ok ? "success" : "failed", cost: input.costUsd, sessionId: input.discoveryId ?? null,
+    responseData: { ideas: input.discoveryId ? { discoveryId: input.discoveryId } : { manual: true } },
+  }).catch(() => console.error("[ideas] Could not log idea spend"));
 }
 
 /** Runs one discovery by id (queued, or stale and running). Resolves to null when another worker holds it. */
@@ -333,10 +335,16 @@ export async function runDiscovery(discoveryId: string, deps?: DiscoveryDeps): P
   return row ? execute(row, deps) : null;
 }
 
-/** Claims up to `limit` discoveries and runs them one after another. Failures are recorded on the row and never thrown. */
+/**
+ * Runs up to `limit` discoveries one after another, claiming each just before it runs: a row claimed early would age
+ * past the stale window while it waits and another worker would retake it. Failures are recorded on the row and never thrown.
+ */
 export async function drainIdeaDiscoveries(limit: number, deps?: DiscoveryDeps): Promise<{ processed: number; failed: number }> {
-  const rows = await claimDiscoveries(limit, new Date());
-  let failed = 0;
-  for (const row of rows) await execute(row, deps).catch(() => { failed += 1; });
-  return { processed: rows.length, failed };
+  let processed = 0, failed = 0;
+  for (; processed < limit; processed += 1) {
+    const [row] = await claimDiscoveries(1, new Date());
+    if (!row) break;
+    await execute(row, deps).catch(() => { failed += 1; });
+  }
+  return { processed, failed };
 }

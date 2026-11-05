@@ -37,11 +37,15 @@ export function pearson(xs: number[], ys: number[]): number | null {
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 
-/** New weights from samples; the same object contents when there are too few samples. A factor with no variance keeps its weight. */
+/**
+ * New weights from samples; the same object contents when there are too few samples. A factor with no variance keeps
+ * its weight, and so does a factor the owner set to 0 (ignored): the 0.1 floor must not switch it back on.
+ */
 export function nextWeights(weights: ScoreWeights, samples: Sample[]): ScoreWeights {
   if (samples.length < MIN_SAMPLES) return { ...weights };
   const out = { ...weights };
   for (const f of SCORE_FACTORS) {
+    if (weights[f] === 0) continue;
     const corr = pearson(samples.map((s) => s.factors[f]), samples.map((s) => s.outcome));
     if (corr === null) continue;
     out[f] = round4(clamp(weights[f] * (1 + STEP * clamp(corr, -1, 1)), MIN_WEIGHT, MAX_WEIGHT));

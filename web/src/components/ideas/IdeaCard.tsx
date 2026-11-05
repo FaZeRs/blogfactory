@@ -72,6 +72,7 @@ export function IdeaCard({ idea }: { idea: Idea }) {
     onError: fail,
   });
   const b = idea.scoreBreakdown;
+  const { whyNow, outline = [], informationGain = [], sources = [] } = idea.brief;
   const busy = approve.isPending || reject.isPending || writeNow.isPending;
   const badge = STATUS_BADGE[idea.status];
   return <BywordCard className="p-4">
@@ -92,13 +93,16 @@ export function IdeaCard({ idea }: { idea: Idea }) {
     </div>
     <div className="mt-3 grid gap-4 md:grid-cols-2">
       <div className="space-y-2 text-xs">
-        {idea.brief.whyNow && <p><span className="font-semibold">Why now:</span> {idea.brief.whyNow}</p>}
+        {whyNow && <p><span className="font-semibold">Why now:</span> {whyNow}</p>}
         {idea.primaryKeyword && <p><span className="font-semibold">Keyword:</span> {idea.primaryKeyword}
           {b?.keyword && <span className="text-muted-foreground"> · volume {b.keyword.volume ?? "n/a"} · difficulty {b.keyword.difficulty ?? "n/a"} · {b.keyword.intent ?? idea.searchIntent ?? "intent n/a"}</span>}</p>}
-        {b?.nearestPost && <p>Similar to: <Link className="underline" to={`/library/posts/${b.nearestPost.id}/edit`}>{b.nearestPost.title}</Link> ({Math.round(b.nearestPost.similarity * 100)}% match)</p>}
-        {idea.brief.outline.length > 0 && <div><span className="font-semibold">Outline</span><ol className="ml-4 list-decimal">{idea.brief.outline.map((h) => <li key={h}>{h}</li>)}</ol></div>}
-        {idea.brief.informationGain.length > 0 && <div><span className="font-semibold">Information gain</span><ul className="ml-4 list-disc">{idea.brief.informationGain.map((h) => <li key={h}>{h}</li>)}</ul></div>}
-        {idea.brief.sources.length > 0 && <p><span className="font-semibold">Sources:</span> {idea.brief.sources.map((s, i) => <span key={s.url}>{i > 0 && ", "}<a className="underline" href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a></span>)}</p>}
+        {/* A sitemap page matches by its URL (it has no post id), so it links out instead of to the editor. */}
+        {b?.nearestPost && <p>Similar to: {/^https?:\/\//i.test(b.nearestPost.id)
+          ? <a className="underline" href={b.nearestPost.id} target="_blank" rel="noreferrer">{b.nearestPost.title}</a>
+          : <Link className="underline" to={`/library/posts/${b.nearestPost.id}/edit`}>{b.nearestPost.title}</Link>} ({Math.round(b.nearestPost.similarity * 100)}% match)</p>}
+        {outline.length > 0 && <div><span className="font-semibold">Outline</span><ol className="ml-4 list-decimal">{outline.map((h) => <li key={h}>{h}</li>)}</ol></div>}
+        {informationGain.length > 0 && <div><span className="font-semibold">Information gain</span><ul className="ml-4 list-disc">{informationGain.map((h) => <li key={h}>{h}</li>)}</ul></div>}
+        {sources.length > 0 && <p><span className="font-semibold">Sources:</span> {sources.map((s, i) => <span key={s.url}>{i > 0 && ", "}<a className="underline" href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a></span>)}</p>}
         {idea.error && <p className="text-destructive">Error: {idea.error}</p>}
       </div>
       <ScoreBars idea={idea} />
@@ -131,7 +135,7 @@ export function IdeaCard({ idea }: { idea: Idea }) {
     </Dialog>
     <Dialog open={dlg === "reject"} onOpenChange={(o) => !o && setDlg(null)}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Reject idea</DialogTitle><DialogDescription>A reason helps future discovery avoid similar ideas.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Reject idea</DialogTitle><DialogDescription>The reason is saved with the idea.</DialogDescription></DialogHeader>
         <Label htmlFor={`r-${idea.id}`}>Reason (optional)</Label>
         <Textarea id={`r-${idea.id}`} value={reason} onChange={(e) => setReason(e.target.value)} />
         <DialogFooter><Button variant="outline" onClick={() => setDlg(null)}>Cancel</Button><Button disabled={reject.isPending} onClick={() => reject.mutate()}>Reject</Button></DialogFooter>

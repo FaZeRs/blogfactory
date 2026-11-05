@@ -19,6 +19,7 @@ assert.ok(Math.abs(down.fit - 0.9) < 1e-9);
 assert.deepEqual(nextWeights(DEFAULT_WEIGHTS, positive.slice(0, MIN_SAMPLES - 1)), DEFAULT_WEIGHTS, "too few samples");
 assert.equal(nextWeights({ ...DEFAULT_WEIGHTS, fit: MAX_WEIGHT }, positive).fit, MAX_WEIGHT, "upper bound");
 assert.equal(nextWeights({ ...DEFAULT_WEIGHTS, fit: MIN_WEIGHT }, [0.1, 0.3, 0.5, 0.7, 0.9].map((fit, i) => sample(fit, 5 - i))).fit, MIN_WEIGHT, "lower bound");
+assert.equal(nextWeights({ ...DEFAULT_WEIGHTS, fit: 0 }, positive).fit, 0, "an ignored factor stays ignored");
 assert.equal(nextWeights({ ...DEFAULT_WEIGHTS, fit: 1 / 3 }, positive).fit, Math.round((1 / 3) * 1.1 * 10_000) / 10_000, "rounded to 4 decimals");
 
 // settings round trip keeps learning fields valid
