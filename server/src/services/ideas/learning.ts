@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { ideas, postPublications, posts, searchConsoleMetrics } from "../../db/schema.js";
 import { seoMetadata } from "../seo-metadata.js";
@@ -63,23 +63,29 @@ const cleanSlug = (v: unknown) => {
 
 /**
  * Ideas whose post was published at least 58 days ago (the 28-day window after the first 30 days is complete),
- * with ln(1 + Search Console clicks) in that window as the outcome.
+ * with ln(1 + Search Console clicks) in that window as the outcome. A post counts as published at the earlier of its
+ * first "published" publication and, for a CMS that publishes a delivered draft itself (Lindevo), posts.publish_at once
+ * a draft delivery succeeded and that time has passed.
  * shortcut: the page path must end with /<slug>; a CMS that prefixes or rewrites the slug differently is not matched.
  */
 export async function collectSamples(userId: string, siteId: string, now: Date): Promise<Sample[]> {
   const cutoff = new Date(now.getTime() - WINDOW_END_DAYS * DAY_MS);
+  const nowIso = now.toISOString();
+  const viaPublication = sql`min(coalesce(${postPublications.publishedAt}, ${postPublications.createdAt})) filter (where ${postPublications.status} = 'published')`;
+  const viaSchedule = sql`case when bool_or(${postPublications.status} = 'draft' and ${postPublications.publishMode} = 'draft') and ${posts.publishAt} <= ${nowIso}::timestamptz then ${posts.publishAt} end`;
+  const publishedExpr = sql`least(${viaPublication}, ${viaSchedule})`;
   const rows = await db.select({
-    id: ideas.id, breakdown: ideas.scoreBreakdown, seo: posts.seoMetadata, publishedAt: sql<Date>`min(coalesce(${postPublications.publishedAt}, ${postPublications.createdAt}))`,
+    id: ideas.id, breakdown: ideas.scoreBreakdown, seo: posts.seoMetadata, publishedAt: sql<Date>`${publishedExpr}`,
   }).from(ideas)
     .innerJoin(posts, and(eq(posts.id, ideas.postId), eq(posts.userId, userId)))
-    .innerJoin(postPublications, and(eq(postPublications.postId, posts.id), eq(postPublications.userId, userId), eq(postPublications.status, "published")))
+    .innerJoin(postPublications, and(eq(postPublications.postId, posts.id), eq(postPublications.userId, userId), inArray(postPublications.status, ["published", "draft"])))
     .where(and(eq(ideas.userId, userId), eq(ideas.siteId, siteId)))
     .groupBy(ideas.id, posts.id)
-    .having(sql`min(coalesce(${postPublications.publishedAt}, ${postPublications.createdAt})) <= ${cutoff.toISOString()}::timestamptz`)
-    .orderBy(sql`min(coalesce(${postPublications.publishedAt}, ${postPublications.createdAt})) desc`)
+    .having(sql`${publishedExpr} <= ${cutoff.toISOString()}::timestamptz`)
+    .orderBy(sql`${publishedExpr} desc`)
     .limit(SAMPLE_LIMIT);
 
-  const samples: Sample[] = [];
+  const ready: { id: string; factors: ScoreWeights; slug: string; from: string; to: string }[] = [];
   for (const row of rows) {
     const slug = cleanSlug(seoMetadata(row.seo)?.slug);
     const b = row.breakdown as Record<string, unknown> | null;
@@ -91,17 +97,26 @@ export async function collectSamples(userId: string, siteId: string, now: Date):
     }
     if (!slug || SCORE_FACTORS.some((f) => Number.isNaN(factors[f]))) continue;
     const published = new Date(row.publishedAt);
-    const from = new Date(published.getTime() + WINDOW_START_DAYS * DAY_MS).toISOString().slice(0, 10);
-    const to = new Date(published.getTime() + WINDOW_END_DAYS * DAY_MS).toISOString().slice(0, 10);
-    const [sum] = await db.select({ clicks: sql<number>`coalesce(sum(${searchConsoleMetrics.clicks}), 0)::int` }).from(searchConsoleMetrics)
-      .where(and(
-        eq(searchConsoleMetrics.userId, userId), eq(searchConsoleMetrics.siteId, siteId),
-        sql`${searchConsoleMetrics.date} >= ${from} and ${searchConsoleMetrics.date} < ${to}`,
-        sql`lower(rtrim(${searchConsoleMetrics.pageUrl}, '/')) like ${"%/" + slug}`,
-      ));
-    samples.push({ factors, outcome: Math.log(1 + Number(sum?.clicks ?? 0)) });
+    ready.push({
+      id: row.id, factors, slug,
+      from: new Date(published.getTime() + WINDOW_START_DAYS * DAY_MS).toISOString().slice(0, 10),
+      to: new Date(published.getTime() + WINDOW_END_DAYS * DAY_MS).toISOString().slice(0, 10),
+    });
   }
-  return samples;
+  if (!ready.length) return [];
+
+  // One query for the whole site: each idea's window and slug joined to the site's metrics. Slugs are [a-z0-9-], so LIKE needs no escaping.
+  const values = sql.join(ready.map((r) => sql`(${r.id}::uuid, ${r.slug}::text, ${r.from}::text, ${r.to}::text)`), sql`, `);
+  const sums = await db.execute(sql`
+    select v.id, coalesce(sum(m.clicks), 0)::int as clicks
+    from (values ${values}) as v(id, slug, win_from, win_to)
+    left join ${searchConsoleMetrics} m
+      on m.user_id = ${userId} and m.site_id = ${siteId}
+      and m.date >= v.win_from and m.date < v.win_to
+      and lower(rtrim(m.page_url, '/')) like '%/' || v.slug
+    group by v.id`);
+  const clicksOf = new Map((sums as unknown as { id: string; clicks: number }[]).map((r) => [r.id, Number(r.clicks)]));
+  return ready.map((r) => ({ factors: r.factors, outcome: Math.log(1 + (clicksOf.get(r.id) ?? 0)) }));
 }
 
 export type LearnResult = { status: "learned" | "off" | "already_learned" | "too_few_samples"; samples: number };

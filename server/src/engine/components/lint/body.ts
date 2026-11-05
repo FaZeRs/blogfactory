@@ -1,5 +1,5 @@
 // Vendored from Lindevo packages/mdx/src/lint/body.ts (copied 2026-11-05). Keep in sync with Lindevo; fix import paths only.
-import { blankOut, COMMENT_RE } from "../lib/mask-code.js";
+import { blankOut, COMMENT_RE } from "../../markdown/mask-code.js";
 import { lineStarts, positionOf, type TagEvent } from "../lib/tags.js";
 import { issueAt, type RawIssue } from "./issue.js";
 import type { ComponentUse } from "./structure.js";

@@ -18,7 +18,7 @@ const idea: Idea = {
   alternateKeywords: [], searchIntent: "informational", audienceQuestion: null,
   brief: { whyNow: "New subsidy", outline: ["A", "B", "C"], informationGain: ["Own data"], sources: [], suggestedMode: "normal" },
   score: 72, scoreBreakdown: { trend: 0.8, fit: 0.7, demand: 0.6, feasibility: 0.5, novelty: 0.9, gain: 0.4, keyword: { volume: 1200, difficulty: 30, intent: "informational" }, nearestPost: { id: "p9", title: "Old post", similarity: 0.6 }, rationale: "Strong" },
-  origin: "refresh", discoveryId: null, mode: "normal", scheduledFor: null, jobId: null, postId: null, rejectedReason: null, error: null, createdAt: "", updatedAt: "",
+  origin: "refresh", discoveryId: null, mode: "normal", scheduledFor: null, jobId: null, postId: null, rejectedReason: null, error: null, failedRuns: 0, createdAt: "", updatedAt: "",
 };
 
 async function mount(node: React.ReactNode) {

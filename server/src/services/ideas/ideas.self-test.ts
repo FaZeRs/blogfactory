@@ -53,6 +53,7 @@ assert.equal(custom.defaultMode, "deep");
 assert.deepEqual(custom.autopilot, { enabled: true, approvePerWeek: 1, minScore: 70 });
 assert.deepEqual([custom.weights.fit, custom.weights.trend], [3, 0]);
 assert.deepEqual(custom.seedTopics, ["a"]);
+assert.deepEqual(normalizeIdeaSettings({ competitors: ["https://www.Rival.com/blog?x=1", "rival.com", "Other.co.uk", "nodot", "bad domain.com", "http://localhost", 7] }).competitors, ["rival.com", "other.co.uk"]);
 assert.deepEqual(normalizeIdeaSettings({ cadence: { timezone: "Europe/Riga", time: "09:30" } }).cadence, { weekdays: [1, 4], time: "09:30", timezone: "Europe/Riga" });
 assert.deepEqual(effectiveSeedTopics({ ...DEFAULT_IDEA_SETTINGS, seedTopics: ["SEO", "crm"] }, { topics: ["CRM"], editorialTopics: ["seo tips"] }), ["SEO", "crm", "seo tips"]);
 assert.deepEqual(effectiveSeedTopics(DEFAULT_IDEA_SETTINGS, { name: "Lindevo", domain: "lindevo.com", topics: ["lindevo", "Projects", "services", "automation"] }), ["automation"], "brand and navigation words are dropped");

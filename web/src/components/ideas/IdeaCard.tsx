@@ -103,7 +103,7 @@ export function IdeaCard({ idea }: { idea: Idea }) {
         {outline.length > 0 && <div><span className="font-semibold">Outline</span><ol className="ml-4 list-decimal">{outline.map((h) => <li key={h}>{h}</li>)}</ol></div>}
         {informationGain.length > 0 && <div><span className="font-semibold">Information gain</span><ul className="ml-4 list-disc">{informationGain.map((h) => <li key={h}>{h}</li>)}</ul></div>}
         {sources.length > 0 && <p><span className="font-semibold">Sources:</span> {sources.map((s, i) => <span key={s.url}>{i > 0 && ", "}<a className="underline" href={s.url} target="_blank" rel="noreferrer">{s.title || s.url}</a></span>)}</p>}
-        {idea.error && <p className="text-destructive">Error: {idea.error}</p>}
+        {idea.error && <p className="text-destructive">Error: {idea.error}{idea.failedRuns > 0 && idea.status !== "new" && <span> (failed {idea.failedRuns} of 3 tries)</span>}</p>}
       </div>
       <ScoreBars idea={idea} />
     </div>

@@ -10,6 +10,12 @@ export function stripHttpProtocol(input: string): string {
   return input.trim().replace(/^https?:\/\/(?=.)/i, "");
 }
 
+/** "https://www.Example.com/path" becomes "example.com"; null when the input is not a plain domain name. Mirrors the server. */
+export function bareDomain(input: string): string | null {
+  const host = input.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "").split(/[/?#]/)[0]!.replace(/^www\./, "");
+  return host.length <= 253 && /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(host) ? host : null;
+}
+
 // Private IP ranges that should be blocked to prevent SSRF
 const PRIVATE_IP_PATTERNS = [
   /^127\./,                          // 127.0.0.0/8 (localhost)

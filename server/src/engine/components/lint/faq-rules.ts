@@ -1,5 +1,5 @@
 // Vendored from Lindevo packages/mdx/src/lint/faq-rules.ts (copied 2026-11-05). Keep in sync with Lindevo; fix import paths only.
-import { MIN_FAQ_ANSWER_LENGTH, scanFaq } from "../faq.js";
+import { MIN_FAQ_ANSWER_LENGTH, scanFaq } from "../../markdown/faq.js";
 import { issueAt, type RawIssue } from "./issue.js";
 
 /** Every FAQ entry must be a question with an answer worth publishing. */

@@ -47,6 +47,10 @@ export function readBackgroundWorkerConfig(env: Record<string, string | undefine
   };
 }
 
+// Due ideas are minutes-scale work; polling them every 5 s cycle would only cost queries.
+const DUE_IDEAS_INTERVAL_MS = 60_000;
+let lastDueIdeasAt = 0;
+
 async function loadDrains(): Promise<WorkerDrains> {
   const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }, { drainArticleRuns }, { drainIdeaDiscoveries }, { startDueIdeas }] = await Promise.all([
     import("./campaign-runner.js"),
@@ -56,7 +60,7 @@ async function loadDrains(): Promise<WorkerDrains> {
     import("./ideas/discovery.js"),
     import("./ideas/schedule.js"),
   ]);
-  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns, ideas: async (limit) => ({ discoveries: await drainIdeaDiscoveries(limit), due: await startDueIdeas() }) };
+  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns, ideas: async (limit) => ({ discoveries: await drainIdeaDiscoveries(limit), due: Date.now() - lastDueIdeasAt < DUE_IDEAS_INTERVAL_MS ? null : (lastDueIdeasAt = Date.now(), await startDueIdeas()) }) };
 }
 
 // An engine stage can run for minutes; it must not hold up the other queues or the heartbeat.

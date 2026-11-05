@@ -166,7 +166,7 @@ export function createIdeasRoutes(deps: IdeasRouteDeps = {}) {
     const { userId, idea } = await ownedIdea(c);
     let started;
     try {
-      started = await startIdea(userId, idea.siteId, idea.id, deps.startRun);
+      started = await startIdea(userId, idea.siteId, idea.id, deps.startRun, new Date(), true);
     } catch (error) {
       if (error instanceof EngineUnavailableError) throw new ApiError(503, "service_unavailable", error.message);
       if (error instanceof StageInputError) throw new ApiError(400, "validation_error", error.message);

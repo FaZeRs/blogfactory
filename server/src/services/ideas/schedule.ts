@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { ideas, siteIntegrations } from "../../db/schema.js";
 import { startArticleRun } from "../../engine/article-runs.js";
@@ -117,7 +117,7 @@ export async function bookIdea(input: {
     const slot = input.scheduledFor ?? await nextFreeSlot(input.userId, input.siteId, input.settings, now, input.ideaId);
     try {
       const [row] = await db.update(ideas)
-        .set({ ...input.edits, status: "scheduled", scheduledFor: slot, error: null, updatedAt: now })
+        .set({ ...input.edits, status: "scheduled", scheduledFor: slot, error: null, failedRuns: 0, updatedAt: now })
         .where(and(eq(ideas.id, input.ideaId), eq(ideas.userId, input.userId), eq(ideas.siteId, input.siteId), inArray(ideas.status, [...input.from])))
         .returning();
       return row ?? null;
@@ -161,10 +161,11 @@ function instructionsFor(idea: Idea) {
 /**
  * Starts the article run for a `new` or `scheduled` idea and marks it `in_progress`. The claim comes first, so a second
  * caller finds nothing to start. When the run cannot start the idea goes back (to `scheduled` if it has a slot) with the
- * error, and the error is thrown. Resolves to null when the idea was not startable.
+ * error, and the error is thrown (a failed start spent nothing, so it does not count toward the failed-run cap).
+ * `resetFailures` is for the owner starting it by hand. Resolves to null when the idea was not startable.
  */
-export async function startIdea(userId: string, siteId: string, ideaId: string, run: StartRun = startArticleRun, now = new Date()) {
-  const [claimed] = await db.update(ideas).set({ status: "in_progress", error: null, updatedAt: now })
+export async function startIdea(userId: string, siteId: string, ideaId: string, run: StartRun = startArticleRun, now = new Date(), resetFailures = false) {
+  const [claimed] = await db.update(ideas).set({ status: "in_progress", error: null, ...(resetFailures ? { failedRuns: 0 } : {}), updatedAt: now })
     .where(and(eq(ideas.id, ideaId), eq(ideas.userId, userId), eq(ideas.siteId, siteId), inArray(ideas.status, ["new", "scheduled"])))
     .returning();
   if (!claimed) return null;
@@ -198,14 +199,17 @@ const DUE_BATCH = 10;
 
 /** Starts every scheduled idea whose slot minus the site's lead time has passed. A failed start waits 30 minutes before the next try. */
 export async function startDueIdeas(now = new Date(), run: StartRun = startArticleRun): Promise<{ started: number; failed: number }> {
+  // Only ideas that can be due under the largest lead time and are past any retry wait; the per-site lead is checked below.
   const candidates = await db.select().from(ideas)
-    .where(and(eq(ideas.status, "scheduled"), isNotNull(ideas.scheduledFor), lte(ideas.scheduledFor, new Date(now.getTime() + MAX_LEAD_DAYS * DAY_MS))))
+    .where(and(
+      eq(ideas.status, "scheduled"), isNotNull(ideas.scheduledFor), lte(ideas.scheduledFor, new Date(now.getTime() + MAX_LEAD_DAYS * DAY_MS)),
+      or(isNull(ideas.error), lte(ideas.updatedAt, new Date(now.getTime() - RETRY_BACKOFF_MS))),
+    ))
     .orderBy(asc(ideas.scheduledFor)).limit(100);
   const lead = new Map<string, number>();
   let started = 0, failed = 0;
   for (const idea of candidates) {
     if (started + failed >= DUE_BATCH) break;
-    if (idea.error && now.getTime() - idea.updatedAt.getTime() < RETRY_BACKOFF_MS) continue;
     const key = `${idea.userId}:${idea.siteId}`;
     if (!lead.has(key)) lead.set(key, (await getIdeaSettings(idea.userId, idea.siteId)).leadDays);
     if (idea.scheduledFor!.getTime() - lead.get(key)! * DAY_MS > now.getTime()) continue;

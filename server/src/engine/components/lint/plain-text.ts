@@ -1,6 +1,6 @@
 // Vendored from Lindevo packages/mdx/src/lint/plain-text.ts (copied 2026-11-05). Keep in sync with Lindevo; fix import paths only.
 import { getComponentSpec } from "../component-spec.js";
-import { COMMENT_RE, FENCE_RE, INLINE_CODE_RE } from "../lib/mask-code.js";
+import { COMMENT_RE, FENCE_RE, INLINE_CODE_RE } from "../../markdown/mask-code.js";
 import {
   AUTOLINK_RE,
   normalizeNewlines,

@@ -46,6 +46,9 @@ function parseTransition(value: unknown): Transition | null {
   return null;
 }
 
+/** A scheduled idea whose run fails this many times stops retrying. */
+const MAX_IDEA_FAILED_RUNS = 3;
+
 export async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
   if (!run.jobId) return;
   const base = { currentStep: `engine_${run.currentStage}`, totalCost: run.spentUsd };
@@ -79,9 +82,15 @@ async function mirrorIdea(tx: Tx, run: ArticleRunRow, now: Date) {
       await tx.update(posts).set({ publishAt: idea.scheduledFor }).where(and(eq(posts.id, run.postId), eq(posts.userId, run.userId)));
     }
   } else {
+    // A failed run spent money, so it counts; the third failure releases the slot and waits for the owner.
+    const reason = (run.stateReason ?? "The run failed").slice(0, 300);
+    const capped = sql`${ideas.failedRuns} + 1 >= ${MAX_IDEA_FAILED_RUNS}`;
     await tx.update(ideas).set({
-      status: sql`CASE WHEN ${ideas.scheduledFor} IS NULL THEN 'new' ELSE 'scheduled' END`,
-      error: run.stateReason ?? "The run failed", updatedAt: now,
+      failedRuns: sql`${ideas.failedRuns} + 1`,
+      status: sql`CASE WHEN ${capped} OR ${ideas.scheduledFor} IS NULL THEN 'new' ELSE 'scheduled' END`,
+      scheduledFor: sql`CASE WHEN ${capped} THEN NULL ELSE ${ideas.scheduledFor} END`,
+      error: sql`CASE WHEN ${capped} THEN ${`Writing failed ${MAX_IDEA_FAILED_RUNS} times: ${reason}. Edit or write it again.`} ELSE ${reason} END`,
+      updatedAt: now,
     }).where(where);
   }
 }

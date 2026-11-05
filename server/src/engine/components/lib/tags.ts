@@ -1,5 +1,5 @@
 // Vendored from Lindevo packages/mdx/src/lib/tags.ts (copied 2026-11-05). Keep in sync with Lindevo; fix import paths only.
-import { blankOut, maskCode } from "./mask-code.js";
+import { blankOut, maskCode } from "../../markdown/mask-code.js";
 
 export interface TagEvent {
   /** The attribute text between the tag name and ">", as written. */

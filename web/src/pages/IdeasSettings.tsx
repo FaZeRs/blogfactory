@@ -8,13 +8,41 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Globe2, X } from "lucide-react";
+import { InputAffordance } from "@/components/ui/input-affordance";
 import { TagInput } from "@/components/ui/tag-input";
 import { api } from "@/lib/api";
+import { bareDomain, stripHttpProtocol } from "@/lib/url-validation";
 import { useSites } from "@/hooks/useSites";
 import { FACTORS, ideasKey, type IdeaSettings } from "@/lib/ideas";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const num = (v: string) => (v === "" ? 0 : Number(v));
+
+const MAX_COMPETITORS = 10;
+
+/** One domain at a time, normalized to a bare domain before it joins the list. */
+function CompetitorField({ id, value, onChange }: { id: string; value: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const domain = bareDomain(draft);
+  const add = () => {
+    if (!domain) return;
+    if (!value.includes(domain) && value.length < MAX_COMPETITORS) onChange([...value, domain]);
+    setDraft("");
+  };
+  return <div className="space-y-2">
+    <div className="flex gap-2">
+      <InputAffordance id={id} type="text" inputMode="url" prefix="https://" icon={Globe2} value={draft} placeholder="rival.com"
+        onChange={(e) => setDraft(stripHttpProtocol(e.target.value))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+        aria-invalid={Boolean(draft.trim() && !domain)} help="A domain such as rival.com. Paths and www are dropped."
+        onClear={() => setDraft("")} clearLabel="Clear domain" disabled={value.length >= MAX_COMPETITORS} />
+      <Button type="button" variant="outline" onClick={add} disabled={!domain || value.length >= MAX_COMPETITORS}>Add</Button>
+    </div>
+    {draft.trim() && !domain && <p className="text-xs text-destructive">Enter a valid domain, for example rival.com.</p>}
+    {value.length > 0 && <ul className="flex flex-wrap gap-1.5">{value.map((d) => <li key={d} className="inline-flex h-6 items-center gap-1 rounded-sm border border-byword-border px-2 text-xs">
+      {d}<button type="button" className="text-muted-foreground hover:text-destructive" aria-label={`Remove ${d}`} onClick={() => onChange(value.filter((x) => x !== d))}><X className="h-3 w-3" /></button></li>)}</ul>}
+  </div>;
+}
 
 export default function IdeasSettings() {
   const siteId = useSites().activeSite?.id;
@@ -78,7 +106,7 @@ export default function IdeasSettings() {
       </BywordCard>
       <BywordCard className="space-y-3 p-4">
         <div><Label htmlFor="seeds">Seed topics</Label><TagInput id="seeds" value={s.seedTopics} onChange={(v) => set({ seedTopics: v })} placeholder="Add a topic" /></div>
-        <div><Label htmlFor="comp">Competitor domains</Label><TagInput id="comp" value={s.competitors} onChange={(v) => set({ competitors: v })} placeholder="example.com" /></div>
+        <div><Label htmlFor="comp">Competitor domains</Label><CompetitorField id="comp" value={s.competitors} onChange={(v) => set({ competitors: v })} /></div>
       </BywordCard>
     </div>
   </BywordPageShell>;

@@ -752,6 +752,7 @@ export const ideas = pgTable("ideas", {
   postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
   rejectedReason: text("rejected_reason"),
   error: text("error"),
+  failedRuns: integer("failed_runs").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

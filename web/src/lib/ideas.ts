@@ -15,7 +15,7 @@ export interface Idea {
   brief: Partial<{ whyNow: string; outline: string[]; informationGain: string[]; sources: { url: string; title: string }[]; suggestedMode: IdeaMode }>;
   score: number | null; scoreBreakdown: IdeaScoreBreakdown | null;
   origin: "discovered" | "manual" | "refresh"; discoveryId: string | null; mode: IdeaMode;
-  scheduledFor: string | null; jobId: string | null; postId: string | null; rejectedReason: string | null; error: string | null;
+  scheduledFor: string | null; jobId: string | null; postId: string | null; rejectedReason: string | null; error: string | null; failedRuns: number;
   createdAt: string; updatedAt: string;
 }
 export interface IdeaDiscovery {

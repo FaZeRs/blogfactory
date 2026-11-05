@@ -5,7 +5,7 @@ import {
   getComponentSpec,
   PLAIN_HTML_ALLOWLIST,
 } from "../component-spec.js";
-import { COMMENT_RE } from "../lib/mask-code.js";
+import { COMMENT_RE } from "../../markdown/mask-code.js";
 import {
   lineStarts,
   notDoubleQuoted,

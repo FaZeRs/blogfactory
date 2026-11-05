@@ -49,6 +49,13 @@ const int = (v: unknown, min: number, max: number, fallback: number) => {
 const strings = (v: unknown, max: number, len: number) =>
   Array.isArray(v) ? [...new Set(v.flatMap((x) => typeof x === "string" && x.trim() ? [x.trim().slice(0, len)] : []))].slice(0, max) : [];
 
+/** "https://www.Example.com/path" becomes "example.com"; null when it is not a plain domain name. */
+export function bareDomain(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const host = v.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "").split(/[/?#]/)[0]!.replace(/^www\./, "");
+  return host.length <= 253 && /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(host) ? host : null;
+}
+
 export function isValidTimezone(tz: unknown): tz is string {
   if (typeof tz !== "string" || !tz) return false;
   try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; }
@@ -98,7 +105,7 @@ export function normalizeIdeaSettings(raw: unknown): IdeaSettings {
     },
     weights: weightsOf(r.weights),
     seedTopics: strings(r.seedTopics, 20, 120),
-    competitors: strings(r.competitors, 10, 253),
+    competitors: [...new Set(strings(r.competitors, 20, 300).flatMap((d) => bareDomain(d) ?? []))].slice(0, 10),
     learnWeights: r.learnWeights !== false,
     weightsLearnedMonth: typeof r.weightsLearnedMonth === "string" && MONTH.test(r.weightsLearnedMonth) ? r.weightsLearnedMonth : null,
     weightHistory: history,

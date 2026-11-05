@@ -37,7 +37,7 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
   const { eq } = await import("drizzle-orm");
   const { db } = await import("../../db/index.js");
   const { users, sites, ideas, posts, postPublications, searchConsoleMetrics } = await import("../../db/schema.js");
-  const { learnSiteWeights, drainWeightLearning } = await import("./learning.js");
+  const { learnSiteWeights, drainWeightLearning, collectSamples } = await import("./learning.js");
   const { getIdeaSettings, saveIdeaSettings } = await import("./settings.js");
   const { bookOwnedIdea, listIdeas, rejectOwnedIdea, IdeaActionError } = await import("./actions.js");
 
@@ -86,6 +86,21 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.deepEqual([learned.weightHistory.length, learned.weightHistory[0]!.samples], [1, 5]);
     assert.deepEqual(await learnSiteWeights(user.id, site.id, now), { status: "already_learned", samples: 0 }, "once per month");
     assert.equal((await getIdeaSettings(user.id, site.id)).weights.fit, learned.weights.fit);
+
+    // Lindevo publishes a delivered draft at posts.publish_at: it counts once that time has passed, and only after a successful draft delivery
+    const lindevo = async (n: number, publishAt: Date, status = "draft") => {
+      const [post] = await db.insert(posts).values({ userId: user.id, siteId: site.id, title: `l${n}`, content: "c", sourceType: "article_title", modelId: "m", seoMetadata: seo(`post-${n}`), publishAt }).returning();
+      await db.insert(postPublications).values({ userId: user.id, postId: post.id, siteId: site.id, provider: "lindevo", publishMode: "draft", status });
+      await db.insert(ideas).values({ userId: user.id, siteId: site.id, title: `idea ${n}`, status: "drafted", postId: post.id, scoreBreakdown: { trend: 0.5, fit: 0.5, demand: 0.5, feasibility: 0.5, novelty: 0.5, gain: 0.5 } });
+      await db.insert(searchConsoleMetrics).values({ userId: user.id, siteId: site.id, date: ymd(day(31, publishAt)), pageUrl: `https://s.example.test/blog/post-${n}`, query: "q", clicks: 7 });
+    };
+    assert.equal((await collectSamples(user.id, site.id, now)).length, 5);
+    await lindevo(100, day(-70));
+    assert.equal((await collectSamples(user.id, site.id, now)).length, 6, "a draft whose publish_at has passed counts");
+    await lindevo(101, day(5));
+    await lindevo(102, day(-70), "failed");
+    assert.equal((await collectSamples(user.id, site.id, now)).length, 6, "a future publish_at and a failed delivery do not");
+    assert.ok((await collectSamples(user.id, site.id, now)).some((s) => Math.abs(s.outcome - Math.log(8)) < 1e-9), "its clicks are read from the window after publish_at");
 
     // the web save keeps learning's month and history
     await saveIdeaSettings(user.id, site.id, { ...learned, weightHistory: [], weightsLearnedMonth: null, weights: { ...learned.weights, gain: 2 } });

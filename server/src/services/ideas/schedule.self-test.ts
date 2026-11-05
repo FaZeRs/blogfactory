@@ -102,7 +102,18 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     const [retried] = await db.select().from(ideas).where(eq(ideas.id, wait.id));
     await run("failed", null, retried.jobId!);
     const [back] = await db.select().from(ideas).where(eq(ideas.id, wait.id));
-    assert.deepEqual([back.status, back.error], ["scheduled", "boom"]);
+    assert.deepEqual([back.status, back.error, back.failedRuns], ["scheduled", "boom", 1]);
+    // the third failed run releases the slot and stops retrying; a failed start never counted
+    const failTwice = async () => { const r = await startIdea(user.id, site.id, wait.id, fakeRun as never); await run("failed", null, r!.idea.jobId!); };
+    await failTwice();
+    assert.equal((await db.select().from(ideas).where(eq(ideas.id, wait.id)))[0]!.status, "scheduled", "second failure retries");
+    await failTwice();
+    const [capped] = await db.select().from(ideas).where(eq(ideas.id, wait.id));
+    assert.deepEqual([capped.status, capped.scheduledFor, capped.failedRuns], ["new", null, 3]);
+    assert.equal(capped.error, "Writing failed 3 times: boom. Edit or write it again.");
+    assert.equal((await db.select().from(ideas).where(eq(ideas.id, w.id)))[0]!.failedRuns, 0, "a failed start is not a failed run");
+    await startIdea(user.id, site.id, wait.id, fakeRun as never, new Date(), true);
+    assert.equal((await db.select().from(ideas).where(eq(ideas.id, wait.id)))[0]!.failedRuns, 0, "write now resets the count");
 
     // autopilot: top ideas at or above minScore, capped per week, counting this week's
     const auto = { ...settings, autopilot: { enabled: true, approvePerWeek: 2, minScore: 60 } };
