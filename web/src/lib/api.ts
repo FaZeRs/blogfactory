@@ -12,6 +12,7 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     public details: ApiFieldError[] = [],
+    public indexErrors: { index: number; message: string }[] = [],
   ) {
     super(message);
     this.name = "ApiError";
@@ -83,7 +84,10 @@ class ApiClient {
             item && typeof item === "object" && "field" in item && typeof item.field === "string" && "message" in item && typeof item.message === "string",
           ))
         : [];
-      const apiError = new ApiError(message, resp.status, code, details);
+      const indexErrors = Array.isArray(envelope.errors)
+        ? envelope.errors.filter((item): item is { index: number; message: string } => Boolean(item && typeof item === "object" && typeof item.index === "number" && typeof item.message === "string"))
+        : [];
+      const apiError = new ApiError(message, resp.status, code, details, indexErrors);
       if (resp.status === 401) {
         this.setToken(null);
         if (shouldRedirectAfterUnauthorized(path)) {
