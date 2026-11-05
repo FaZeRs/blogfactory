@@ -18,6 +18,7 @@ import { safeFetch } from "../safe-fetch.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { generateCandidates, type Candidate, type SiteContext } from "./candidates.js";
 import { assessNovelty, similarity, REJECT_SIMILARITY } from "./novelty.js";
+import { runAutopilot } from "./schedule.js";
 import { combineScore, demandFactor, feasibilityFactor, trendFactor, type Factors } from "./score.js";
 import { effectiveSeedTopics, getIdeaSettings, type IdeaSettings } from "./settings.js";
 import { collectSignals, signalAgeDays, type CollectorDeps, type Signal } from "./signals.js";
@@ -162,7 +163,7 @@ export async function fetchKeywordMetrics(input: {
 
 // ── run ──
 
-async function defaultDeps(userId: string, engineSettings: unknown): Promise<DiscoveryDeps> {
+export async function loadDiscoveryDeps(userId: string, engineSettings: unknown): Promise<DiscoveryDeps> {
   const endpoint = engineAiEndpoint(process.env, await getOpenRouterKey(userId));
   if (!endpoint) throw new Error("OpenRouter is not configured");
   let spent = 0;
@@ -213,7 +214,7 @@ async function readFeedUrls(userId: string, siteId: string) {
 }
 
 /** Existing posts of the site plus the titles in its internal-link index (its sitemap pages). */
-async function readExistingContent(userId: string, siteId: string, index: unknown) {
+export async function readExistingContent(userId: string, siteId: string, index: unknown) {
   const rows = await db.select({ id: posts.id, title: posts.title }).from(posts)
     .where(and(eq(posts.userId, userId), eq(posts.siteId, siteId))).orderBy(desc(posts.createdAt)).limit(1000);
   const pages = Array.isArray((index as { pages?: unknown })?.pages) ? (index as { pages: { url?: unknown; title?: unknown }[] }).pages : [];
@@ -239,7 +240,7 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
     const guard = await checkAccountGuardrails(userId);
     if (guard.blocked) throw new Error(guard.message);
     const [settings, effective] = await Promise.all([getIdeaSettings(userId, siteId), getEffectiveSettings(userId, siteId)]);
-    deps ??= await defaultDeps(userId, effective.engineSettings);
+    deps ??= await loadDiscoveryDeps(userId, effective.engineSettings);
     model = deps.model;
     const locale = localeOf(site.language);
     const seeds = effectiveSeedTopics(settings, site);
@@ -293,6 +294,8 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
       }
       result.ideaCount = scored.length;
     }
+    // A failed autopilot step must not fail a discovery whose ideas are saved; the ideas stay in the inbox.
+    await runAutopilot(userId, siteId, settings).catch(() => console.error("[ideas] Autopilot step failed"));
     result.costUsd = llmCost + (deps.dataForSeoSpent?.() ?? 0);
     await db.update(ideaDiscoveries).set({ status: "done", signalCount: result.signalCount, ideaCount: result.ideaCount, costUsd: result.costUsd, finishedAt: new Date() })
       .where(and(eq(ideaDiscoveries.id, row.id), eq(ideaDiscoveries.userId, userId)));

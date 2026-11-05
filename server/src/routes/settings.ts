@@ -25,12 +25,14 @@ import { chunkKnowledgeContent } from "../services/knowledge.js";
 import { readJsonObject, safeError } from "../http/error-contract.js";
 import { engineSettingsResponse } from "../engine/article-runs.js";
 import { parseEngineSettings } from "../engine/modes.js";
+import { getIdeaSettings, isValidTimezone, saveIdeaSettings } from "../services/ideas/settings.js";
 import { COVER_STYLE_DEFAULTS, siteDefaultCoverStyle } from "../services/cover-tools.js";
 import { normalizeOpenRouterImageModelId } from "../services/openrouter-models.js";
 import {
   ensureGlobalSettings,
   ensureSiteSettings,
   getActiveSiteId,
+  getSiteForUser,
   getEffectiveSettings,
   isAccountSettingsUpdate,
   updateGlobalSettings,
@@ -472,6 +474,24 @@ settingsRoutes.put("/engine", async (c) => {
     throw err;
   }
   return c.json(engineSettingsResponse(engineSettings, process.env, Boolean(await getOpenRouterKey(userId))));
+});
+
+settingsRoutes.get("/ideas", async (c) => {
+  const userId = getUserId(c);
+  const siteId = c.req.query("siteId") || c.req.query("site_id") || await getActiveSiteId(userId);
+  if (!siteId || !await getSiteForUser(userId, siteId)) return c.json({ error: "Site not found" }, 404);
+  return c.json({ settings: await getIdeaSettings(userId, siteId) });
+});
+
+settingsRoutes.put("/ideas", async (c) => {
+  const userId = getUserId(c);
+  const body = await readJsonObject(c);
+  const siteId = asOptionalText(body.siteId ?? body.site_id) || c.req.query("siteId") || await getActiveSiteId(userId);
+  if (!siteId || !await getSiteForUser(userId, siteId)) return c.json({ error: "Site not found" }, 404);
+  const input = body.settings ?? body;
+  const timezone = (input as { cadence?: { timezone?: unknown } })?.cadence?.timezone;
+  if (timezone !== undefined && !isValidTimezone(timezone)) return c.json({ error: "cadence.timezone must be an IANA time zone" }, 400);
+  return c.json({ settings: await saveIdeaSettings(userId, siteId, input) });
 });
 
 settingsRoutes.get("/api-keys", async (c) => {

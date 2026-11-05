@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { articleRuns, articleStageRuns, campaignItems, generationLogs, jobs } from "../../db/schema.js";
+import { articleRuns, articleStageRuns, campaignItems, generationLogs, ideas, jobs, posts } from "../../db/schema.js";
 import { checkAccountGuardrails } from "../../services/account-guardrails.js";
 import { parseEngineSettings, resolveRunSettings } from "../modes.js";
 import { RateLimitError, StageInputError, type EngineMode, type StageKey, type Transition } from "../types.js";
@@ -46,7 +46,7 @@ function parseTransition(value: unknown): Transition | null {
   return null;
 }
 
-async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
+export async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
   if (!run.jobId) return;
   const base = { currentStep: `engine_${run.currentStage}`, totalCost: run.spentUsd };
   const terminal = run.state === "done" || run.state === "failed" || run.state === "escalated";
@@ -66,6 +66,23 @@ async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
       ? { status: "completed", planningStatus: "in_progress", postId: run.postId, completedAt: now, errorMessage: null }
       : { status: "failed", planningStatus: "blocked", errorMessage: run.stateReason, completedAt: now })
       .where(and(eq(campaignItems.id, job.campaignItemId), eq(campaignItems.userId, run.userId)));
+  }
+  if (terminal) await mirrorIdea(tx, run, now);
+}
+
+/** An idea started for this run becomes drafted (with its slot as the post's publish_at) or goes back to be retried. */
+async function mirrorIdea(tx: Tx, run: ArticleRunRow, now: Date) {
+  const where = and(eq(ideas.jobId, run.jobId!), eq(ideas.userId, run.userId), eq(ideas.status, "in_progress"));
+  if (run.state !== "failed" && run.postId) {
+    const [idea] = await tx.update(ideas).set({ status: "drafted", postId: run.postId, error: null, updatedAt: now }).where(where).returning({ scheduledFor: ideas.scheduledFor });
+    if (idea?.scheduledFor && idea.scheduledFor > now) {
+      await tx.update(posts).set({ publishAt: idea.scheduledFor }).where(and(eq(posts.id, run.postId), eq(posts.userId, run.userId)));
+    }
+  } else {
+    await tx.update(ideas).set({
+      status: sql`CASE WHEN ${ideas.scheduledFor} IS NULL THEN 'new' ELSE 'scheduled' END`,
+      error: run.stateReason ?? "The run failed", updatedAt: now,
+    }).where(where);
   }
 }
 

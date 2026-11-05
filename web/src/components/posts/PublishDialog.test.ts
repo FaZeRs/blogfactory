@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGenericPublishDefaults, buildPublishDefaults } from "./PublishDialog";
+import { buildGenericPublishDefaults, buildPublishDefaults, futureLocalInput } from "./PublishDialog";
 import { buildOrtakAlanMetadata, ortakAlanEditorialMetadata } from "./ortak-alan-publishing";
 
 describe("publish defaults", () => {
@@ -58,5 +58,14 @@ describe("publish defaults", () => {
     expect(editorial).not.toHaveProperty("slug");
     expect(editorial).not.toHaveProperty("metaTitle");
     expect(editorial).not.toHaveProperty("metaDescription");
+  });
+});
+
+describe("futureLocalInput", () => {
+  it("pre-fills only a future time, as local datetime-local text", () => {
+    const now = new Date(2030, 0, 1, 8, 0).getTime();
+    expect(futureLocalInput(new Date(2030, 0, 5, 9, 30).toISOString(), now)).toBe("2030-01-05T09:30");
+    expect(futureLocalInput(new Date(2029, 0, 5).toISOString(), now)).toBe("");
+    expect(futureLocalInput(null, now)).toBe("");
   });
 });

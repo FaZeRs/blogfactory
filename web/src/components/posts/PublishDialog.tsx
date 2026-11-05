@@ -71,6 +71,8 @@ interface PublishDialogProps {
   inlineImages?: string[];
   imageAssets?: PublishingImageMetadata[];
   updatedAt: string;
+  /** The slot an idea booked for this post; the default publish time for Lindevo. */
+  publishAt?: string | null;
   editorialState: EditorialState;
   disabled?: boolean;
   disabledReason?: string;
@@ -143,11 +145,21 @@ export function buildGenericPublishDefaults(
   };
 }
 
-export function PublishDialog({ postId, title, content, summary, publishingMetadata, seoMetadata, seoLimits, feedEditorialDefaults, siteId, preferredIntegrationId, coverImageUrl, inlineImages, imageAssets, updatedAt, editorialState, disabled, disabledReason }: PublishDialogProps) {
+/** An ISO instant as the local "YYYY-MM-DDTHH:mm" a datetime-local input takes; empty unless it is in the future. */
+export function futureLocalInput(iso?: string | null, now = Date.now()) {
+  const at = iso ? new Date(iso) : null;
+  if (!at || Number.isNaN(at.getTime()) || at.getTime() <= now) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}T${p(at.getHours())}:${p(at.getMinutes())}`;
+}
+
+export function PublishDialog({ postId, title, content, summary, publishingMetadata, seoMetadata, seoLimits, feedEditorialDefaults, siteId, preferredIntegrationId, coverImageUrl, inlineImages, imageAssets, updatedAt, publishAt, editorialState, disabled, disabledReason }: PublishDialogProps) {
   const [open, setOpen] = useState(false);
   const [integrationId, setIntegrationId] = useState("");
   const [mode, setMode] = useState<"draft" | "publish">("draft");
   const [postType, setPostType] = useState<"post" | "page">("post");
+  const [publishAtEdit, setPublishAtEdit] = useState<string | null>(null);
+  const publishAtValue = publishAtEdit ?? futureLocalInput(publishAt);
   const [tags, setTags] = useState("");
   const [categories, setCategories] = useState("");
   const [slug, setSlug] = useState("");
@@ -331,6 +343,8 @@ export function PublishDialog({ postId, title, content, summary, publishingMetad
           profile: "generic", postType, excerpt: summary || "",
           tags: commaList(tags), categories: commaList(categories),
         },
+        // Lindevo schedules the draft; the server refuses a time that is not in the future.
+        ...(draftOnly && publishAtValue && new Date(publishAtValue).getTime() > Date.now() ? { publish_at: new Date(publishAtValue).toISOString() } : {}),
         expected_updated_at: updatedAt,
         review_override: reviewOverride,
       });
@@ -615,6 +629,12 @@ export function PublishDialog({ postId, title, content, summary, publishingMetad
                 <Label htmlFor={`publish-categories-${postId}`}>Kategoriler</Label>
                 <Input id={`publish-categories-${postId}`} value={categories} onChange={(event) => setCategories(event.target.value)} placeholder="Blog, Rehberler" />
               </div>
+              {draftOnly && (
+                <div className="space-y-2">
+                  <Label htmlFor={`publish-at-${postId}`}>Planlanan yayın zamanı</Label>
+                  <Input id={`publish-at-${postId}`} type="datetime-local" value={publishAtValue} onChange={(event) => setPublishAtEdit(event.target.value)} />
+                </div>
+              )}
             </div>
 
             {inheritedWarnings.length > 0 && <Alert variant="warning" className="text-xs">{inheritedWarnings.map((warning) => <p key={warning}>• {warning}</p>)}</Alert>}

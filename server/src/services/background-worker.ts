@@ -48,14 +48,15 @@ export function readBackgroundWorkerConfig(env: Record<string, string | undefine
 }
 
 async function loadDrains(): Promise<WorkerDrains> {
-  const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }, { drainArticleRuns }, { drainIdeaDiscoveries }] = await Promise.all([
+  const [{ drainCampaignQueue }, { drainSeoMetadata }, { drainDeferredImages }, { drainArticleRuns }, { drainIdeaDiscoveries }, { startDueIdeas }] = await Promise.all([
     import("./campaign-runner.js"),
     import("./seo-metadata.js"),
     import("./low-cost-images.js"),
     import("../engine/article-runs.js"),
     import("./ideas/discovery.js"),
+    import("./ideas/schedule.js"),
   ]);
-  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns, ideas: (limit) => drainIdeaDiscoveries(limit) };
+  return { campaigns: drainCampaignQueue, seo: drainSeoMetadata, images: drainDeferredImages, articles: drainArticleRuns, ideas: async (limit) => ({ discoveries: await drainIdeaDiscoveries(limit), due: await startDueIdeas() }) };
 }
 
 // An engine stage can run for minutes; it must not hold up the other queues or the heartbeat.

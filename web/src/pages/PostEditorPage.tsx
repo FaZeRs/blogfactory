@@ -54,6 +54,7 @@ interface Post {
   cover_image_url?: string | null;
   inline_images?: string[] | null;
   publishing_metadata?: Partial<OrtakAlanMetadata> | null;
+  publish_at?: string | null;
   seo_metadata?: SeoMetadata | null;
   seo_status?: SeoMetadata["status"] | "missing";
   seo_limits: SeoLimits;
@@ -378,6 +379,7 @@ export default function PostEditorPage() {
               inlineImages={inlineImages}
               imageAssets={post?.image_assets || []}
               updatedAt={post.updated_at}
+              publishAt={post.publish_at}
               editorialState={post.editorial_state}
               disabled={isSaving || Boolean(hasChanges)}
               disabledReason={hasChanges ? "Save changes before publishing to an integration" : undefined}

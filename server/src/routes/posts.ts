@@ -73,6 +73,7 @@ postsRoutes.get("/", async (c) => {
       seo_metadata: posts.seoMetadata,
       created_at: posts.createdAt,
       updated_at: posts.updatedAt,
+      publish_at: posts.publishAt,
       generation_plan: sql<Record<string, unknown> | null>`case when ${jobs.generationPlan} is null then null else jsonb_build_object(
         'totalDrafts', ${jobs.generationPlan}->'totalDrafts',
         'failedDrafts', ${jobs.generationPlan}->'failedDrafts',
@@ -644,6 +645,7 @@ postsRoutes.get("/:id", async (c) => {
       approvedRevisionId: posts.approvedRevisionId,
       created_at: posts.createdAt,
       updated_at: posts.updatedAt,
+      publish_at: posts.publishAt,
       persona_name: personas.name,
       campaign_name: campaigns.name,
       site_name: sites.name,

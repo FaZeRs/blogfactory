@@ -48,6 +48,8 @@ export async function generateCandidates(input: {
   site: SiteContext;
   postTitles: string[];
   signals: Signal[];
+  /** How many ideas to ask for; defaults to MAX_CANDIDATES. */
+  max?: number;
   signal?: AbortSignal;
 }): Promise<{ candidates: Candidate[]; costUsd: number; model: string }> {
   const site = [
@@ -60,7 +62,7 @@ export async function generateCandidates(input: {
   const signals = input.signals.map((s) => `${s.id} | ${s.source} | ${s.title} | ${s.summary}`).join("\n");
   const prompt = await preparePrompt("ideas-candidates", {
     dataRule: DATA_RULE,
-    max: MAX_CANDIDATES,
+    max: input.max ?? MAX_CANDIDATES,
     site: fenceData("site", site),
     posts: fenceData("posts", input.postTitles.slice(0, 200).map((t) => `- ${t}`).join("\n") || "(none)"),
     signals: fenceData("signals", signals || "(none)"),
