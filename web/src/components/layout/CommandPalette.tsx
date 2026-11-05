@@ -22,6 +22,7 @@ import {
   Settings,
   Sparkles,
   Users,
+  Lightbulb,
 } from "lucide-react";
 
 import {
@@ -57,6 +58,7 @@ type PostSearchResponse = {
 const NAV_TARGETS: Array<{ label: string; hint: string; to: string; icon: LucideIcon }> = [
   { label: "Overview", hint: "Workspace summary", to: "/", icon: LayoutDashboard },
   { label: "Create Content", hint: "Start a generation run", to: "/create", icon: Plus },
+  { label: "Ideas", hint: "Scored topics and schedule", to: "/ideas", icon: Lightbulb },
   { label: "Review Queue", hint: "Drafts needing a decision", to: "/review", icon: FileText },
   { label: "Runs", hint: "Jobs, cost, recovery", to: "/runs", icon: ListTodo },
   { label: "Search Growth", hint: "Evidence and growth plan", to: "/overview/growth", icon: Search },

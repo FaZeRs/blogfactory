@@ -20,6 +20,7 @@ import {
   Loader2,
   MessageSquarePlus,
   BookOpen,
+  Lightbulb,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -57,6 +58,7 @@ const setupChecklistKey = (siteId: string | null | undefined) => `blogfactory:se
 const primaryNavigation = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
   { name: "Create Content", href: "/create", icon: Plus },
+  { name: "Ideas", href: "/ideas", icon: Lightbulb },
   { name: "Review Queue", href: "/review", icon: FileText },
   { name: "Runs", href: "/runs", icon: ListTodo },
   { name: "Search Growth", href: "/overview/growth", icon: Search },

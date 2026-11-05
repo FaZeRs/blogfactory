@@ -15,6 +15,10 @@ import { SectionTabs } from "@/components/layout/SectionTabs";
 const Auth = lazy(() => import("@/pages/Auth"));
 const Overview = lazy(() => import("@/pages/Overview"));
 const ReviewQueue = lazy(() => import("@/pages/ReviewQueue"));
+const Ideas = lazy(() => import("@/pages/Ideas"));
+const IdeasPlanned = lazy(() => import("@/pages/IdeasPlanned"));
+const IdeasCalendar = lazy(() => import("@/pages/IdeasCalendar"));
+const IdeasSettings = lazy(() => import("@/pages/IdeasSettings"));
 const Posts = lazy(() => import("@/pages/Posts"));
 const PostEditorPage = lazy(() => import("@/pages/PostEditorPage"));
 const PostPreviewPage = lazy(() => import("@/pages/PostPreviewPage"));
@@ -61,6 +65,15 @@ const App = () => (
                       <Route path="/library/posts/:id/preview" element={<PostPreviewPage />} />
                       <Route element={<AppLayout />}>
                         <Route path="/" element={<Overview />} />
+                        <Route path="/ideas" element={<SectionTabs label="Ideas" items={[
+                          { label: "Inbox", to: "/ideas/inbox" }, { label: "Planned", to: "/ideas/planned" }, { label: "Calendar", to: "/ideas/calendar" }, { label: "Settings", to: "/ideas/settings" },
+                        ]} />}>
+                          <Route index element={<Navigate to="/ideas/inbox" replace />} />
+                          <Route path="inbox" element={<Ideas />} />
+                          <Route path="planned" element={<IdeasPlanned />} />
+                          <Route path="calendar" element={<IdeasCalendar />} />
+                          <Route path="settings" element={<IdeasSettings />} />
+                        </Route>
                         <Route path="/review" element={<ReviewQueue />} />
                         <Route path="/runs" element={<Jobs />} />
                         <Route path="/create" element={<ContentCreator />} />
