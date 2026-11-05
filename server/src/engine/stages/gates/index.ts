@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../../db/index.js";
 import { articleGateResults, posts, sites } from "../../../db/schema.js";
 import { safeFetch } from "../../../services/safe-fetch.js";
+import { componentProfile } from "../../profile.js";
 import { ENGINE_CONFIG } from "../../config.js";
 import { gateBlockers, type GateInput } from "../../gates/types.js";
 import { runCodeGates } from "../../gates/index.js";
@@ -9,7 +10,8 @@ import type { Stage } from "../../runtime/stage.js";
 import { StageInputError } from "../../types.js";
 import { truncate } from "../../util.js";
 import type { DraftOutput } from "../draft/schema.js";
-import { findStageOutput, latestDraft, renderArticle, runSettings } from "../shared.js";
+import type { BriefOutput } from "../brief/schema.js";
+import { findStageOutput, latestDraft, latestStageOutput, renderArticle, runSettings } from "../shared.js";
 import type { GatesOutput } from "./schema.js";
 
 export type GatesInput = { draft: DraftOutput; previousBlockers: number | null; reviseCount: number };
@@ -47,7 +49,7 @@ const siteUrlOf = (domain: string) => (/^https?:\/\//i.test(domain) ? domain : `
 
 export const gatesStage: Stage<GatesInput, GatesOutput> = {
   key: "gates",
-  promptVersion: "gates@2026-11-03.1",
+  promptVersion: "gates@2026-11-05.1",
   async input({ run }) {
     const [draft, previous] = await Promise.all([latestDraft(run), findStageOutput<GatesOutput>(run, "gates")]);
     return { draft, previousBlockers: previous?.output.blockerCount ?? null, reviseCount: run.reviseCount };
@@ -64,7 +66,10 @@ export const gatesStage: Stage<GatesInput, GatesOutput> = {
         .orderBy(desc(posts.createdAt))
         .limit(EXISTING_POSTS_CAP),
     ]);
+    // The Lindevo profile also checks components against the brief's call-to-action choice.
+    const brief = componentProfile(run) === "lindevo" ? await latestStageOutput<BriefOutput>(run, "brief") : null;
     const gateInput: GateInput = {
+      ...(brief ? { components: { service: brief.service && brief.service !== "none" ? brief.service : null, painPoint: brief.painPoint && brief.painPoint !== "none" ? brief.painPoint : null } } : {}),
       title: input.draft.title,
       description: input.draft.description,
       raw: input.draft.markdown,

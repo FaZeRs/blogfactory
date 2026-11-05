@@ -11,7 +11,7 @@ Verified on 2026-08-22:
 - WorkOS browser OAuth and personal `bf_mcp_` connection tokens are supported.
 - OAuth requests AuthKit's standard `openid`, `profile`, `email`, and `offline_access` scopes. BlogFactory then grants its site-bound draft-only capabilities (`content:read`, `drafts:write`, and `publish:draft`) from the approved consent.
 - Protocol version is `2025-11-25`; BlogFactory MCP server version is `0.4.3`.
-- The exact active catalog contains 22 tools and is asserted by server tests.
+- The exact active catalog contains 26 tools and is asserted by server tests.
 
 ## Tool catalog
 
@@ -30,6 +30,10 @@ Verified on 2026-08-22:
 | `get_workspace_digest` | `content:read` | Return the same operational digest used by Overview, including SEO-plan progress |
 | `list_action_items` | `content:read` | Return the same prioritized work queue used by Review Queue |
 | `review_post` | `content:read` | Return the shared revision, preflight, destination, and permission packet |
+| `list_ideas` | `content:read` | List a site's ideas (status filter, sort, limit up to 50) with score breakdown, keyword data, brief, and slot |
+| `discover_ideas` | `drafts:write` | Queue an idea discovery, the same as the Discover button |
+| `approve_idea` | `drafts:write` | Approve an idea and book a slot (optional `scheduled_for` and edits); never starts a run outside the schedule |
+| `reject_idea` | `drafts:write` | Reject an idea with an optional reason |
 | `get_search_console_dashboard` | `content:read` | Read synchronized Search Console status and totals |
 | `get_search_console_insights` | `content:read` | Read trends, opportunities, pages, and queries |
 | `refresh_search_console` | `content:read` | Refresh canonical totals and the opportunity snapshot |
@@ -124,6 +128,6 @@ MCP_PILOT_TOKEN=bf_mcp_REPLACE_WITH_SECRET \
 npm run test:mcp:pilot
 ```
 
-Required client acceptance covers OAuth, discovery of exactly 22 tools, `review_post` rendering, version conflict handling, explicit approval, and idempotent CMS draft delivery in Codex and ChatGPT.
+Required client acceptance covers OAuth, discovery of exactly 26 tools, `review_post` rendering, version conflict handling, explicit approval, and idempotent CMS draft delivery in Codex and ChatGPT.
 
 The original research and implementation sequence remains in the [historical MCP roadmap](../BLOGFACTORY_MCP_ROADMAP.md).

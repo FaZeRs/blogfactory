@@ -974,7 +974,9 @@ export default function ContentCreator() {
       <PageHeader
         title="Create Content"
         description="Create one article draft, a batch campaign, or programmatic drafts from a template."
-      />
+      >
+        <Link to="/ideas" className="text-xs font-semibold text-byword-blue underline">No topic in mind? Discover ideas</Link>
+      </PageHeader>
 
       <div className={cn("mx-auto space-y-9", creationMode === "programmatic" ? "max-w-7xl" : "max-w-5xl")}>
         <div className="type-kicker flex items-center gap-4 text-center">

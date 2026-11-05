@@ -158,3 +158,16 @@ test("a stalled request times out through the abort signal", async () => {
   ac.abort(new Error("stop"));
   await expect(p).rejects.toThrow("stop");
 });
+
+test("keywordIdeas drops zero volume, books spend and respects the cap", async () => {
+  const item = (keyword: string, volume: number | null) => ({ keyword, keyword_info: { search_volume: volume }, keyword_properties: { keyword_difficulty: 20 } });
+  const { client, calls, spend } = setup(() => json(ok([{ items: [item("a b", 100), item("c d", 0), item("e f", null)] }])));
+  const out = await client.keywordIdeas(["a"], { locale: "en", limit: 50 });
+  expect(out.map((k) => k.keyword)).toEqual(["a b"]);
+  expect(calls[0].url).toContain("keyword_ideas/live");
+  expect(calls[0].body.limit).toBe(50);
+  expect(spend).toEqual([0.0103]);
+  const capped = setup(() => json(ok([])), ENV, 99);
+  expect(await capped.client.keywordIdeas(["a"], { locale: "en", limit: 5 })).toEqual([]);
+  expect(capped.calls).toHaveLength(0);
+});

@@ -106,7 +106,7 @@ docker compose ps
 docker compose logs --tail=100 api scheduler
 ```
 
-`/api/health` is process liveness. `/api/ready` returns 200 only when PostgreSQL and the S3 bucket are reachable; failures return a generic 503. Unauthenticated `/mcp` returns 401 with a Bearer challenge. In **Control -> MCP Connections**, create a site-scoped personal token and connect the shown instance URL, such as `https://content.example.com/mcp`. The 22-tool catalog cannot read credentials, publish live, or delete content.
+`/api/health` is process liveness. `/api/ready` returns 200 only when PostgreSQL and the S3 bucket are reachable; failures return a generic 503. Unauthenticated `/mcp` returns 401 with a Bearer challenge. In **Control -> MCP Connections**, create a site-scoped personal token and connect the shown instance URL, such as `https://content.example.com/mcp`. The 26-tool catalog cannot read credentials, publish live, or delete content.
 
 The repository's full disposable acceptance is:
 

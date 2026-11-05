@@ -19,9 +19,10 @@ const STATUS_PARTIAL = 40_106;
 const QUOTA_CODES = new Set([40_200, 40_202, 40_210]);
 const DEFAULT_MONTHLY_USD = 10;
 /** Booked when a billed reply carries no usable cost. */
-const ESTIMATE_USD = { serp: 0.002, overview: 0.01 } as const;
+const ESTIMATE_USD = { serp: 0.002, overview: 0.01, ideas: 0.02 } as const;
 const SERP_PATH = "serp/google/organic/live/advanced";
 const OVERVIEW_PATH = "dataforseo_labs/google/keyword_overview/live";
+const IDEAS_PATH = "dataforseo_labs/google/keyword_ideas/live";
 
 type Env = Record<string, string | undefined>;
 type Deps = {
@@ -108,6 +109,14 @@ async function readBounded(res: Response, max: number): Promise<{ text: string; 
   }
   return { text: Buffer.concat(chunks).toString("utf8"), truncated: false };
 }
+
+const toOverview = (item: z.infer<typeof OverviewItem>): KeywordOverview => ({
+  keyword: sanitizeText(item.keyword),
+  volume: item.keyword_info?.search_volume ?? null,
+  difficulty: item.keyword_properties?.keyword_difficulty ?? null,
+  intent: item.search_intent_info?.main_intent ?? null,
+  aiOverview: item.serp_info?.serp_item_types?.includes("ai_overview") ?? false,
+});
 
 export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient | null {
   const login = env.DATAFORSEO_LOGIN?.trim();
@@ -220,14 +229,22 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
         opts.signal,
       );
       const item = parseItems(result, OverviewResult).flatMap((r) => parseItems(r.items, OverviewItem))[0];
-      if (!item) return null;
-      return {
-        keyword: sanitizeText(item.keyword),
-        volume: item.keyword_info?.search_volume ?? null,
-        difficulty: item.keyword_properties?.keyword_difficulty ?? null,
-        intent: item.search_intent_info?.main_intent ?? null,
-        aiOverview: item.serp_info?.serp_item_types?.includes("ai_overview") ?? false,
-      };
+      return item ? toOverview(item) : null;
+    },
+
+    async keywordIdeas(seeds, opts) {
+      if (!seeds.length || await overBudget()) return [];
+      const { locationCode, languageCode } = localeMarket(opts.locale);
+      const result = await call(
+        IDEAS_PATH,
+        { keywords: seeds.slice(0, 200), location_code: locationCode, language_code: languageCode, limit: Math.max(1, Math.min(opts.limit, 200)) },
+        ESTIMATE_USD.ideas,
+        opts.signal,
+      );
+      return parseItems(result, OverviewResult)
+        .flatMap((r) => parseItems(r.items, OverviewItem))
+        .map(toOverview)
+        .filter((k) => (k.volume ?? 0) > 0);
     },
 
     async peopleAlsoAsk(query, opts) {

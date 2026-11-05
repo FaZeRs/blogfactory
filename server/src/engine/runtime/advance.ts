@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { articleRuns, articleStageRuns, campaignItems, generationLogs, jobs } from "../../db/schema.js";
+import { articleRuns, articleStageRuns, campaignItems, generationLogs, ideas, jobs, posts } from "../../db/schema.js";
 import { checkAccountGuardrails } from "../../services/account-guardrails.js";
 import { parseEngineSettings, resolveRunSettings } from "../modes.js";
 import { RateLimitError, StageInputError, type EngineMode, type StageKey, type Transition } from "../types.js";
@@ -46,7 +46,10 @@ function parseTransition(value: unknown): Transition | null {
   return null;
 }
 
-async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
+/** A scheduled idea whose run fails this many times stops retrying. */
+const MAX_IDEA_FAILED_RUNS = 3;
+
+export async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
   if (!run.jobId) return;
   const base = { currentStep: `engine_${run.currentStage}`, totalCost: run.spentUsd };
   const terminal = run.state === "done" || run.state === "failed" || run.state === "escalated";
@@ -66,6 +69,29 @@ async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
       ? { status: "completed", planningStatus: "in_progress", postId: run.postId, completedAt: now, errorMessage: null }
       : { status: "failed", planningStatus: "blocked", errorMessage: run.stateReason, completedAt: now })
       .where(and(eq(campaignItems.id, job.campaignItemId), eq(campaignItems.userId, run.userId)));
+  }
+  if (terminal) await mirrorIdea(tx, run, now);
+}
+
+/** An idea started for this run becomes drafted (with its slot as the post's publish_at) or goes back to be retried. */
+async function mirrorIdea(tx: Tx, run: ArticleRunRow, now: Date) {
+  const where = and(eq(ideas.jobId, run.jobId!), eq(ideas.userId, run.userId), eq(ideas.status, "in_progress"));
+  if (run.state !== "failed" && run.postId) {
+    const [idea] = await tx.update(ideas).set({ status: "drafted", postId: run.postId, error: null, updatedAt: now }).where(where).returning({ scheduledFor: ideas.scheduledFor });
+    if (idea?.scheduledFor && idea.scheduledFor > now) {
+      await tx.update(posts).set({ publishAt: idea.scheduledFor }).where(and(eq(posts.id, run.postId), eq(posts.userId, run.userId)));
+    }
+  } else {
+    // A failed run spent money, so it counts; the third failure releases the slot and waits for the owner.
+    const reason = (run.stateReason ?? "The run failed").slice(0, 300);
+    const capped = sql`${ideas.failedRuns} + 1 >= ${MAX_IDEA_FAILED_RUNS}`;
+    await tx.update(ideas).set({
+      failedRuns: sql`${ideas.failedRuns} + 1`,
+      status: sql`CASE WHEN ${capped} OR ${ideas.scheduledFor} IS NULL THEN 'new' ELSE 'scheduled' END`,
+      scheduledFor: sql`CASE WHEN ${capped} THEN NULL ELSE ${ideas.scheduledFor} END`,
+      error: sql`CASE WHEN ${capped} THEN ${`Writing failed ${MAX_IDEA_FAILED_RUNS} times: ${reason}. Edit or write it again.`} ELSE ${reason} END`,
+      updatedAt: now,
+    }).where(where);
   }
 }
 

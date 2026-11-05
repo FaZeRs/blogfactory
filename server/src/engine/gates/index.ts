@@ -1,6 +1,7 @@
 import type { EngineConfig } from "../config.js";
 import { toPlainText } from "../markdown/plain-text.js";
 import { citationsGate } from "./citations.js";
+import { componentsGate } from "./components.js";
 import { linksGate } from "./links.js";
 import { faqGate, metaGate } from "./meta.js";
 import { overlapGate } from "./overlap.js";
@@ -10,7 +11,7 @@ import type { GateInput, GateResult } from "./types.js";
 import { voiceGate } from "./voice.js";
 
 /**
- * The code gates, in this fixed order: structure, meta, faq, voice, voice-warnings, citations, links,
+ * The code gates, in this fixed order: structure, components (Lindevo profile only), meta, faq, voice, voice-warnings, citations, links,
  * links-warnings, overlap, similarity.
  */
 export async function runCodeGates(
@@ -24,6 +25,7 @@ export async function runCodeGates(
   const cfg = deps.config.gates;
   return [
     structureGate(input.markdown),
+    ...(input.components ? [componentsGate(input.markdown, input.components)] : []),
     metaGate(input, cfg),
     faqGate(input.markdown, cfg),
     ...voiceGate(

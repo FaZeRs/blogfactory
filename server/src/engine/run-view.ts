@@ -14,7 +14,11 @@ export function stageDetails(stage: StageKey, stored: unknown): Obj | null {
   if (!Object.keys(out).length) return null;
   switch (stage) {
     case "research":
-      return pick(out, ["queries", "searchAdapter", "sourceCount", "skippedSources", "claimCount", "verifiedCount"]);
+      return {
+        ...pick(out, ["queries", "searchAdapter", "sourceCount", "skippedSources", "claimCount", "verifiedCount", "questions"]),
+        competitors: arr(out.competitors).map((c) => pick(obj(c), ["url", "title", "words", "outline"])),
+        serpAnalysis: out.serpAnalysis ? pick(obj(out.serpAnalysis), ["searchIntent", "coveredTopics", "gaps", "informationGain", "typicalLength"]) : null,
+      };
     case "brief":
       return {
         ...pick(out, ["chosenTitle", "titleOptions", "angle", "description", "primaryKeyword", "keywordData", "takeaways"]),

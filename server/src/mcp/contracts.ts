@@ -31,6 +31,10 @@ export const MCP_TOOL_NAMES = [
   "batch_inspect_search_console_urls",
   "list_search_console_sitemaps",
   "query_search_console_analytics",
+  "list_ideas",
+  "discover_ideas",
+  "approve_idea",
+  "reject_idea",
 ] as const;
 
 export const ACTIVE_MCP_TOOL_NAMES = [
@@ -56,6 +60,10 @@ export const ACTIVE_MCP_TOOL_NAMES = [
   "batch_inspect_search_console_urls",
   "list_search_console_sitemaps",
   "query_search_console_analytics",
+  "list_ideas",
+  "discover_ideas",
+  "approve_idea",
+  "reject_idea",
 ] as const satisfies readonly (typeof MCP_TOOL_NAMES[number])[];
 
 export const MCP_ERROR_CODES = [

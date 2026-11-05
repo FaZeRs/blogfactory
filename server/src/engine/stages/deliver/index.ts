@@ -1,11 +1,13 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../../db/index.js";
-import { articleRuns, jobs, posts, sites } from "../../../db/schema.js";
+import { articleGateResults, articleRuns, jobs, posts, sites } from "../../../db/schema.js";
 import { currentPostRevision, setPostEditorialState } from "../../../services/post-revisions.js";
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "../../../services/seo-metadata.js";
 import { coverPromptDraft, queueCoverRequests } from "../../../services/cover-tools.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
-import type { Stage } from "../../runtime/stage.js";
+import { appendProvenance, provenanceTag } from "../../components/provenance.js";
+import { componentProfile } from "../../profile.js";
+import type { ArticleRunRow, Stage } from "../../runtime/stage.js";
 import { StageInputError } from "../../types.js";
 import type { DraftOutput } from "../draft/schema.js";
 import type { GatesOutput } from "../gates/schema.js";
@@ -14,9 +16,27 @@ import type { DeliverOutput } from "./schema.js";
 
 export type DeliverInput = { draft: DraftOutput; escalated: boolean; reason: string | null };
 
+/** The Lindevo provenance box: sources cited, gates the latest attempt passed, the delivery date and the writer models. */
+async function provenanceFor(run: ArticleRunRow, cited: string[], evidence: { id: string; sourceId: string; verified: boolean }[], now: Date) {
+  const rows = await db.select({ attempt: articleGateResults.attempt, passed: articleGateResults.passed }).from(articleGateResults)
+    .where(and(eq(articleGateResults.runId, run.id), eq(articleGateResults.userId, run.userId)));
+  const last = Math.max(0, ...rows.map((r) => r.attempt));
+  const roles = run.reviseCount > 0 ? (["draft", "revise"] as const) : (["draft"] as const);
+  return provenanceTag({
+    sources: new Set(evidence.filter((e) => e.verified && cited.includes(e.id)).map((e) => e.sourceId)).size,
+    checks: rows.filter((r) => r.attempt === last && r.passed).length,
+    reviewed: now.toISOString().slice(0, 10),
+    models: [...new Set(roles.map((role) => modelDisplayName(modelFor(run, role))))],
+  });
+}
+
+/** "anthropic/claude-sonnet-5.5" reads as "Claude Sonnet 5.5". */
+export const modelDisplayName = (id: string) =>
+  (id.split("/").pop() ?? id).split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
 export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
   key: "deliver",
-  promptVersion: "deliver@2026-11-03.1",
+  promptVersion: "deliver@2026-11-05.1",
   async input({ run }) {
     const [draft, gates] = await Promise.all([latestDraft(run), findStageOutput<GatesOutput>(run, "gates")]);
     return { draft, escalated: gates?.output.escalated ?? false, reason: gates?.output.reason ?? null };
@@ -34,7 +54,8 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
 
     let post = existing;
     if (!post) {
-      const { markdown } = await renderArticle(run, input.draft.markdown);
+      const { markdown: rendered, evidence } = await renderArticle(run, input.draft.markdown);
+      const markdown = componentProfile(run) === "lindevo" ? appendProvenance(rendered, await provenanceFor(run, input.draft.citedClaimIds, evidence, ctx.deps.now())) : rendered;
       [post] = await db.insert(posts).values({
         userId: run.userId,
         siteId: run.siteId,

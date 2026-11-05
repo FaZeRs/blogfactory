@@ -29,6 +29,7 @@ const ORDER = ["research", "brief", "draft", "gates", "deliver"];
 
 const GATES: Record<string, string> = {
   citations: "Claims cite verified sources",
+  components: "Lindevo components",
   faq: "FAQ answers the planned questions",
   links: "Links work",
   "links-warnings": "Link warnings",
@@ -87,6 +88,47 @@ function Chip({ children, tone = "neutral" }: { children: React.ReactNode; tone?
   );
 }
 
+function Competitors({ d }: { d: Details }) {
+  const rows = list(d.competitors) as Details[];
+  const a = (d.serpAnalysis ?? null) as Details | null;
+  const gain = list(a?.informationGain) as Details[];
+  const items = (label: string, v: unknown[]) =>
+    v.length ? (
+      <div>
+        <Label>{label}</Label>
+        <ul className="list-disc space-y-0.5 pl-5 text-sm">{v.map((x, i) => <li key={i}>{String(x)}</li>)}</ul>
+      </div>
+    ) : null;
+  if (!rows.length && !list(d.questions).length) return null;
+  return (
+    <div className="space-y-3">
+      {rows.length > 0 && (
+        <div>
+          <Label>Competitors ({rows.length}){num(a?.typicalLength) ? ` · typically ${num(a?.typicalLength)?.toLocaleString()} words` : ""}</Label>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {rows.map((c, i) => (
+              <li key={`${text(c.url)}-${i}`} className="px-3 py-2 text-sm">
+                <div className="flex items-center gap-3">
+                  <a href={text(c.url)} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-byword-blue hover:underline">{text(c.title) || text(c.url)}</a>
+                  <span className="shrink-0 text-xs text-muted-foreground">{host(text(c.url))} · {num(c.words)?.toLocaleString() ?? "?"} words</span>
+                </div>
+                {list(c.outline).length > 0 && (
+                  <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    {(list(c.outline) as Details[]).map((h, j) => <li key={j} className={num(h.level) === 3 ? "pl-4" : ""}>{text(h.text)}</li>)}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {a && items("Gaps competitors leave", list(a.gaps))}
+      {gain.length > 0 && items("Information gain", gain.map((g) => text(g.point)))}
+      {items("Questions people ask", list(d.questions))}
+    </div>
+  );
+}
+
 function ResearchBody({ d, engine }: { d: Details; engine: EngineRunDetail }) {
   const [showAll, setShowAll] = useState(false);
   const sources = engine.sources ?? [];
@@ -114,6 +156,7 @@ function ResearchBody({ d, engine }: { d: Details; engine: EngineRunDetail }) {
           ))}
         </ul>
       </div>
+      <Competitors d={d} />
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <p className="type-kicker">{showAll ? `All claims (${evidence.length})` : `Verified claims (${verified.length})`}</p>

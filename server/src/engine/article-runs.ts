@@ -9,6 +9,7 @@ import { resolveOpenRouterTextModel } from "../services/openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../services/user-settings.js";
 import { engineAiEndpoint } from "./adapters/llm.js";
 import { estimateRunUsd, parseEngineSettings, resolveRunSettings } from "./modes.js";
+import { resolveDestinationProvider } from "./profile.js";
 import { claimArticleRuns } from "./runtime/claim.js";
 import { advanceArticleRun, failRunWithoutStage } from "./runtime/advance.js";
 import { loadEngineDeps } from "./runtime/deps.js";
@@ -95,7 +96,9 @@ export async function startArticleRun(input: {
     angle: input.guidance?.angle?.trim().slice(0, 500) || undefined,
     instructions: input.guidance?.instructions?.trim().slice(0, 1500) || undefined,
   };
+  const destinationProvider = await resolveDestinationProvider(input.userId, input.siteId, input.preferredIntegrationId);
   const frozen = {
+    destinationProvider,
     models, budgetUsd: resolved.budgetUsd, citationStyle: resolved.citationStyle,
     ...(guidance.angle || guidance.instructions ? { guidance } : {}),
     ...(input.cover ? { cover: true } : {}),
@@ -190,6 +193,7 @@ export async function getArticleRunForJob(userId: string, jobId: string): Promis
     .where(and(eq(articleRuns.jobId, jobId), eq(articleRuns.userId, userId))).limit(1);
   if (!run) return null;
   const scope = (t: typeof articleSources | typeof articleEvidence | typeof articleGateResults) => and(eq(t.runId, run.id), eq(t.userId, userId));
+  const evidenceSources = and(scope(articleSources), eq(articleSources.kind, "evidence"));
   const [rows, sources, evidence, gates] = await Promise.all([
     db.select().from(articleStageRuns)
       .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId)))
@@ -197,7 +201,7 @@ export async function getArticleRunForJob(userId: string, jobId: string): Promis
     db.select({
       id: articleSources.id, url: articleSources.url, title: articleSources.title, fetchedVia: articleSources.fetchedVia,
       httpStatus: articleSources.httpStatus, textLength: articleSources.textLength,
-    }).from(articleSources).where(scope(articleSources)).orderBy(asc(articleSources.fetchedAt)),
+    }).from(articleSources).where(evidenceSources).orderBy(asc(articleSources.fetchedAt)),
     db.select({
       id: articleEvidence.id, sourceId: articleEvidence.sourceId, claim: articleEvidence.claim, quote: articleEvidence.quote,
       verified: articleEvidence.verified, method: articleEvidence.method, reason: articleEvidence.reason,

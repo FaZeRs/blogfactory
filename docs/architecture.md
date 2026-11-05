@@ -126,6 +126,20 @@ The backend decides eligibility and claims work. Schedulers must stay thin; do n
 
 `server/src/engine/` runs the `normal` and `deep` generation modes as durable stages (research, brief, draft, quality gates, revise, deliver). `article-runs.ts` starts a run from the same generation request as fast mode; state lives in `article_runs`, with `article_stage_runs`, `article_sources`, `article_evidence`, and `article_gate_results` as user-scoped children. The worker's `articles` drain claims runs with a lease and advances one stage at a time; retries, 429 rescheduling, and lease recovery are in `engine/runtime/`. Search (SearXNG or DataForSEO), page reading (Crawl4AI or plain fetch), and the LLM client are adapters in `engine/adapters/`; the LLM is OpenAI-compatible (the user's OpenRouter key, or the instance `ENGINE_AI_*` endpoint). Engine settings are per user at `GET/PUT /api/settings/engine`. The engine delivers a draft post only; escalated runs reach the Review Queue as `engine_escalated`. Fast mode does not use the engine. `npm run eval:engine` runs the golden-brief eval harness.
 
+Research also reads the top-ranking pages for the topic (`article_sources.kind = 'competitor'`), extracts their outlines and the questions people ask, and produces a gap and information-gain analysis that the brief plans around. When a run's destination is Lindevo (`componentProfile` in `engine/profile.ts`), the brief, draft and revise prompts use Lindevo's markdown components, the `components` gate checks them with Lindevo's linter vendored in `engine/components/`, and deliver appends the `<provenance>` block. Other destinations get plain Markdown.
+
+## Ideas and scheduling
+
+`server/src/services/ideas/` finds and schedules article ideas per site:
+- **Discovery** (`ideas.discovery`, the worker's `ideas` drain) collects signals from Search Console, SearXNG news, DataForSEO keyword ideas and People also ask, the site's RSS feeds, and competitor sitemaps.
+- **Scoring:** one model call turns the signals into candidates, and code scores them as a weighted geometric mean of trend, fit, demand, feasibility, novelty and information gain.
+- **Approval:** ideas wait in `ideas` (status `new`) for the owner. Approving books a cadence slot (`schedule.ts`, which never double-books).
+- **Generation:** `startDueIdeas` starts a normal or deep run `leadDays` before the slot. The delivered draft carries `posts.publish_at`, which the Send to CMS dialog pre-fills. Delivery stays draft-only.
+
+The routes are under `/api/ideas`, with settings at `/api/settings/ideas`. The web surface is `/ideas` (Inbox, Planned, Calendar, Settings). The MCP tools `list_ideas`, `discover_ideas`, `approve_idea`, and `reject_idea` call the same `services/ideas/actions.ts` functions as the routes.
+
+**Weight learning** (`learning.ts`): the worker's daily task, once per UTC month per site, nudges each score weight (at most 10%, bounds 0.1-3) by its Pearson correlation with ln(1 + Search Console clicks) in days 30-58 after publication, needing at least 5 published ideas. State lives in `idea_settings` (`learnWeights`, `weightsLearnedMonth`, `weightHistory`).
+
 ## Hosting and routing
 
 | Layer | Current responsibility |

@@ -5,6 +5,7 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { waitUntil } from "@vercel/functions";
 import { db } from "../db/index.js";
 import {
+  ideaDiscoveries,
   imageAssets,
   jobs,
   personas,
@@ -36,6 +37,8 @@ import {
 import { drainSeoMetadata, enqueueSeoMetadata, seoMetadata, seoStatusForArticle } from "../services/seo-metadata.js";
 import { EngineUnavailableError, startArticleRun } from "../engine/article-runs.js";
 import { StageInputError } from "../engine/types.js";
+import { IDEA_SORTS, IDEA_STATUSES, IdeaActionError, bookOwnedIdea, listIdeas, rejectOwnedIdea, serializeIdea, type IdeaRow } from "../services/ideas/actions.js";
+import { queueDiscovery } from "../services/ideas/discovery.js";
 import { hasMcpScope, type McpPrincipal } from "./auth.js";
 import { ACTIVE_MCP_TOOL_NAMES, MCP_SCOPES, MCP_SERVER_VERSION, MCP_TOOL_NAMES, type McpScope } from "./contracts.js";
 
@@ -85,6 +88,13 @@ const REFRESH_ANNOTATIONS = {
   destructiveHint: false,
   idempotentHint: true,
   openWorldHint: true,
+} as const;
+
+const IDEA_WRITE_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
 } as const;
 
 const errorSchema = z.object({
@@ -1157,6 +1167,87 @@ async function reviewPost(principal: McpPrincipal, input: { post_id: string }) {
   };
 }
 
+const mcpIdea = (row: IdeaRow) => {
+  const r = serializeIdea(row);
+  return {
+    id: r.id, site_id: r.siteId, status: r.status, title: r.title, angle: r.angle, primary_keyword: r.primaryKeyword,
+    alternate_keywords: r.alternateKeywords, search_intent: r.searchIntent, audience_question: r.audienceQuestion,
+    brief: r.brief as Record<string, unknown>, score: r.score, score_breakdown: (r.scoreBreakdown ?? null) as Record<string, unknown> | null,
+    origin: r.origin, mode: r.mode, scheduled_for: isoDate(r.scheduledFor), job_id: r.jobId, post_id: r.postId,
+    rejected_reason: r.rejectedReason, error: r.error, created_at: isoDate(r.createdAt)!, updated_at: isoDate(r.updatedAt)!,
+  };
+};
+
+const ideaSchema = z.object({
+  id: uuid, site_id: uuid, status: z.string(), title: z.string(), angle: nullableText, primary_keyword: nullableText,
+  alternate_keywords: z.array(z.string()), search_intent: nullableText, audience_question: nullableText,
+  brief: z.record(z.string(), z.unknown()), score: z.number().nullable(), score_breakdown: z.record(z.string(), z.unknown()).nullable(),
+  origin: z.string(), mode: z.string(), scheduled_for: nullableText, job_id: uuid.nullable(), post_id: uuid.nullable(),
+  rejected_reason: nullableText, error: nullableText, created_at: z.string(), updated_at: z.string(),
+});
+
+/** Idea service errors become tool errors; anything else stays internal. */
+async function ideaCall<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof IdeaActionError)) throw error;
+    if (error.kind === "not_found") throw new McpToolError("not_found", "Idea not found.", "Call list_ideas to choose an idea.");
+    throw new McpToolError(error.kind === "validation" ? "validation_error" : "conflict", error.message, "Call list_ideas to check the idea's current state.");
+  }
+}
+
+async function listIdeasTool(principal: McpPrincipal, input: { site_id: string; status?: string[]; sort: string; limit: number }) {
+  await requireOwnedAllowedSite(principal, input.site_id);
+  const rows = await ideaCall(() => listIdeas({ userId: principal.userId, siteId: input.site_id, statuses: input.status, sort: input.sort, limit: input.limit }));
+  return {
+    site_id: input.site_id,
+    items: rows.map(mcpIdea),
+    next_action: rows.some((r) => r.status === "new") ? "Call approve_idea or reject_idea for a new idea." : "Call discover_ideas to find new ideas.",
+  };
+}
+
+async function discoverIdeasTool(principal: McpPrincipal, input: { site_id: string }) {
+  await requireOwnedAllowedSite(principal, input.site_id);
+  const queued = await queueDiscovery(principal.userId, input.site_id);
+  const [row] = await db.select().from(ideaDiscoveries)
+    .where(and(eq(ideaDiscoveries.id, queued.id), eq(ideaDiscoveries.userId, principal.userId), eq(ideaDiscoveries.siteId, input.site_id))).limit(1);
+  return {
+    site_id: input.site_id,
+    discovery: {
+      id: queued.id, status: row?.status ?? "queued", created: queued.created,
+      signal_count: row?.signalCount ?? null, idea_count: row?.ideaCount ?? null, error: row?.error ?? null,
+    },
+    next_action: "Poll list_ideas with status new until ideas appear.",
+  };
+}
+
+async function approveIdeaTool(principal: McpPrincipal, input: {
+  site_id: string; idea_id: string; scheduled_for?: string; title?: string; angle?: string; primary_keyword?: string;
+  alternate_keywords?: string[]; mode?: "normal" | "deep"; outline?: string[]; expected_updated_at?: string;
+}) {
+  await requireOwnedAllowedSite(principal, input.site_id);
+  const row = await ideaCall(() => bookOwnedIdea({
+    userId: principal.userId, ideaId: input.idea_id, siteId: input.site_id, action: "approve",
+    body: {
+      scheduledFor: input.scheduled_for, title: input.title, angle: input.angle, primaryKeyword: input.primary_keyword,
+      alternateKeywords: input.alternate_keywords, mode: input.mode, outline: input.outline,
+      expectedUpdatedAt: input.expected_updated_at,
+    },
+  }));
+  return {
+    site_id: input.site_id,
+    idea: mcpIdea(row),
+    next_action: "The idea is booked and BlogFactory writes it at its slot. Do not also call generate_draft for it, or it is written twice.",
+  };
+}
+
+async function rejectIdeaTool(principal: McpPrincipal, input: { site_id: string; idea_id: string; reason?: string }) {
+  await requireOwnedAllowedSite(principal, input.site_id);
+  const row = await ideaCall(() => rejectOwnedIdea({ userId: principal.userId, ideaId: input.idea_id, siteId: input.site_id, reason: input.reason ?? null }));
+  return { site_id: input.site_id, idea: mcpIdea(row), next_action: "Call list_ideas to continue." };
+}
+
 type ToolDefinition = {
   name: typeof ACTIVE_MCP_TOOL_NAMES[number];
   description: string;
@@ -1746,6 +1837,66 @@ export const MCP_TOOL_REGISTRY = {
     annotations: READ_ONLY_ANNOTATIONS,
     handler: searchConsoleAnalytics,
   },
+  list_ideas: {
+    name: "list_ideas",
+    description: "List content ideas for one allowed site with score breakdown, keyword data, brief, and scheduled slot. Defaults to every status except archived.",
+    inputSchema: {
+      site_id: uuid,
+      status: z.array(z.enum(IDEA_STATUSES)).max(7).optional(),
+      sort: z.enum(IDEA_SORTS).default("score"),
+      limit: z.number().int().min(1).max(50).default(20),
+    },
+    outputSchema: successOutputSchema({ site_id: uuid, items: z.array(ideaSchema), next_action: z.string() }),
+    requiredScope: "content:read",
+    siteBound: true,
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: listIdeasTool,
+  },
+  discover_ideas: {
+    name: "discover_ideas",
+    description: "Queue an idea discovery for one allowed site, the same as the Discover button. This can consume the user's configured provider budget.",
+    inputSchema: { site_id: uuid },
+    outputSchema: successOutputSchema({
+      site_id: uuid,
+      discovery: z.object({ id: uuid, status: z.string(), created: z.boolean(), signal_count: z.number().nullable(), idea_count: z.number().nullable(), error: nullableText }),
+      next_action: z.string(),
+    }),
+    requiredScope: "drafts:write",
+    siteBound: true,
+    annotations: REFRESH_ANNOTATIONS,
+    handler: discoverIdeasTool,
+  },
+  approve_idea: {
+    name: "approve_idea",
+    description: "Approve a new idea and book it into a schedule slot (the next free slot, or scheduled_for). Optional edits apply first. It never starts a run outside the schedule; to write immediately, call generate_draft instead of approving.",
+    inputSchema: {
+      site_id: uuid,
+      idea_id: uuid,
+      scheduled_for: z.string().trim().min(1).max(40).optional(),
+      title: z.string().trim().min(5).max(160).optional(),
+      angle: z.string().trim().max(500).optional(),
+      primary_keyword: z.string().trim().max(80).optional(),
+      alternate_keywords: z.array(z.string().trim().min(1).max(80)).max(6).optional(),
+      mode: z.enum(["normal", "deep"]).optional(),
+      outline: z.array(z.string().trim().min(1).max(120)).min(3).max(6).optional(),
+      expected_updated_at: z.string().trim().min(1).max(40).optional().describe("The idea's updated_at from list_ideas. Required when editing fields, so a stale edit cannot overwrite a newer one."),
+    },
+    outputSchema: successOutputSchema({ site_id: uuid, idea: ideaSchema, next_action: z.string() }),
+    requiredScope: "drafts:write",
+    siteBound: true,
+    annotations: IDEA_WRITE_ANNOTATIONS,
+    handler: approveIdeaTool,
+  },
+  reject_idea: {
+    name: "reject_idea",
+    description: "Reject a new or scheduled idea for one allowed site, with an optional reason. This releases its slot.",
+    inputSchema: { site_id: uuid, idea_id: uuid, reason: z.string().trim().max(500).optional() },
+    outputSchema: successOutputSchema({ site_id: uuid, idea: ideaSchema, next_action: z.string() }),
+    requiredScope: "drafts:write",
+    siteBound: true,
+    annotations: IDEA_WRITE_ANNOTATIONS,
+    handler: rejectIdeaTool,
+  },
 } satisfies Record<typeof ACTIVE_MCP_TOOL_NAMES[number], ToolDefinition>;
 
 export function assertMcpToolRegistry() {
@@ -1817,8 +1968,8 @@ function registerTool(server: McpServer, principal: McpPrincipal, definition: To
     const inputSiteId = typeof input.site_id === "string" && principal.siteIds.has(input.site_id)
       ? input.site_id
       : undefined;
-    const objectId = [input.post_id, input.job_id, input.site_id].find((value) => typeof value === "string") as string | undefined;
-    const objectType = input.post_id ? "post" : input.job_id ? "job" : input.site_id ? "site" : null;
+    const objectId = [input.post_id, input.job_id, input.idea_id, input.site_id].find((value) => typeof value === "string") as string | undefined;
+    const objectType = input.post_id ? "post" : input.job_id ? "job" : input.idea_id ? "idea" : input.site_id ? "site" : null;
     let eventId: string;
     try {
       eventId = await ledger.start({

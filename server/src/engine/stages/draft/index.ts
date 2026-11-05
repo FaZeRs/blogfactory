@@ -1,4 +1,6 @@
+import { serviceCtaTag, writerComponents } from "../../components/guide.js";
 import { ENGINE_CONFIG } from "../../config.js";
+import { componentProfile, type ComponentProfile } from "../../profile.js";
 import { extractMarkerIds, renderCitationsDetailed } from "../../citations.js";
 import { toPlainText } from "../../markdown/plain-text.js";
 import { MODE_PRESETS } from "../../modes.js";
@@ -22,7 +24,24 @@ export type DraftInput = {
   sources: { id: string; url: string; finalUrl: string; title: string | null }[];
   evidenceSources: Record<string, string>;
   citationStyle: "inline" | "references";
+  /** The component profile frozen at run start; missing means "markdown". */
+  profile?: ComponentProfile;
 };
+
+/** The exact call-to-action tag the brief chose, or "" for the markdown profile and a "none" service. */
+export function ctaTagFor(input: Pick<DraftInput, "brief" | "profile">): string {
+  const { service, painPoint } = input.brief;
+  return input.profile === "lindevo" && service && service !== "none" ? serviceCtaTag(service, painPoint) : "";
+}
+
+/** The draft and revise prompt variables for components: the guide with its placement rules, and the CTA line. */
+export function componentVars(input: Pick<DraftInput, "brief" | "profile">) {
+  const cta = ctaTagFor(input);
+  return {
+    components: writerComponents(input.profile === "lindevo", cta !== ""),
+    serviceCta: cta ? `Before the FAQ, put exactly one call to action on its own line with a blank line before and after it, written exactly as:\n${cta}` : "",
+  };
+}
 
 /** The brief as the writer reads it: the keyword lookup is code data, not part of the plan. */
 const briefForPrompt = ({ keywordData: _k, ...brief }: BriefOutput) => JSON.stringify(brief, null, 2);
@@ -47,6 +66,7 @@ export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput>
     sources: sources.map((s) => ({ id: s.id, url: s.url, finalUrl: s.finalUrl, title: s.title })),
     evidenceSources: Object.fromEntries(verified.map((e) => [e.id, e.sourceId])),
     citationStyle: runSettings(run).citationStyle,
+    profile: componentProfile(run),
   };
 }
 
@@ -73,6 +93,7 @@ export const draftStage: Stage<DraftInput, DraftOutput> = {
     const g = ENGINE_CONFIG.gates;
     const prompt = await preparePrompt("draft", {
       dataRule: DATA_RULE,
+      ...componentVars(input),
       locale: input.locale,
       voice: input.voice || "No custom voice rules.",
       planMinWords: PLAN.limits.min,

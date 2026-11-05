@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { fakeCtx } from "../test-helpers.js";
-import { briefStage, linkCandidates, type BriefInput } from "./index.js";
-import { PLAN, fitLengthPlan, validateBrief, type Brief } from "./schema.js";
+import { briefStage, linkCandidates, serpText, type BriefInput } from "./index.js";
+import { PLAN, fitLengthPlan, planTarget, validateBrief, type Brief } from "./schema.js";
 
 const input: BriefInput = {
   topic: "solar panels",
@@ -57,7 +57,7 @@ test("two invalid replies fail the stage", async () => {
 
 test("deep mode looks the keyword up once; it lands in the output", async () => {
   let calls = 0;
-  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordOverview: async (keyword: string) => { calls += 1; return { keyword, volume: 900, difficulty: 30, intent: "informational", aiOverview: false }; } };
+  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordIdeas: async () => [], keywordOverview: async (keyword: string) => { calls += 1; return { keyword, volume: 900, difficulty: 30, intent: "informational", aiOverview: false }; } };
   const { ctx } = fakeCtx({ llm: { brief: [good()] }, dataForSeo });
   const out = await briefStage.run({ ...input, keywordData: true }, ctx);
   expect(calls).toBe(1);
@@ -66,7 +66,7 @@ test("deep mode looks the keyword up once; it lands in the output", async () => 
 
 test("deep mode falls back to the chosen keyword when the topic has no search data", async () => {
   const asked: string[] = [];
-  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordOverview: async (keyword: string) => {
+  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordIdeas: async () => [], keywordOverview: async (keyword: string) => {
     asked.push(keyword);
     return asked.length === 1 ? null : { keyword, volume: 4400, difficulty: 31, intent: "commercial", aiOverview: false };
   } };
@@ -79,4 +79,23 @@ test("deep mode falls back to the chosen keyword when the topic has no search da
 test("link candidates come from the index only, deduped", () => {
   expect(linkCandidates({ internalLinkIndex: { pages: [{ url: "https://s.example/a", title: "A" }, { url: "https://s.example/a", title: "A2" }, { title: "no url" }] } })).toEqual([{ url: "https://s.example/a", title: "A" }]);
   expect(linkCandidates({})).toEqual([]);
+});
+
+test("planTarget clamps typical length into the plan band and fitLengthPlan scales to it", () => {
+  expect(planTarget(null)).toBeNull();
+  expect(planTarget(100)).toBe(PLAN.limits.min);
+  expect(planTarget(99_999)).toBe(PLAN.limits.max);
+  const target = planTarget(1800)!;
+  const fitted = fitLengthPlan(good(), target);
+  const total = PLAN.openingWords + PLAN.faqWordsEach * 3 + fitted.outline.reduce((n, s) => n + s.words, 0);
+  expect(Math.abs(total - target)).toBeLessThanOrEqual(fitted.outline.length);
+});
+
+test("serpText lists gaps, information gain and the target; empty input is None", () => {
+  expect(serpText(null)).toBe("None.");
+  const t = serpText({ searchIntent: "i", coveredTopics: ["a"], gaps: ["g1"], informationGain: [{ point: "p", claimIds: ["c1"] }], typicalLength: 1800 }, ["Q?"], 1800);
+  expect(t).toContain("- g1");
+  expect(t).toContain("p [c1]");
+  expect(t).toContain("- Q?");
+  expect(t).toContain("about 1800 words");
 });

@@ -44,6 +44,12 @@ source evidence
   → selected CMS destination as a draft
 ```
 
+For generation, **Ideas** finds and scores topics for each site and explains every score. You approve the ideas worth writing, and they get publish slots on a calendar. **Normal and deep modes** research each article from verified sources:
+- they read the top-ranking pages and plan around their gaps;
+- they write with citations;
+- they check the draft before it reaches review.
+Each step is visible in Runs. Drafts for a Lindevo site use its markdown components and pass its linter.
+
 Agents do the work through MCP. The web app is where operators see what needs attention, resolve blockers, review the current version, and approve a CMS handoff. The server-enforced authority ceiling is intentionally narrow: no live publishing, deletes, credential access, arbitrary providers, or admin tools through MCP.
 
 <p align="center">

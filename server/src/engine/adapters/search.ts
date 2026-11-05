@@ -3,7 +3,7 @@ import type { DataForSeoClient, SearchHit } from "./types.js";
 export type { SearchHit };
 export type SearchClient = {
   name: "searxng" | "dataforseo" | "none";
-  search(query: string, opts: { locale: string; limit: number; signal?: AbortSignal }): Promise<SearchHit[]>;
+  search(query: string, opts: { locale: string; limit: number; signal?: AbortSignal; /** News category, last month (SearXNG only). */ news?: boolean }): Promise<SearchHit[]>;
 };
 
 type Env = Record<string, string | undefined>;
@@ -23,7 +23,7 @@ export function createSearchClient(env: Env, dataForSeo: DataForSeoClient | null
     name: "searxng",
     async search(query, opts) {
       try {
-        const url = `${base}/search?${new URLSearchParams({ q: query, format: "json", language: opts.locale })}`;
+        const url = `${base}/search?${new URLSearchParams({ q: query, format: "json", language: opts.locale, ...(opts.news ? { categories: "news", time_range: "month" } : {}) })}`;
         const res = await fetchImpl(url, { headers: { accept: "application/json" }, signal: opts.signal });
         if (!res.ok) throw new Error(`SearXNG ${res.status}`);
         const body = (await res.json()) as { results?: Array<{ url?: unknown; title?: unknown; content?: unknown }> };
