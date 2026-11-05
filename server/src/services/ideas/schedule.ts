@@ -111,6 +111,8 @@ const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === "23
 export async function bookIdea(input: {
   userId: string; siteId: string; ideaId: string; settings: IdeaSettings; from: readonly string[];
   scheduledFor?: Date; edits?: Partial<typeof ideas.$inferInsert>; now?: Date;
+  /** When set, the update only applies if the idea is still at this version. */
+  expectedUpdatedAt?: Date;
 }): Promise<Idea | null> {
   const now = input.now ?? new Date();
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -118,7 +120,10 @@ export async function bookIdea(input: {
     try {
       const [row] = await db.update(ideas)
         .set({ ...input.edits, status: "scheduled", scheduledFor: slot, error: null, failedRuns: 0, updatedAt: now })
-        .where(and(eq(ideas.id, input.ideaId), eq(ideas.userId, input.userId), eq(ideas.siteId, input.siteId), inArray(ideas.status, [...input.from])))
+        .where(and(
+          eq(ideas.id, input.ideaId), eq(ideas.userId, input.userId), eq(ideas.siteId, input.siteId), inArray(ideas.status, [...input.from]),
+          ...(input.expectedUpdatedAt ? [sql`date_trunc('milliseconds', ${ideas.updatedAt}) = ${input.expectedUpdatedAt.toISOString()}::timestamptz`] : []),
+        ))
         .returning();
       return row ?? null;
     } catch (error) {
@@ -198,29 +203,38 @@ const MAX_LEAD_DAYS = 30;
 const DUE_BATCH = 10;
 
 /** Starts every scheduled idea whose slot minus the site's lead time has passed. A failed start waits 30 minutes before the next try. */
-export async function startDueIdeas(now = new Date(), run: StartRun = startArticleRun): Promise<{ started: number; failed: number }> {
-  // Only ideas that can be due under the largest lead time and are past any retry wait; the per-site lead is checked below.
-  const candidates = await db.select().from(ideas)
-    .where(and(
-      eq(ideas.status, "scheduled"), isNotNull(ideas.scheduledFor), lte(ideas.scheduledFor, new Date(now.getTime() + MAX_LEAD_DAYS * DAY_MS)),
-      or(isNull(ideas.error), lte(ideas.updatedAt, new Date(now.getTime() - RETRY_BACKOFF_MS))),
-    ))
-    .orderBy(asc(ideas.scheduledFor)).limit(100);
+export async function startDueIdeas(now = new Date(), run: StartRun = startArticleRun, pageSize = 100): Promise<{ started: number; failed: number }> {
+  // Only ideas that can be due under the largest lead time and are past any retry wait. Lead time is per site, so slot order is
+  // not due order: page through (keyset on slot, id) instead of stopping at one page of ideas that are not due yet.
   const lead = new Map<string, number>();
   let started = 0, failed = 0;
-  for (const idea of candidates) {
-    if (started + failed >= DUE_BATCH) break;
-    const key = `${idea.userId}:${idea.siteId}`;
-    if (!lead.has(key)) lead.set(key, (await getIdeaSettings(idea.userId, idea.siteId)).leadDays);
-    if (idea.scheduledFor!.getTime() - lead.get(key)! * DAY_MS > now.getTime()) continue;
-    try {
-      if (await startIdea(idea.userId, idea.siteId, idea.id, run, now)) {
-        started += 1;
-        await logIdeaEvent({ userId: idea.userId, siteId: idea.siteId, action: "ideas.start", ideaId: idea.id, origin: "system", status: "in_progress" });
+  let after: { at: Date; id: string } | null = null;
+  for (let page = 0; page < 20 && started + failed < DUE_BATCH; page++) {
+    const candidates: typeof ideas.$inferSelect[] = await db.select().from(ideas)
+      .where(and(
+        eq(ideas.status, "scheduled"), isNotNull(ideas.scheduledFor), lte(ideas.scheduledFor, new Date(now.getTime() + MAX_LEAD_DAYS * DAY_MS)),
+        or(isNull(ideas.error), lte(ideas.updatedAt, new Date(now.getTime() - RETRY_BACKOFF_MS))),
+        ...(after ? [sql`(${ideas.scheduledFor}, ${ideas.id}) > (${after.at.toISOString()}::timestamptz, ${after.id}::uuid)`] : []),
+      ))
+      .orderBy(asc(ideas.scheduledFor), asc(ideas.id)).limit(pageSize);
+    if (!candidates.length) break;
+    const last = candidates[candidates.length - 1];
+    after = { at: last.scheduledFor!, id: last.id };
+    for (const idea of candidates) {
+      if (started + failed >= DUE_BATCH) break;
+      const key = `${idea.userId}:${idea.siteId}`;
+      if (!lead.has(key)) lead.set(key, (await getIdeaSettings(idea.userId, idea.siteId)).leadDays);
+      if (idea.scheduledFor!.getTime() - lead.get(key)! * DAY_MS > now.getTime()) continue;
+      try {
+        if (await startIdea(idea.userId, idea.siteId, idea.id, run, now)) {
+          started += 1;
+          await logIdeaEvent({ userId: idea.userId, siteId: idea.siteId, action: "ideas.start", ideaId: idea.id, origin: "system", status: "in_progress" });
+        }
+      } catch {
+        failed += 1;
       }
-    } catch {
-      failed += 1;
     }
+    if (candidates.length < pageSize) break;
   }
   return { started, failed };
 }

@@ -31,11 +31,11 @@ export function ScoreBars({ idea }: { idea: Idea }) {
   </div>;
 }
 
-export function RescheduleDialog({ idea, onClose }: { idea: { id: string; title: string; scheduledFor?: string | null } | null; onClose: () => void }) {
+export function RescheduleDialog({ idea, onClose }: { idea: { id: string; title: string; scheduledFor?: string | null; updatedAt?: string } | null; onClose: () => void }) {
   const qc = useQueryClient();
   const [date, setDate] = useState("");
   const m = useMutation({
-    mutationFn: () => api.post(`/ideas/${idea!.id}/reschedule`, { scheduledFor: date }),
+    mutationFn: () => api.post(`/ideas/${idea!.id}/reschedule`, { scheduledFor: date, ...(idea!.updatedAt ? { expectedUpdatedAt: idea!.updatedAt } : {}) }),
     onSuccess: () => { toast.success("Rescheduled"); qc.invalidateQueries({ queryKey: ["ideas"] }); onClose(); },
     onError: (e) => toast.error(errMsg(e)),
   });
@@ -60,9 +60,9 @@ export function IdeaCard({ idea }: { idea: Idea }) {
   const [reason, setReason] = useState("");
   const done = () => { setDlg(null); qc.invalidateQueries({ queryKey: ["ideas"] }); };
   const fail = (e: unknown) => toast.error(errMsg(e));
-  const edit = useMutation({ mutationFn: () => api.patch(`/ideas/${idea.id}`, form), onSuccess: () => { toast.success("Saved"); done(); }, onError: fail });
+  const edit = useMutation({ mutationFn: () => api.patch(`/ideas/${idea.id}`, { ...form, expectedUpdatedAt: idea.updatedAt }), onSuccess: () => { toast.success("Saved"); done(); }, onError: fail });
   const approve = useMutation({
-    mutationFn: () => api.post<{ idea: Idea }>(`/ideas/${idea.id}/approve`, { ...(date ? { scheduledFor: date } : {}), ...form }),
+    mutationFn: () => api.post<{ idea: Idea }>(`/ideas/${idea.id}/approve`, { ...(date ? { scheduledFor: date } : {}), ...form, expectedUpdatedAt: idea.updatedAt }),
     onSuccess: (r) => { toast.success(r.idea.scheduledFor ? `Scheduled for ${formatSlot(r.idea.scheduledFor)}` : "Approved"); done(); }, onError: fail,
   });
   const reject = useMutation({ mutationFn: () => api.post(`/ideas/${idea.id}/reject`, reason ? { reason } : {}), onSuccess: () => { toast.success("Rejected"); done(); }, onError: fail });

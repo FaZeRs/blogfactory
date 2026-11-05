@@ -67,12 +67,18 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.equal((await req("GET", `/?siteId=${site.id}&status=bogus`)).status, 400);
 
     // edit, then approve with an owner-picked date and a taken date
-    const patched = await json(await req("PATCH", `/${idea.id}`, { title: "How to price plumbing jobs fast", mode: "deep", outline: ["one", "two", "three", "four"] }));
+    // optimistic lock: an edit needs the version it was made against; a stale version is refused
+    assert.equal((await req("PATCH", `/${idea.id}`, { title: "How to price plumbing jobs fast" })).status, 400, "expectedUpdatedAt is required");
+    const stale = new Date(new Date(idea.updatedAt).getTime() - 1000).toISOString();
+    assert.equal((await req("PATCH", `/${idea.id}`, { title: "Stale tab overwrite attempt", expectedUpdatedAt: stale })).status, 409, "a stale edit is refused");
+    const patched = await json(await req("PATCH", `/${idea.id}`, { title: "How to price plumbing jobs fast", mode: "deep", outline: ["one", "two", "three", "four"], expectedUpdatedAt: idea.updatedAt }));
+    assert.equal((await req("PATCH", `/${idea.id}`, { title: "Second tab saves late", expectedUpdatedAt: idea.updatedAt })).status, 409, "the other tab's old version no longer matches");
     assert.deepEqual([patched.idea.title, patched.idea.mode, patched.idea.brief.outline.length, patched.idea.brief.whyNow], ["How to price plumbing jobs fast", "deep", 4, "because"]);
-    assert.equal((await req("PATCH", `/${idea.id}`, { mode: "fast" })).status, 400);
+    assert.equal((await req("PATCH", `/${idea.id}`, { mode: "fast", expectedUpdatedAt: patched.idea.updatedAt })).status, 400);
+    assert.equal((await req("POST", `/${idea.id}/approve`, { scheduledFor: new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10), angle: "edit without version" })).status, 400, "approve with edits needs the version");
     const when = new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10);
     assert.equal((await req("POST", `/${idea.id}/approve`, { scheduledFor: "2020-01-01" })).status, 400, "past dates are refused");
-    const approved = await req("POST", `/${idea.id}/approve`, { scheduledFor: when, angle: "new angle" });
+    const approved = await req("POST", `/${idea.id}/approve`, { scheduledFor: when, angle: "new angle", expectedUpdatedAt: patched.idea.updatedAt });
     assert.equal(approved.status, 200);
     const approvedIdea = (await json(approved)).idea;
     assert.deepEqual([approvedIdea.status, approvedIdea.angle, approvedIdea.scheduledFor.slice(0, 10)], ["scheduled", "new angle", when]);

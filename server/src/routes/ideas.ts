@@ -8,7 +8,7 @@ import { ApiError, readJsonObject, requiredString } from "../http/error-contract
 import { getUserId } from "../middleware/auth.js";
 import { queueDiscovery, type DiscoveryDeps } from "../services/ideas/discovery.js";
 import {
-  IdeaActionError, bookOwnedIdea, listIdeas, optionalText, ownedIdeaRow, readIdeaEdits, rejectOwnedIdea, serializeDiscovery, serializeIdea, withOutline,
+  IdeaActionError, bookOwnedIdea, listIdeas, optionalText, ownedIdeaRow, readExpectedUpdatedAt, readIdeaEdits, rejectOwnedIdea, sameVersion, staleVersion, serializeDiscovery, serializeIdea, withOutline,
   type IdeaRow,
 } from "../services/ideas/actions.js";
 import { addManualIdea } from "../services/ideas/manual.js";
@@ -125,10 +125,12 @@ export function createIdeasRoutes(deps: IdeasRouteDeps = {}) {
   routes.patch("/:id", async (c) => {
     const { userId, idea } = await ownedIdea(c);
     if (idea.status !== "new" && idea.status !== "scheduled") throw conflict(idea, "edited");
-    const { edits, outline } = await api(async () => readIdeaEdits(await readJsonObject(c)));
-    const [row] = await db.update(ideas).set({ ...edits, ...withOutline(idea, outline), updatedAt: new Date() })
-      .where(and(eq(ideas.id, idea.id), eq(ideas.userId, userId), inArray(ideas.status, ["new", "scheduled"]))).returning();
-    if (!row) throw conflict(idea, "edited");
+    const body = await readJsonObject(c);
+    const { edits, outline, expected } = await api(async () => ({ ...readIdeaEdits(body), expected: readExpectedUpdatedAt(body, true)! }));
+    if (idea.updatedAt.getTime() !== expected.getTime()) await api(async () => { throw staleVersion(); });
+    const [row] = await db.update(ideas).set({ ...edits, ...withOutline(idea, outline), updatedAt: new Date(Math.max(Date.now(), idea.updatedAt.getTime() + 1)) })
+      .where(and(eq(ideas.id, idea.id), eq(ideas.userId, userId), inArray(ideas.status, ["new", "scheduled"]), ...sameVersion(expected))).returning();
+    if (!row) await api(async () => { throw staleVersion(); });
     await logIdeaEvent({ userId, siteId: row.siteId, action: "ideas.edit", ideaId: row.id, status: row.status });
     return c.json({ idea: serializeIdea(row) });
   });

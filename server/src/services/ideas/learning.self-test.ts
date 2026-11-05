@@ -124,7 +124,7 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     const listed = await listIdeas({ userId: user.id, siteId: site.id, statuses: ["new"], limit: 5 });
     assert.deepEqual(listed.map((r) => r.id), [inbox.id]);
     await assert.rejects(listIdeas({ userId: user.id, siteId: site.id, statuses: ["live"] }), IdeaActionError);
-    const approved = await bookOwnedIdea({ userId: user.id, ideaId: inbox.id, siteId: site.id, action: "approve", body: { title: "Renamed idea title" } });
+    const approved = await bookOwnedIdea({ userId: user.id, ideaId: inbox.id, siteId: site.id, action: "approve", body: { title: "Renamed idea title", expectedUpdatedAt: listed[0].updatedAt.toISOString() } });
     assert.deepEqual([approved.status, approved.title], ["scheduled", "Renamed idea title"]);
     assert.ok(approved.scheduledFor);
     await assert.rejects(bookOwnedIdea({ userId: user.id, ideaId: inbox.id, action: "approve", body: {} }), (e: unknown) => e instanceof IdeaActionError && e.kind === "conflict");

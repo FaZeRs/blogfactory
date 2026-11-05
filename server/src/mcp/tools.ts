@@ -1224,7 +1224,7 @@ async function discoverIdeasTool(principal: McpPrincipal, input: { site_id: stri
 
 async function approveIdeaTool(principal: McpPrincipal, input: {
   site_id: string; idea_id: string; scheduled_for?: string; title?: string; angle?: string; primary_keyword?: string;
-  alternate_keywords?: string[]; mode?: "normal" | "deep"; outline?: string[];
+  alternate_keywords?: string[]; mode?: "normal" | "deep"; outline?: string[]; expected_updated_at?: string;
 }) {
   await requireOwnedAllowedSite(principal, input.site_id);
   const row = await ideaCall(() => bookOwnedIdea({
@@ -1232,6 +1232,7 @@ async function approveIdeaTool(principal: McpPrincipal, input: {
     body: {
       scheduledFor: input.scheduled_for, title: input.title, angle: input.angle, primaryKeyword: input.primary_keyword,
       alternateKeywords: input.alternate_keywords, mode: input.mode, outline: input.outline,
+      expectedUpdatedAt: input.expected_updated_at,
     },
   }));
   return {
@@ -1878,6 +1879,7 @@ export const MCP_TOOL_REGISTRY = {
       alternate_keywords: z.array(z.string().trim().min(1).max(80)).max(6).optional(),
       mode: z.enum(["normal", "deep"]).optional(),
       outline: z.array(z.string().trim().min(1).max(120)).min(3).max(6).optional(),
+      expected_updated_at: z.string().trim().min(1).max(40).optional().describe("The idea's updated_at from list_ideas. Required when editing fields, so a stale edit cannot overwrite a newer one."),
     },
     outputSchema: successOutputSchema({ site_id: uuid, idea: ideaSchema, next_action: z.string() }),
     requiredScope: "drafts:write",

@@ -15,6 +15,20 @@ export class IdeaActionError extends Error {
   constructor(readonly kind: "not_found" | "validation" | "conflict", message: string, readonly field?: string) { super(message); }
 }
 const invalid = (field: string, message: string) => new IdeaActionError("validation", message, field);
+/** Optimistic lock: the caller's copy of updated_at, compared to the millisecond inside the UPDATE so two tabs cannot overwrite each other. */
+export function readExpectedUpdatedAt(body: Record<string, unknown>, required: boolean): Date | undefined {
+  const raw = body.expectedUpdatedAt ?? body.expected_updated_at;
+  if (raw === undefined || raw === null || raw === "") {
+    if (required) throw invalid("expectedUpdatedAt", "Required: the idea's updatedAt you edited");
+    return undefined;
+  }
+  const at = typeof raw === "string" ? new Date(raw) : null;
+  if (!at || Number.isNaN(at.getTime())) throw invalid("expectedUpdatedAt", "Expected an ISO timestamp");
+  return at;
+}
+export const sameVersion = (expected?: Date) => (expected ? [sql`date_trunc('milliseconds', ${ideas.updatedAt}) = ${expected.toISOString()}::timestamptz`] : []);
+export const staleVersion = () => new IdeaActionError("conflict", "This idea changed since you opened it. Reload and try again.");
+
 const conflict = (idea: IdeaRow, action: string) => new IdeaActionError("conflict", `A ${idea.status.replace("_", " ")} idea cannot be ${action}`);
 
 export const serializeIdea = (r: IdeaRow) => ({
@@ -98,6 +112,9 @@ export async function bookOwnedIdea(input: { userId: string; ideaId: string; sit
   const verb = action === "approve" ? "approved" : "rescheduled";
   if (!from.includes(idea.status)) throw conflict(idea, verb);
   const { edits, outline } = action === "approve" ? readIdeaEdits(body) : { edits: {}, outline: undefined };
+  // Edits without the version they were made against could overwrite someone else's save.
+  const expectedUpdatedAt = readExpectedUpdatedAt(body, Object.keys(edits).length > 0 || outline !== undefined);
+  if (expectedUpdatedAt && idea.updatedAt.getTime() !== expectedUpdatedAt.getTime()) throw staleVersion();
   const settings = await getIdeaSettings(userId, idea.siteId);
   let at: Date | undefined;
   if (body.scheduledFor === undefined || body.scheduledFor === null) {
@@ -110,12 +127,12 @@ export async function bookOwnedIdea(input: { userId: string; ideaId: string; sit
   }
   let row: IdeaRow | null;
   try {
-    row = await bookIdea({ userId, siteId: idea.siteId, ideaId: idea.id, settings, from, scheduledFor: at, edits: { ...edits, ...withOutline(idea, outline) } });
+    row = await bookIdea({ userId, siteId: idea.siteId, ideaId: idea.id, settings, from, scheduledFor: at, expectedUpdatedAt, edits: { ...edits, ...withOutline(idea, outline) } });
   } catch (error) {
     if (error instanceof SlotTakenError) throw new IdeaActionError("conflict", error.message);
     throw error;
   }
-  if (!row) throw conflict(idea, verb);
+  if (!row) throw expectedUpdatedAt ? staleVersion() : conflict(idea, verb);
   return row;
 }
 

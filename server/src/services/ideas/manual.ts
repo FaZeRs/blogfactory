@@ -54,7 +54,7 @@ export async function addManualIdea(input: {
     userId, siteId, status: "new", origin: "manual", mode: settings.defaultMode,
     title: input.title, angle: input.angle || c?.angle || null, primaryKeyword: input.primaryKeyword || c?.primaryKeyword || null,
     alternateKeywords: c?.alternateKeywords ?? [], searchIntent: c?.searchIntent || rated?.keyword?.intent || null, audienceQuestion: c?.audienceQuestion || null,
-    brief: c ? { whyNow: c.whyNow, outline: c.outline, informationGain: c.informationGain, sources: [], suggestedMode: "normal" } : {},
+    brief: c ? { whyNow: c.whyNow, outline: c.outline, informationGain: c.informationGain, sources: [], suggestedMode: "normal" } : { whyNow: "", outline: [], informationGain: [], sources: [], suggestedMode: "normal" },
     score: rated?.score ?? null,
     scoreBreakdown: rated && c ? { ...rated.factors, keyword: rated.keyword, nearestPost: rated.nearest, rationale: c.rationale } : null,
   }).returning();

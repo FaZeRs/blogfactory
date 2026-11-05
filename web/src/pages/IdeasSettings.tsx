@@ -47,12 +47,15 @@ function CompetitorField({ id, value, onChange }: { id: string; value: string[];
 export default function IdeasSettings() {
   const siteId = useSites().activeSite?.id;
   const qc = useQueryClient();
-  const [s, setS] = useState<IdeaSettings | null>(null);
+  // The form remembers which site it was loaded for; Save writes only to that site.
+  const [loaded, setLoaded] = useState<{ siteId: string; settings: IdeaSettings } | null>(null);
   const { data } = useQuery({ queryKey: ideasKey(siteId, "settings"), queryFn: () => api.get<{ settings: IdeaSettings }>(`/settings/ideas?siteId=${siteId}`), enabled: Boolean(siteId) });
   // Reset while another site's settings load, so Save never writes one site's settings to another.
-  useEffect(() => { setS(data?.settings ?? null); }, [data]);
+  useEffect(() => { setLoaded(data && siteId ? { siteId, settings: data.settings } : null); }, [data, siteId]);
+  const s = loaded && loaded.siteId === siteId ? loaded.settings : null;
+  const setS = (next: IdeaSettings) => setLoaded((l) => (l ? { ...l, settings: next } : l));
   const save = useMutation({
-    mutationFn: () => api.put<{ settings: IdeaSettings }>(`/settings/ideas`, { siteId, settings: s }),
+    mutationFn: () => api.put<{ settings: IdeaSettings }>(`/settings/ideas`, { siteId: loaded!.siteId, settings: loaded!.settings }),
     onSuccess: () => { toast.success("Settings saved"); qc.invalidateQueries({ queryKey: ["ideas"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save"),
   });

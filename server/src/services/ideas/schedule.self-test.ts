@@ -74,6 +74,13 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.deepEqual(await startDueIdeas(now, fakeRun as never), { started: 0, failed: 0 }, "not started twice");
     assert.equal((await db.select().from(ideas).where(eq(ideas.id, later.id)))[0]!.status, "scheduled");
 
+    // lead time is per site, so slot order is not due order: a due idea behind a page of not-yet-due ones still starts
+    const [longLead] = await db.insert(sites).values({ userId: user.id, name: "L", domain: "l.example.test" }).returning();
+    await saveIdeaSettings(user.id, longLead.id, { ...DEFAULT_IDEA_SETTINGS, leadDays: 30, cadence: { weekdays: [0, 1, 2, 3, 4, 5, 6], time: "08:00", timezone: "UTC" } });
+    const [behind] = await db.insert(ideas).values({ userId: user.id, siteId: longLead.id, title: "due behind a page", primaryKeyword: "kw", status: "scheduled", scheduledFor: new Date(now.getTime() + 25 * 86_400_000), brief: { outline: ["a", "b", "c"] } }).returning();
+    assert.deepEqual(await startDueIdeas(now, fakeRun as never, 1), { started: 1, failed: 0 }, "paged past the not-due idea");
+    assert.equal((await db.select().from(ideas).where(eq(ideas.id, behind.id)))[0]!.status, "in_progress");
+
     // a start that fails keeps the idea scheduled with the error and waits 30 minutes
     const failing = async () => { throw new Error("worker_required"); };
     const wait = await mk("retry idea", { status: "scheduled", scheduledFor: new Date(now.getTime() + 86_400_000) });
