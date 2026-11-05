@@ -69,8 +69,16 @@ export function createAiVisibilityRoutes() {
     if (!(await getVisibilitySettings(userId, siteId)).questions.length) throw validation("questions", "Add questions first");
     if (!(await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
     // Detached: the check takes minutes. Errors are logged without bodies; the weekly drain is the scheduled path.
-    const started = runVisibility(userId, siteId).catch(() => console.error("[ai-visibility] Manual run failed"));
+    const started = runVisibility(userId, siteId).catch(() => { console.error("[ai-visibility] Manual run failed"); return null; });
     waitUntil(started);
+    // A skipped run returns before its first engine call (which takes seconds), so the button can say why.
+    const early = await Promise.race([started, new Promise<null>((r) => setTimeout(() => r(null), 1500))]);
+    if (early?.status === "capped") {
+      throw new ApiError(400, "validation_error", `This check would cost about $${early.estimateUsd.toFixed(2)}; $${early.spentUsd.toFixed(2)} of the $${early.capUsd.toFixed(2)} monthly cap is spent. Raise the cap in Settings.`);
+    }
+    if (early?.status === "blocked") throw new ApiError(400, "validation_error", early.message);
+    if (early?.status === "running") throw new ApiError(409, "conflict", "A check is already running");
+    if (early?.status === "done" && early.asked === 0) return c.json({ started: false, message: "This week's check is already complete" });
     return c.json({ started: true }, 202);
   });
 

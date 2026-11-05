@@ -16,7 +16,7 @@ export const PAUSE_MS = 2_000;
 export const MAX_RATE_WAIT_MS = 90_000;
 export const STALE_RUN_MS = 30 * 60_000;
 const ANSWER_CAP = 4_000;
-const ESTIMATE_USD: Record<string, number> = { openai: 0.012, perplexity: 0.006, google: 0.016 };
+const ESTIMATE_USD: Record<string, number> = { openai: 0.04, perplexity: 0.015, google: 0.08 } // measured 2026-11; Gemini runs 2–6 paid searches per answer;
 
 /** ISO 8601 week, "YYYY-Www", from the UTC date. */
 export function isoWeek(date: Date): string {
@@ -28,7 +28,7 @@ export function isoWeek(date: Date): string {
   return `${d.getUTCFullYear()}-W${String(n).padStart(2, "0")}`;
 }
 
-export const estimateUsd = (engine: string) => ESTIMATE_USD[engine.split("/")[0] ?? ""] ?? 0.02;
+export const estimateUsd = (engine: string) => ESTIMATE_USD[engine.split("/")[0] ?? ""] ?? 0.05;
 
 export type RunOpts = {
   now?: Date;

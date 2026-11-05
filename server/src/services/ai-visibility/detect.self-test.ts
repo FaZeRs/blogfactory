@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { classify, hostOf, mentions, normalizeUrl, siteHostMatch } from "./detect.js";
-import { askEngine, EmptyAnswerError, EngineError, QuotaError, RateLimitError } from "./engines.js";
+import { askEngine, resolveRedirect, EmptyAnswerError, EngineError, QuotaError, RateLimitError } from "./engines.js";
 import { questionHash, validateQuestions } from "./questions.js";
 import { normalizeVisibilitySettings } from "./settings.js";
 import { isoWeek } from "./run.js";
@@ -63,7 +63,7 @@ assert.notEqual(questionHash("a?"), questionHash("b?"));
 // settings
 const s = normalizeVisibilitySettings({ engines: ["bad", "openai/gpt-5.6-luna", "A/B", "x/1", "x/2", "x/3", "x/4", "x/5"], weekday: 9, monthlyCapUsd: "no" }, { name: "Lindevo", domain: "lindevo.com" });
 assert.deepEqual(s.engines, ["openai/gpt-5.6-luna", "x/1", "x/2", "x/3", "x/4"]);
-assert.deepEqual([s.weekday, s.monthlyCapUsd, s.enabled], [1, 5, false]);
+assert.deepEqual([s.weekday, s.monthlyCapUsd, s.enabled], [1, 15, false]);
 assert.deepEqual(s.brandTerms, ["Lindevo", "lindevo.com", "lindevo"]);
 assert.equal(normalizeVisibilitySettings(null, { name: "N", domain: "n.example" }).engines.length, 3);
 assert.doesNotThrow(() => normalizeVisibilitySettings(42, {}));
@@ -112,5 +112,17 @@ await assert.rejects(askEngine({ ...args, fetchImpl: reply(500, "secret prompt e
 await assert.rejects(askEngine({ ...args, fetchImpl: reply(200, { error: { code: 402, message: "no credits" } }) }), QuotaError);
 await assert.rejects(askEngine({ ...args, fetchImpl: (async () => { throw new Error("boom with details"); }) as unknown as typeof fetch }),
   (e: any) => e instanceof EngineError && !/details/.test(e.message));
+
+// Gemini redirect links resolve through one HEAD, or fall back to the title's domain; other links are untouched.
+const g = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AB";
+const head = (location: string | null, fail = false) => (async (_u: URL, init: RequestInit) => {
+  assert.equal(init.method, "HEAD"); assert.equal(init.redirect, "manual");
+  if (fail) throw new Error("down");
+  return new Response(null, { status: 302, headers: location ? { location } : {} });
+}) as unknown as typeof fetch;
+assert.equal((await resolveRedirect({ url: g, title: "lindevo.com" }, head("https://lindevo.com/blog/x"))).url, "https://lindevo.com/blog/x");
+assert.equal((await resolveRedirect({ url: g, title: "lindevo.com" }, head(null, true))).url, "https://lindevo.com/");
+assert.equal((await resolveRedirect({ url: g, title: "Some page" }, head("javascript:alert(1)"))).url, g);
+assert.equal((await resolveRedirect({ url: "https://a.example/x" }, head(null, true))).url, "https://a.example/x");
 
 console.log("ai-visibility detect/engines/questions self-test passed");

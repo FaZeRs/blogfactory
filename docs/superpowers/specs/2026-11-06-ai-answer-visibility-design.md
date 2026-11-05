@@ -39,7 +39,7 @@ Show the results as a share and a trend on Search Growth, and turn "competitors 
 | Questions | A **per-site list** (5–30), editable in Search Growth. Suggestions come from Search Console queries phrased as questions, idea audience questions and seed topics. One model call drafts the questions and the owner keeps the ones they want. A question may not contain the brand name or domain; this is validated. | Stable and owner-controlled, as in Lindevo, but not hard-coded. |
 | Schedule | Weekly, on a per-site weekday (default Monday), run by the worker's daily task. A run covers each engine for each question, once per ISO week, enforced by a unique index on (site, week, engine, question hash). There is also a **Run now** button. | It matches Lindevo's cadence and is idempotent across worker restarts. |
 | Calls | Run one at a time per site, with a 2-second pause between calls (OpenRouter rate limits). A 429 is waited out up to 90 seconds, at most twice. A quota or billing error stops that engine for the run. An empty answer counts as a failure. | These are Lindevo's lessons. |
-| Cost | Logged to `generation_logs` per call (`usageType: "text"`, `responseData.aiVisibility`), so account guardrails and Usage see it. There is a per-site monthly cap (default $5); the run is skipped when the next run's estimate would exceed it. A run costs about 21 questions × 3 engines × about $0.01–0.03, so roughly $0.6–1.9 a week. | No surprise spend. |
+| Cost | Logged to `generation_logs` per call (`usageType: "text"`, `responseData.aiVisibility`), so account guardrails and Usage see it. There is a per-site monthly cap (default $15); the run is skipped when the next run's estimate would exceed it. Measured: about $0.04 (OpenAI), $0.015 (Perplexity) and $0.05–0.13 (Google, which runs 2–6 paid searches) per question, so 21 questions cost about $2.50 a week. | No surprise spend. |
 | Storage | The answer text is capped at 4,000 characters and never enters the ledger. It is kept, so the owner can read what the engine said. | Evidence without bloat. |
 | History import | A CLI, `npm run import:lindevo-citations -- --site <id> --source-url <lindevo db url>`, reads `content_engine.ai_citations` read-only and maps rows to the new table. It is idempotent through the unique index. | The owner asked to keep the history. A CLI avoids putting a second database credential into the app. |
 | Ideas link | Questions where a competitor is cited and the site isn't, for two weeks running, feed discovery as `ai_gap` signals. The panel has an **Add as idea** button on each such question. | This was planned in the program spec. |
@@ -68,7 +68,7 @@ Indexes: a unique index on `(site_id, week, engine, question_hash)`, and `(user_
 - `questions` (string[])
 - `engines` (string[] of model ids)
 - `weekday` (0–6, default 1)
-- `monthlyCapUsd` (default 5)
+- `monthlyCapUsd` (default 15)
 - `brandTerms` (string[], defaulting to the site name and domain; used for mention detection and question validation)
 
 ## Services (`server/src/services/ai-visibility/`)

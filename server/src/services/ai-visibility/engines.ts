@@ -43,6 +43,8 @@ export async function askEngine(args: AskArgs & { fetchImpl?: typeof fetch }): P
         model: args.model,
         messages: [{ role: "user", content: args.question }],
         plugins: [{ id: "web" }],
+        // Low context cuts injected search tokens; citations are unaffected.
+        web_search_options: { search_context_size: "low" },
         usage: { include: true },
       }),
       signal,
@@ -85,5 +87,25 @@ export async function askEngine(args: AskArgs & { fetchImpl?: typeof fetch }): P
     if (a?.type === "url_citation" || a?.url_citation) add(a.url_citation?.url, a.url_citation?.title);
   }
   for (const c of Array.isArray(body?.citations) ? body.citations : []) add(typeof c === "string" ? c : c?.url);
-  return { answer, citations, costUsd, model: typeof body?.model === "string" ? body.model : args.model };
+  const resolved = await Promise.all(citations.map((c) => resolveRedirect(c, args.fetchImpl ?? fetch)));
+  return { answer, citations: resolved, costUsd, model: typeof body?.model === "string" ? body.model : args.model };
+}
+
+const GOOGLE_REDIRECT = "vertexaisearch.cloud.google.com";
+
+/**
+ * Gemini cites opaque Google redirect links. One HEAD without following (only to Google's fixed host) reads the real URL;
+ * when that fails, the title, which Gemini sets to the source's domain, stands in.
+ */
+export async function resolveRedirect(c: { url: string; title?: string }, fetchImpl: typeof fetch): Promise<{ url: string; title?: string }> {
+  let url: URL;
+  try { url = new URL(c.url); } catch { return c; }
+  if (url.hostname !== GOOGLE_REDIRECT || url.protocol !== "https:") return c;
+  try {
+    const res = await fetchImpl(url, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    const location = res.headers.get("location");
+    if (location && /^https?:\/\//i.test(location) && new URL(location).hostname !== GOOGLE_REDIRECT) return { ...c, url: location };
+  } catch { /* fall back to the title */ }
+  const host = c.title?.trim().toLowerCase();
+  return host && /^([a-z0-9-]+\.)+[a-z]{2,}$/.test(host) ? { ...c, url: `https://${host}/` } : c;
 }

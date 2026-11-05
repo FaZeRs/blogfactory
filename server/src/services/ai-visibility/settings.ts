@@ -44,7 +44,7 @@ export function normalizeVisibilitySettings(raw: unknown, site: SiteIdentity): V
   const engines = strings(r.engines, 50, 120).filter((e) => ENGINE_ID.test(e)).slice(0, MAX_ENGINES);
   const brandTerms = strings(r.brandTerms, 10, 80);
   const weekday = typeof r.weekday === "number" && Number.isInteger(r.weekday) && r.weekday >= 0 && r.weekday <= 6 ? r.weekday : 1;
-  const cap = typeof r.monthlyCapUsd === "number" && Number.isFinite(r.monthlyCapUsd) ? Math.min(1000, Math.max(0, r.monthlyCapUsd)) : 5;
+  const cap = typeof r.monthlyCapUsd === "number" && Number.isFinite(r.monthlyCapUsd) ? Math.min(1000, Math.max(0, r.monthlyCapUsd)) : 15;
   return {
     enabled: r.enabled === true,
     questions: strings(r.questions, MAX_QUESTIONS, 200),

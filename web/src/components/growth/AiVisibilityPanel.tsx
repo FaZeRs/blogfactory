@@ -143,8 +143,8 @@ export function AiVisibilityPanel() {
   const { data } = useAiVisibility(siteId);
   const [editing, setEditing] = useState(false);
   const run = useMutation({
-    mutationFn: () => api.post("/ai-visibility/run", { siteId }),
-    onSuccess: () => { toast.success("Check started"); qc.invalidateQueries({ queryKey: aiVisibilityKey(siteId) }); },
+    mutationFn: () => api.post<{ started: boolean; message?: string }>("/ai-visibility/run", { siteId }),
+    onSuccess: (res) => { toast.success(res.started ? "Check started" : res.message ?? "Nothing to check"); qc.invalidateQueries({ queryKey: aiVisibilityKey(siteId) }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not start the check"),
   });
   if (!siteId || !data) return null;

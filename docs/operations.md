@@ -18,6 +18,10 @@ For an existing database that predates the migration ledger, first confirm its s
 
 Never run PostgreSQL integration tests against the shared production database. Use a disposable database.
 
+## AI answer visibility cost
+
+A weekly check costs about $0.04 per question on OpenAI, $0.015 on Perplexity and $0.05-0.13 on Google. Gemini runs 2-6 paid web searches per answer. Measured in November 2026: 21 questions on the three default engines is about $2.50 a week. Each site has a monthly cap (default $15), and a run whose estimate would pass the cap is skipped, with the reason shown on **Run now**. The spend is in `generation_logs`, so account guardrails and Usage include it.
+
 ## Lindevo AI citation history import
 
 One-off backfill of Lindevo's `content_engine.ai_citations` into `ai_answer_checks` (engines labelled `... (Lindevo import)`). Reads the source in a read-only transaction and is idempotent (`ON CONFLICT DO NOTHING`). Run from the repo root with `DATABASE_URL` pointing at the BlogFactory database; add `--dry-run` first to see the counts:

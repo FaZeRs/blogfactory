@@ -140,6 +140,22 @@ The routes are under `/api/ideas`, with settings at `/api/settings/ideas`. The w
 
 **Weight learning** (`learning.ts`): the worker's daily task, once per UTC month per site, nudges each score weight (at most 10%, bounds 0.1-3) by its Pearson correlation with ln(1 + Search Console clicks) in days 30-58 after publication, needing at least 5 published ideas. State lives in `idea_settings` (`learnWeights`, `weightsLearnedMonth`, `weightHistory`).
 
+## AI answer visibility
+
+`server/src/services/ai-visibility/` checks whether AI answer engines cite each site:
+- **Questions and engines** live in `user_settings.ai_visibility` per site. There are 5-30 questions, which may not name the brand, and up to 5 OpenRouter models. `suggestQuestions` drafts questions from Search Console queries, idea questions and seed topics.
+- **A run** (`run.ts`) asks each question to each engine once per ISO week (`ai_answer_checks`, unique on site, week, engine and question hash):
+  - It uses OpenRouter `plugins:[{id:"web"}]` and reads `url_citation` annotations. Gemini's redirect links are resolved with one manual-redirect HEAD to Google's fixed host.
+  - Calls run one at a time with a 2 s pause. A 429 is waited out (at most twice, 90 s each); a quota error stops that engine for the run. An empty answer is stored as a failure.
+  - The run claims `sites.ai_visibility_run_started_at` (stale after 30 minutes).
+  - Spend is logged to `generation_logs` per call. The run is skipped when this month's spend plus the run's estimate would pass the site's cap.
+  - It writes one `ai_visibility.run` ledger event (counts and cost only). The answer text is capped at 4,000 characters and never enters the ledger.
+- **Detection** (`detect.ts`): *cited* means a cited URL on the site's domain or a subdomain; *mentioned* is a word-bounded brand-term match. Every other host is stored, and hosts in the idea settings' competitor list are flagged.
+- **Summary** (`summary.ts`): the share of answered questions cited, per engine and over 12 weeks, the top cited domains, and gaps (a competitor cited, the site not).
+- **Ideas:** gaps that hold for two weeks become `ai_gap` discovery signals, and the panel's **Add as idea** creates a manual idea.
+
+The worker's daily task runs `drainVisibility` for enabled sites once their weekday arrives. The routes are under `/api/ai-visibility`; the web panel is on Search Growth, with one number on Overview. The MCP tool `get_ai_visibility` (`content:read`) returns the summary without answer text and never starts a run.
+
 ## Hosting and routing
 
 | Layer | Current responsibility |
