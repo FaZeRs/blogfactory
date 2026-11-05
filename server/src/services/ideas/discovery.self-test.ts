@@ -41,7 +41,7 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.deepEqual([first.created, second.created, second.id], [true, false, first.id]);
 
     const idea = (title: string, keyword: string, over: object = {}) => ({
-      title, angle: "a point of view", primaryKeyword: keyword, outline: ["One", "Two", "Three"], whyNow: "now",
+      title, angle: "a point of view", primaryKeyword: keyword, alternateKeywords: [], searchIntent: "informational", audienceQuestion: "q",  outline: ["One", "Two", "Three"], whyNow: "now",
       informationGain: ["new data"], signalIds: ["s1"], fit: 8, gain: 6, demandEstimate: 7, rationale: "r", ...over,
     });
     const llm = createFakeLlm({ brief: [{ ideas: [

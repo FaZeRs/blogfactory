@@ -27,8 +27,17 @@ export const CandidateSchema = z.object({
 });
 export type Candidate = z.infer<typeof CandidateSchema>;
 
-/** The model reply is only checked for shape here; each idea is validated alone so one bad idea does not drop the rest. */
-const ReplySchema = z.object({ ideas: z.array(z.unknown()).max(60) });
+/**
+ * What the model is told to return. Plain types only: length and range rules in a strict schema can stall decoding.
+ * Each idea is then validated alone with CandidateSchema, so one bad idea does not drop the rest.
+ */
+const WireCandidate = z.object({
+  title: z.string(), angle: z.string(), primaryKeyword: z.string(), alternateKeywords: z.array(z.string()),
+  searchIntent: z.string(), audienceQuestion: z.string(), whyNow: z.string(), outline: z.array(z.string()),
+  informationGain: z.array(z.string()), signalIds: z.array(z.string()),
+  fit: z.number(), gain: z.number(), demandEstimate: z.number(), rationale: z.string(),
+});
+const ReplySchema = z.object({ ideas: z.array(WireCandidate) });
 
 export function parseCandidates(raw: unknown[], signals: Pick<Signal, "id">[]): Candidate[] {
   const known = new Set(signals.map((s) => s.id));

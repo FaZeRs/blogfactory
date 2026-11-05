@@ -54,7 +54,8 @@ assert.deepEqual(custom.autopilot, { enabled: true, approvePerWeek: 1, minScore:
 assert.deepEqual([custom.weights.fit, custom.weights.trend], [3, 0]);
 assert.deepEqual(custom.seedTopics, ["a"]);
 assert.deepEqual(normalizeIdeaSettings({ cadence: { timezone: "Europe/Riga", time: "09:30" } }).cadence, { weekdays: [1, 4], time: "09:30", timezone: "Europe/Riga" });
-assert.deepEqual(effectiveSeedTopics({ ...DEFAULT_IDEA_SETTINGS, seedTopics: ["SEO", "crm"] }, { topics: ["CRM"], editorialTopics: ["seo tips"] }), ["seo tips", "CRM", "SEO"]);
+assert.deepEqual(effectiveSeedTopics({ ...DEFAULT_IDEA_SETTINGS, seedTopics: ["SEO", "crm"] }, { topics: ["CRM"], editorialTopics: ["seo tips"] }), ["SEO", "crm", "seo tips"]);
+assert.deepEqual(effectiveSeedTopics(DEFAULT_IDEA_SETTINGS, { name: "Lindevo", domain: "lindevo.com", topics: ["lindevo", "Projects", "services", "automation"] }), ["automation"], "brand and navigation words are dropped");
 
 // sitemap
 const map = parseSitemap(`<urlset><url><loc>https://c.test/blog/a-b-c</loc><lastmod>2026-11-01</lastmod></url><url><loc><![CDATA[https://c.test/x]]></loc></url><url><loc>https://c.test/unclosed`);
@@ -113,7 +114,7 @@ const parsed = parseCandidates([goodIdea, { title: "x" }, { ...goodIdea, outline
 assert.equal(parsed.length, 1, "invalid ideas are dropped one by one");
 assert.deepEqual(parsed[0].signalIds, ["s1"], "unknown signal ids are removed");
 assert.deepEqual(parsed[0].alternateKeywords, []);
-const llm = createFakeLlm({ brief: [{ ideas: [goodIdea] }] });
+const llm = createFakeLlm({ brief: [{ ideas: [{ ...goodIdea, alternateKeywords: [], searchIntent: "informational", audienceQuestion: "q", whyNow: "", informationGain: [], rationale: "" }] }] });
 const gen = await generateCandidates({ llm, model: "m", site: { name: "S", domain: "s.test", topics: ["crm"] }, postTitles: ["Old post"], signals: all.signals });
 assert.equal(gen.candidates.length, 1);
 const sent = llm.calls[0];

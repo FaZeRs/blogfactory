@@ -24,7 +24,7 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
       return { jobId: job.id, runId: randomUUID(), estimateUsd: 1 };
     };
     const discoveryDeps = async () => ({
-      llm: createFakeLlm({ brief: [{ ideas: [{ title: "ignored", angle: "x", primaryKeyword: "model keyword", outline: ["a", "b", "c"], whyNow: "because", informationGain: ["g"], signalIds: [], fit: 8, gain: 6, demandEstimate: 7, rationale: "r" }] }] }),
+      llm: createFakeLlm({ brief: [{ ideas: [{ title: "ignored", angle: "x", primaryKeyword: "model keyword", alternateKeywords: [], searchIntent: "informational", audienceQuestion: "q",  outline: ["a", "b", "c"], whyNow: "because", informationGain: ["g"], signalIds: [], fit: 8, gain: 6, demandEstimate: 7, rationale: "r" }] }] }),
       model: "test/model", dataForSeo: null, dataForSeoSpent: () => 0, collectors: {},
     }) as never;
     const routes = createIdeasRoutes({ startRun: startRun as never, discoveryDeps });

@@ -87,8 +87,14 @@ export async function saveIdeaSettings(userId: string, siteId: string, input: un
 }
 
 /** The site's own topics plus the settings' extras, deduped, for discovery. */
-export function effectiveSeedTopics(settings: IdeaSettings, site: { topics?: string[] | null; editorialTopics?: string[] | null }): string[] {
-  const all = [...(site.editorialTopics ?? []), ...(site.topics ?? []), ...settings.seedTopics].map((t) => t.trim()).filter(Boolean);
+// Words scraped from site navigation that make poor search seeds.
+const NAV_WORDS = new Set(["home", "about", "about us", "contact", "contacts", "blog", "news", "projects", "services", "pricing", "careers", "team", "privacy", "terms", "faq"]);
+
+/** The owner's seeds first, then editorial topics, then sitemap topics minus brand and navigation words. */
+export function effectiveSeedTopics(settings: IdeaSettings, site: { name?: string | null; domain?: string | null; topics?: string[] | null; editorialTopics?: string[] | null }): string[] {
+  const brand = new Set([site.name, site.domain, site.domain?.split(".")[0]].filter(Boolean).map((v) => v!.toLowerCase()));
+  const scraped = (site.topics ?? []).filter((t) => !NAV_WORDS.has(t.trim().toLowerCase()) && !brand.has(t.trim().toLowerCase()));
+  const all = [...settings.seedTopics, ...(site.editorialTopics ?? []), ...scraped].map((t) => t.trim()).filter(Boolean);
   const seen = new Set<string>();
   return all.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())).slice(0, 12);
 }
