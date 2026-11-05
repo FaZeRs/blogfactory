@@ -199,3 +199,31 @@ A discovery costs about $0.05–0.20, for one candidate call and the DataForSEO 
 - MCP tools for ideas.
 - Automatic CMS sending.
 - Refresh runs that rewrite an existing post in place (a refresh idea creates a new draft linked to the old post).
+
+## Addendum (2026-11-05): idea MCP tools and weight learning
+
+The owner approved both after the first version shipped. Their request is the product decision, and the security boundary stays as AGENTS.md sets it.
+
+### MCP tools for ideas
+
+The catalog grows from 22 to 26 tools. Every new tool is site-scoped, uses the services the web routes already call, writes a sanitized operation event, and introduces no new scope:
+
+| Tool | Scope | What it does |
+|---|---|---|
+| `list_ideas` | `content:read` | Lists ideas for a site: status filter, sort by score, newest or scheduled, limit up to 50. Returns the fields the Ideas inbox shows (score breakdown, keyword data, brief, slot). |
+| `discover_ideas` | `drafts:write` | Queues a discovery, the same as the Discover button. It returns the discovery, and agents can poll it with `list_ideas`. |
+| `approve_idea` | `drafts:write` | Approves an idea and books a slot (optional `scheduled_for` and edits). It never starts a run outside the schedule. Agents use `generate_draft` to write immediately. |
+| `reject_idea` | `drafts:write` | Rejects an idea, with an optional reason. |
+
+The boundary still holds: nothing is published, deleted or bulk-changed, and no credential is exposed. A scheduled idea becomes a CMS draft only through the existing draft-only path, and sending to the CMS still needs `push_to_cms_draft` with its preflight checks. The docs and catalog assertions change from 22 to 26.
+
+### Learning score weights
+
+These rules follow Lindevo's `learning/weights.ts`, adapted to BlogFactory.
+- **Sample:** an idea whose post has `postPublications` status published (or a live publication) and whose slot or publication date is at least 30 days old.
+- **Outcome:** `ln(1 + clicks)` over the 28 days after the post's first 30 days. It comes from `search_console_metrics` rows for the site whose `page_url` path ends with `/<seo slug>` (normalized: lower case, no trailing slash).
+- **Update:** for each factor, `corr` is the Pearson correlation between the factor values and the outcomes across samples. The new weight is `clamp(w·(1+0.1·clamp(corr,−1,1)), 0.1, 3)`, rounded to 4 decimals.
+- **Guards:** at least 5 samples, and a factor with no variance keeps its weight. The weights move at most once per calendar month per site, recorded as `weightsLearnedMonth`.
+- **Storage:** in `idea_settings`, as `weights`, `weightsLearnedMonth` and `weightHistory` (the last 24 entries: `{month, weights, samples}`). A setting `learnWeights` (default true) lets the owner freeze the weights.
+- **Schedule:** the worker's daily periodic task runs it for every site with ideas.
+- **Settings page:** shows the current weights, whether learning is on, the last month learned, the sample count, and the history.
