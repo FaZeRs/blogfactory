@@ -21,7 +21,8 @@
     "cron:deploy": "npx wrangler deploy --config wrangler.cron.jsonc",
     "cron:dry-run": "npx wrangler deploy --config wrangler.cron.jsonc --dry-run",
     "db:generate": "npm run db:generate --workspace=server",
-    "db:migrate": "npm run db:migrate --workspace=server"
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "import:lindevo-citations": "npm run import:lindevo-citations --workspace=server --"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

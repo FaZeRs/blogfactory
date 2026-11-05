@@ -18,6 +18,14 @@ For an existing database that predates the migration ledger, first confirm its s
 
 Never run PostgreSQL integration tests against the shared production database. Use a disposable database.
 
+## Lindevo AI citation history import
+
+One-off backfill of Lindevo's `content_engine.ai_citations` into `ai_answer_checks` (engines labelled `... (Lindevo import)`). Reads the source in a read-only transaction and is idempotent (`ON CONFLICT DO NOTHING`). Run from the repo root with `DATABASE_URL` pointing at the BlogFactory database; add `--dry-run` first to see the counts:
+
+```bash
+npm run import:lindevo-citations -- --site <siteId> --source-url <lindevo postgres url> [--dry-run]
+```
+
 ## Production delivery
 
 The private `BlogFactoryHQ/blogfactory-cloud` repository merges this public core through a fail-closed sync workflow, validates it, and builds API and web images in GHCR. Production pins those images by SHA-256 digest in a Docker Compose stack on the Hetzner Nuremberg host:
