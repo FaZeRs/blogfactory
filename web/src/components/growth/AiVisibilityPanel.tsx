@@ -79,6 +79,16 @@ function SettingsDialog({ siteId, settings, open, onOpenChange }: { siteId: stri
   const models = useQuery({ queryKey: ["ai-visibility-models"], queryFn: () => api.get<{ models: { id: string; label: string; searchPrice: number }[] }>("/ai-visibility/models"), enabled: open });
   const modelList = [...(models.data?.models ?? [])];
   for (const id of engines) if (!modelList.some((m) => m.id === id)) modelList.push({ id, label: id, searchPrice: 0 });
+  const [allModels, setAllModels] = useState(false);
+  // The chosen engines, then the two newest models per provider (the list arrives newest first); "Show all" lists the rest.
+  const perProvider = new Map<string, number>();
+  const shortList = [...modelList.filter((m) => engines.includes(m.id)), ...modelList.filter((m) => {
+    if (engines.includes(m.id)) return false;
+    const p = m.id.split("/")[0]!;
+    perProvider.set(p, (perProvider.get(p) ?? 0) + 1);
+    return perProvider.get(p)! <= 2;
+  })];
+  const shownModels = allModels ? modelList : shortList;
 
   const suggest = useMutation({
     mutationFn: () => api.post<{ questions: string[] }>("/ai-visibility/suggest", { siteId }),
@@ -121,7 +131,8 @@ function SettingsDialog({ siteId, settings, open, onOpenChange }: { siteId: stri
           <Button type="button" size="sm" onClick={addPicked}>Add checked</Button>
         </div>}
         <fieldset className="space-y-1.5"><legend className="text-sm font-medium">Engines</legend>
-          {modelList.map((m) => <label key={m.id} className="flex items-center gap-2 text-sm"><Checkbox checked={engines.includes(m.id)} onCheckedChange={(on) => toggleEngine(m.id, on === true)} />{m.label}<span className="type-meta">{m.id}</span></label>)}
+          {shownModels.map((m) => <label key={m.id} className="flex items-center gap-2 text-sm"><Checkbox checked={engines.includes(m.id)} onCheckedChange={(on) => toggleEngine(m.id, on === true)} />{m.label}<span className="type-meta">{m.id}</span></label>)}
+          {modelList.length > shortList.length && <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={() => setAllModels(!allModels)}>{allModels ? "Show fewer" : `Show all ${modelList.length} models`}</Button>}
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5"><Label>Weekly check on</Label>
