@@ -102,11 +102,13 @@ export async function reviewDraft(input: ReviewInput, ctx: StageContext): Promis
     `Outline (heading: purpose):\n${b.outline.map((s) => `- ${s.heading}: ${s.purpose}`).join("\n")}`,
     `FAQ questions:\n${b.faq.map((f) => `- ${f.question}`).join("\n") || "None."}`,
   ].join("\n");
-  const replies = await Promise.all(checks.map(async (name) =>
-    name === "factcheck"
+  // One after the other: a fixed call order keeps replies, usage and retries deterministic; only deep runs two.
+  const replies = [];
+  for (const name of checks) {
+    replies.push(name === "factcheck"
       ? { name, r: await call(name, FactcheckSchema, { evidence }) }
-      : { name, r: await call(name, ReaderSchema, { keyword: input.brief.primaryKeyword, plan: fenceData("plan", plan) }) },
-  ));
+      : { name, r: await call(name, ReaderSchema, { keyword: input.brief.primaryKeyword, plan: fenceData("plan", plan) }) });
+  }
 
   const rows = replies.map(({ name, r }) => ({ gate: name, ...classify(name, r.value.issues, raw, input.brief) }));
   const found = rows.flatMap((g) => g.found);
