@@ -80,8 +80,19 @@ export type LinkCandidate = { url: string; title: string };
 export const linksText = (links: LinkCandidate[]) => (links.length ? links.map((l) => `- ${l.url} — ${l.title}`).join("\n") : "None.");
 
 /** Models sometimes wrap the article in a code fence or repeat the title as an H1. */
+/**
+ * Some models flatten a long JSON string's line breaks into runs of spaces, which hides every heading and list.
+ * Real Markdown of this length has a line break every few hundred characters, so an article with almost none is
+ * repaired: each run of 2+ spaces becomes a paragraph break.
+ */
+export function unflattenMarkdown(text: string): string {
+  const breaks = (text.match(/\n/g) ?? []).length;
+  if (text.length < 1500 || breaks > text.length / 600) return text;
+  return text.replace(/ {2,}(?=\S)/g, "\n\n");
+}
+
 export function normalizeDraftMarkdown(md: string): string {
-  let text = md.replace(/\r\n/g, "\n").trim();
+  let text = unflattenMarkdown(md.replace(/\r\n/g, "\n").trim());
   const wrapped = /^(`{3,}|~{3,})(?:markdown|md|mdx)?[ \t]*\n([\s\S]*)\n\1[ \t]*$/i.exec(text);
   if (wrapped) text = wrapped[2]!;
   return `${text.replace(/^\s*# [^\n]*\n+/, "").trim()}\n`;

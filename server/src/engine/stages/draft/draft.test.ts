@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { DATA_RULE, fenceData, loadPrompt, renderPrompt } from "../../prompts/load.js";
-import { normalizeDraftMarkdown } from "../shared.js";
+import { normalizeDraftMarkdown, unflattenMarkdown } from "../shared.js";
 import { fakeCtx } from "../test-helpers.js";
 import { draftStage, type DraftInput } from "./index.js";
 
@@ -55,4 +55,14 @@ test("fenceData wraps text in a tag the text cannot close, and rejects bad label
   expect(out.endsWith(`</${tag}>`)).toBe(true);
   expect(() => fenceData("Bad Label", "x")).toThrow();
   expect(DATA_RULE).toContain("untrusted");
+});
+
+test("a long article whose line breaks became double spaces is repaired; normal Markdown is untouched", () => {
+  const flat = `Intro sentence one. ${"Filler words go here. ".repeat(60)}  **Takeaways**  - First point.  - Second point.  ## Section heading  Body text. ${"More body. ".repeat(80)}`;
+  const fixed = unflattenMarkdown(flat);
+  expect(fixed).toContain("\n\n## Section heading\n\n");
+  expect(fixed).toContain("\n\n- First point.\n\n- Second point.");
+  const normal = `Intro.\n\n## Heading\n\n${"Text with  two spaces. ".repeat(80)}\n\n- a\n- b\n`;
+  expect(unflattenMarkdown(normal)).toBe(normal);
+  expect(normalizeDraftMarkdown(flat)).toContain("\n## Section heading\n");
 });

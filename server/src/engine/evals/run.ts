@@ -51,12 +51,13 @@ const score = z.number().int().min(1).max(10);
 export const RubricSchema = z.object({
   accuracy: score,
   clarity: score,
-  note: z.string().max(400),
+  // No length limit: judges overrun one often, and only the scores and winner are kept.
+  note: z.string(),
   specificity: score,
   usefulness: score,
   voice: score,
 });
-export const PairwiseSchema = z.object({ reason: z.string().max(400), winner: z.enum(["A", "B", "tie"]) });
+export const PairwiseSchema = z.object({ reason: z.string(), winner: z.enum(["A", "B", "tie"]) });
 
 export type EvalDraft = {
   briefId: string;
@@ -225,7 +226,7 @@ export async function judgePairwise(llm: EngineLlm, judgeModel: string, brief: E
     a: fenceData("draft-a", article(a)),
     b: fenceData("draft-b", article(b)),
   });
-  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: PairwiseSchema, maxTokens: 300 });
+  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: PairwiseSchema, maxTokens: 800 });
   if (value.winner === "tie") return "tie";
   return (value.winner === "A") === candidateIsA ? "win" : "loss";
 }
