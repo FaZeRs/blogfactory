@@ -97,8 +97,12 @@ export function unflattenMarkdown(text: string): string {
  * Some models answer a Markdown request with HTML blocks. With 3 or more paragraph or heading tags the basic tags are
  * converted; capitalised component tags (Lindevo's) and anything else are left alone.
  */
-export function htmlBlocksToMarkdown(text: string): string {
-  if ((text.match(/<(?:p|h[1-6])\b[^>]*>/g) ?? []).length < 3) return text;
+export function htmlBlocksToMarkdown(input: string): string {
+  // Code examples are set aside first, so HTML shown inside a fence or inline code is never converted.
+  const code: string[] = [];
+  const text = input.replace(/(`{3,}|~{3,})[\s\S]*?\1|`[^`\n]+`/g, (m) => `\u0000${code.push(m) - 1}\u0000`);
+  const restore = (out: string) => out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => code[Number(i)]!);
+  if ((text.match(/<(?:p|h[1-6])\b[^>]*>/g) ?? []).length < 3) return input;
   const inline = (t: string) => t.trim()
     .replace(/<br\s*\/?>/g, "\n")
     .replace(/<(strong|b)>([\s\S]*?)<\/\1>/g, "**$2**")
@@ -106,19 +110,21 @@ export function htmlBlocksToMarkdown(text: string): string {
     .replace(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g, "[$2]($1)");
   const items = (list: string, marker: (i: number) => string) =>
     [...list.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map((m, i) => `${marker(i)} ${inline(m[1]!)}`).join("\n");
-  return text
+  return restore(text
     .replace(/<ol\b[^>]*>([\s\S]*?)<\/ol>/g, (_, list: string) => `\n\n${items(list, (i) => `${i + 1}.`)}\n\n`)
     .replace(/<ul\b[^>]*>([\s\S]*?)<\/ul>/g, (_, list: string) => `\n\n${items(list, () => "-")}\n\n`)
     .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/g, (_, n: string, t: string) => `\n\n${"#".repeat(Number(n))} ${inline(t)}\n\n`)
     .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/g, (_, t: string) => `\n\n${inline(t)}\n\n`)
     .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .trim());
 }
 
 export function normalizeDraftMarkdown(md: string): string {
-  let text = unflattenMarkdown(htmlBlocksToMarkdown(md.replace(/\r\n/g, "\n").trim()));
+  let text = md.replace(/\r\n/g, "\n").trim();
+  // Unwrap a whole-article fence first: the HTML repair leaves fenced code alone.
   const wrapped = /^(`{3,}|~{3,})(?:markdown|md|mdx)?[ \t]*\n([\s\S]*)\n\1[ \t]*$/i.exec(text);
   if (wrapped) text = wrapped[2]!;
+  text = unflattenMarkdown(htmlBlocksToMarkdown(text.trim()));
   return `${text.replace(/^\s*# [^\n]*\n+/, "").trim()}\n`;
 }
 

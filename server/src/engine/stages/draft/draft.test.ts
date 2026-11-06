@@ -95,3 +95,18 @@ test("writerVoice adds the site's brand profile and only the knowledge relevant 
   expect(voice).toContain("named person for exceptions");
   expect(writerVoice({}, "x")).not.toContain("Brand context");
 });
+
+test("HTML inside code examples is never converted, even when the article itself is HTML", () => {
+  const example = "```html\n<h2>Account</h2>\n<p>Name</p>\n<p>Email</p>\n```";
+  const md = `Intro text.\n\n${example}\n\nUse \`<p>\` tags for paragraphs.\n`;
+  expect(htmlBlocksToMarkdown(md)).toBe(md);
+  const html = `<p>One.</p><h2>Two</h2><p>Three \`<p>x</p>\`.</p>\n\n${example}`;
+  const out = htmlBlocksToMarkdown(html);
+  expect(out).toContain("## Two");
+  expect(out).toContain("Three `<p>x</p>`.");
+  expect(out).toContain(example);
+});
+
+test("an HTML article wrapped in a markdown fence is unwrapped, then converted", () => {
+  expect(normalizeDraftMarkdown("```markdown\n<p>One.</p><h2>Two</h2><p>Three.</p>\n```")).toBe("One.\n\n## Two\n\nThree.\n");
+});
