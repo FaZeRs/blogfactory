@@ -222,7 +222,7 @@ export async function judgeRubric(llm: EngineLlm, judgeModel: string, brief: Eva
     evidence: promptEvidence(brief, now),
     article: fenceData("draft", article(d)),
   });
-  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: RubricSchema, maxTokens: 600 });
+  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: RubricSchema, maxTokens: 4000 });
   return Object.fromEntries(RUBRIC_DIMENSIONS.map((k) => [k, value[k]])) as Record<RubricDimension, number>;
 }
 
@@ -245,7 +245,7 @@ export async function judgePairwise(llm: EngineLlm, judgeModel: string, brief: E
     a: fenceData("draft-a", article(a)),
     b: fenceData("draft-b", article(b)),
   });
-  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: PairwiseSchema, maxTokens: 800 });
+  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: PairwiseSchema, maxTokens: 4000 });
   if (value.winner === "tie") return "tie";
   return (value.winner === "A") === candidateIsA ? "win" : "loss";
 }
