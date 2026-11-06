@@ -24,6 +24,7 @@ const STEPS: Record<string, { title: string; about: string }> = {
   gates: { title: "Quality checks", about: "Checks sources, links, length, structure, copying and brand voice." },
   review: { title: "Review", about: "Fact-checks the draft against the evidence and reads it as your audience would." },
   revise: { title: "Revise", about: "Fixes the problems the quality checks found." },
+  localize: { title: "Translate", about: "Translates the article into the languages enabled for this site and checks each translation." },
   deliver: { title: "Deliver", about: "Saves the draft to your Review Queue." },
 };
 const ORDER = ["research", "brief", "draft", "gates", "review", "deliver"];
@@ -68,6 +69,10 @@ function summary(stage: EngineStageRun, d: Details): string {
       // Normal mode runs only the fact-check, so the summary does not name the reader review.
       if (d.passed) return "Review passed";
       return `${num(d.blockerCount) ?? 0} problem${num(d.blockerCount) === 1 ? "" : "s"} found${d.escalated ? " · needs your review" : " · sent to revise"}`;
+    case "localize": {
+      const made = list(d.locales).filter((l) => text((l as Details).status) !== "failed").length;
+      return `${made} of ${list(d.locales).length} translation${list(d.locales).length === 1 ? "" : "s"} made`;
+    }
     case "deliver":
       return d.escalated ? "Saved to Review Queue with open problems" : "Saved to Review Queue";
     default:
@@ -327,6 +332,21 @@ function StageBody({ stage, engine }: { stage: EngineStageRun; engine: EngineRun
     case "draft":
     case "revise":
       return <p className="text-sm">“{text(d.title)}” · {num(d.words)?.toLocaleString()} words. The full text is on the draft.</p>;
+    case "localize":
+      return (
+        <ul className="space-y-1 text-sm">
+          {list(d.locales).map((l) => {
+            const x = l as Details;
+            return (
+              <li key={text(x.locale)}>
+                <span className="font-medium">{text(x.locale)}</span>
+                {": "}
+                {text(x.status) === "failed" ? <span className="text-status-error">{text(x.error) || "Translation failed"}</span> : text(x.status) === "ready" ? "ready" : `needs review (${num(x.blockers) ?? 0} problem${num(x.blockers) === 1 ? "" : "s"})`}
+              </li>
+            );
+          })}
+        </ul>
+      );
     case "deliver":
       return text(d.postId) ? (
         <div className="flex flex-wrap gap-3 text-sm">

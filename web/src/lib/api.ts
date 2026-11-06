@@ -203,7 +203,7 @@ export async function pushCmsDrafts(
 export type EngineMode = "fast" | "normal" | "deep";
 
 export interface EngineSettings {
-  models?: Partial<Record<"research_queries" | "research_claims" | "brief" | "draft" | "revise" | "review", string>>;
+  models?: Partial<Record<"research_queries" | "research_claims" | "brief" | "draft" | "revise" | "review" | "localize" | "localize_review", string>>;
   budgetUsd?: number;
   citationStyle?: "inline" | "references";
 }

@@ -587,6 +587,7 @@ export const userSettings = pgTable("user_settings", {
   engineSettings: jsonb("engine_settings"),
   ideaSettings: jsonb("idea_settings"),
   aiVisibility: jsonb("ai_visibility"),
+  localization: jsonb("localization"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -783,4 +784,28 @@ export const aiAnswerChecks = pgTable("ai_answer_checks", {
 }, (t) => [
   uniqueIndex("ai_answer_checks_unique_idx").on(t.siteId, t.week, t.engine, t.questionHash),
   index("ai_answer_checks_site_idx").on(t.userId, t.siteId, t.week),
+]);
+
+// ── post_translations ──
+export const postTranslations = pgTable("post_translations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  locale: text("locale").notNull(),
+  title: text("title").default("").notNull(),
+  slug: text("slug").default("").notNull(),
+  description: text("description").default("").notNull(),
+  content: text("content").default("").notNull(),
+  imageAlt: text("image_alt").default("").notNull(),
+  keyword: text("keyword"),
+  status: text("status").default("needs_review").notNull(),
+  findings: jsonb("findings").default(sql`'[]'`).notNull(),
+  sourceRevisionId: uuid("source_revision_id").references(() => postRevisions.id, { onDelete: "set null" }),
+  costUsd: real("cost_usd").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("post_translations_post_locale_idx").on(t.postId, t.locale),
+  index("post_translations_site_idx").on(t.userId, t.siteId),
 ]);

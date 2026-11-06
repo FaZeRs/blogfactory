@@ -18,7 +18,7 @@ export type ModePreset = {
   };
   models: Record<ModelRole, string>;
   budgetUsd: number;
-  /** Rough per-stage model cost, used to refuse a run the budget cannot cover. Gates and delivery call no model. */
+  /** Rough per-stage model cost, used to refuse a run the budget cannot cover. Gates and delivery call no model; localize is 0 because it spends only what the run budget has left and never fails the run. */
   estimateUsd: Record<StageKey, number>;
 };
 
@@ -28,12 +28,12 @@ export type EngineSettings = {
   citationStyle?: CitationStyle;
 };
 
-const STAGES: StageKey[] = ["research", "brief", "draft", "gates", "review", "revise", "deliver"];
-export const MODEL_ROLES: ModelRole[] = ["research_queries", "research_claims", "brief", "draft", "revise", "review"];
+const STAGES: StageKey[] = ["research", "brief", "draft", "gates", "review", "revise", "localize", "deliver"];
+export const MODEL_ROLES: ModelRole[] = ["research_queries", "research_claims", "brief", "draft", "revise", "review", "localize", "localize_review"];
 const HAIKU = "anthropic/claude-haiku-5.5";
 
 function models(writer: string): Record<ModelRole, string> {
-  return { research_queries: HAIKU, research_claims: HAIKU, brief: writer, draft: writer, revise: writer, review: writer };
+  return { research_queries: HAIKU, research_claims: HAIKU, brief: writer, draft: writer, revise: writer, review: writer, localize: writer, localize_review: writer };
 }
 
 export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
@@ -45,7 +45,7 @@ export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
     research: { maxQueries: 3, maxPages: 6, maxClaimsPerPage: 5, maxCompetitors: 4, minVerifiedClaims: 3, useKeywordData: false },
     models: models("anthropic/claude-sonnet-5.5"),
     budgetUsd: 1,
-    estimateUsd: { research: 0.05, brief: 0.03, draft: 0.15, gates: 0, review: 0.02, revise: 0.07, deliver: 0 },
+    estimateUsd: { research: 0.05, brief: 0.03, draft: 0.15, gates: 0, review: 0.02, revise: 0.07, localize: 0, deliver: 0 },
   },
   deep: {
     stages: STAGES,
@@ -54,7 +54,7 @@ export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
     research: { maxQueries: 6, maxPages: 12, maxClaimsPerPage: 6, maxCompetitors: 5, minVerifiedClaims: 3, useKeywordData: true },
     models: models("anthropic/claude-opus-5.5"),
     budgetUsd: 5,
-    estimateUsd: { research: 0.3, brief: 0.2, draft: 0.9, gates: 0, review: 0.15, revise: 0.6, deliver: 0 },
+    estimateUsd: { research: 0.3, brief: 0.2, draft: 0.9, gates: 0, review: 0.15, revise: 0.6, localize: 0, deliver: 0 },
   },
 };
 

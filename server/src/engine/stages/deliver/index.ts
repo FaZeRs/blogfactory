@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../../db/index.js";
-import { articleGateResults, articleRuns, jobs, posts, sites } from "../../../db/schema.js";
+import { articleGateResults, articleRuns, jobs, postTranslations, posts, sites } from "../../../db/schema.js";
 import { currentPostRevision, setPostEditorialState } from "../../../services/post-revisions.js";
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "../../../services/seo-metadata.js";
 import { coverPromptDraft, queueCoverRequests } from "../../../services/cover-tools.js";
@@ -13,6 +13,7 @@ import { StageInputError } from "../../types.js";
 import type { DraftOutput } from "../draft/schema.js";
 import type { GatesOutput } from "../gates/schema.js";
 import { findStageOutput, latestDraft, modelFor, renderArticle } from "../shared.js";
+import type { LocalizeOutput } from "../localize/schema.js";
 import type { DeliverOutput } from "./schema.js";
 
 export type DeliverInput = { draft: DraftOutput; escalated: boolean; reason: string | null };
@@ -88,6 +89,21 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
     await db.update(articleRuns).set({ postId: post.id }).where(and(eq(articleRuns.id, run.id), eq(articleRuns.userId, run.userId)));
     if (run.jobId) {
       await db.update(jobs).set({ resultPostIds: [post.id] }).where(and(eq(jobs.id, run.jobId), eq(jobs.userId, run.userId)));
+    }
+    // The translations made before delivery belong to the revision that was just created. A retry keeps rows that exist (a person may have edited them).
+    try {
+      const localized = await findStageOutput<LocalizeOutput>(run, "localize");
+      const made = (localized?.output.locales ?? []).filter((l) => l.status !== "failed");
+      if (made.length) {
+        await db.insert(postTranslations).values(made.map((l) => ({
+          userId: run.userId, siteId: run.siteId, postId: post.id, locale: l.locale,
+          title: l.title, slug: l.slug, description: l.description, content: l.content, imageAlt: l.imageAlt, keyword: l.keyword,
+          status: l.status === "ready" ? "ready" : "needs_review", findings: l.findings, sourceRevisionId: revision?.id ?? null, costUsd: l.costUsd,
+        }))).onConflictDoNothing();
+      }
+    } catch (err) {
+      // The English draft exists and is reviewable; the translation can be made again from the editor.
+      console.warn("[engine] translation save failed:", err instanceof Error ? err.message : err);
     }
     try {
       const seo = await enqueueSeoMetadata({ userId: run.userId, postId: post.id, trigger: "generation" });
