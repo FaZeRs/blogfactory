@@ -148,7 +148,7 @@ function ReviseTranslationDialog({ postId, locale, name, disabled, onStarted }: 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!revise.isPending) setOpen(next); }}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={disabled}><MessageSquareText className="mr-1.5 h-4 w-4" />Revise with comments</Button>
+        <Button size="sm" variant="outline" disabled={disabled}><MessageSquareText className="mr-1.5 h-4 w-4" />Revise translation</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>

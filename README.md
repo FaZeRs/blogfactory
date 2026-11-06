@@ -50,6 +50,8 @@ For generation, **Ideas** finds and scores topics for each site and explains eve
 - they check the draft before it reaches review.
 Each step is visible in Runs. A fact-check and, in deep mode, a reader review catch unsupported claims and invented numbers before review. Every article follows the site's brand profile and voice rules, and the banned language is checked, not only suggested. Drafts for a Lindevo site use its markdown components and pass its linter. **Revise with comments** in the editor rewrites a draft from your notes.
 
+**Localization** translates finished articles into each language a site enables, with its own glossary and style guide. A native-language review and code checks run on every translation. Owner corrections are applied with **Revise translation**, and a Lindevo site receives the Latvian version alongside the English draft.
+
 **Cited in AI answers** (Search Growth) asks AI answer engines (OpenAI, Perplexity and Google, all through OpenRouter web search) the questions your customers ask, once a week. It records which answers cite your site, which mention your brand, and which competitors they cite instead. A question where competitors are cited and you aren't becomes an idea.
 
 Agents do the work through MCP. The web app is where operators see what needs attention, resolve blockers, review the current version, and approve a CMS handoff. The server-enforced authority ceiling is intentionally narrow: no live publishing, deletes, credential access, arbitrary providers, or admin tools through MCP.

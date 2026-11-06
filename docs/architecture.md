@@ -138,6 +138,18 @@ The backend decides eligibility and claims work. Schedulers must stay thin; do n
 - **Prompt context:** the brief, draft and revise prompts get the site's voice rules plus its brand profile (company, audience, value propositions, CTAs and the most relevant knowledge chunks) through `writerVoice`.
 - **Draft repair:** `normalizeDraftMarkdown` repairs drafts that cheap models flatten (line breaks returned as spaces) or write as HTML.
 
+**Localization:** `services/localization/` adds second languages per site (`user_settings.localization`: locales, each with a glossary, style guide and forbidden informal forms).
+- **When it runs:** the engine's `localize` stage runs after a passing run, before `deliver`. `translatePost` translates any post on demand, using update mode when a translation exists, so edited wording is kept.
+- **Flow:**
+  - an optional target-language keyword, chosen by DataForSEO volume;
+  - translation (role `localize`), then code checks;
+  - a native review (role `localize_review`), whose exact fixes are applied in code, then up to 2 revisions;
+  - the last passing attempt is kept.
+- **Checks:** parity with the English (components, citations, Sources), meta, FAQ, forbidden address forms, repeated word forms, and the site's banned language.
+- **Storage:** `post_translations`, one row per post and locale. Status is `ready`, `needs_review`, `edited` or `running`. A row is stale when the English title, description or content changed since its `source_revision_id`.
+- **Routes:** `/api/posts/:id/translations` lists translations, edits one with optimistic locking, `/run` translates and `/revise` applies owner corrections.
+- **Delivery:** Lindevo delivery adds the `lv` block only for a current, ready or edited translation. A failed translation never blocks the English draft.
+
 **Subscription models:** `engine/adapters/subscription.ts` wraps the LLM client. Model ids `claude-code:<model>` and `codex:<model>` run on the owner's subscription through the headless CLIs, with every tool, plugin, hook and user config off. An optional `|<model>` names an OpenRouter fallback. `services/engine-llm.ts` applies the instance allow-list (`ENGINE_SUBSCRIPTIONS`, `ENGINE_SUBSCRIPTION_USERS`) to every engine caller.
 
 **Revise with comments:** `POST /api/posts/:id/revise-with-comments` rewrites a post from the owner's comments, with the run's evidence when there is one, and saves a new revision under the same optimistic lock. It adds no MCP tool.
