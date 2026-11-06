@@ -25,7 +25,7 @@ export function mapRow(r: SourceRow, site: { name: string; domain: string }) {
   return {
     week: r.run_key, question: r.question, questionHash: questionHash(r.question),
     engine: e.engine, engineLabel: e.label,
-    status: ok ? "ok" : "failed", error: ok ? null : "empty answer (Lindevo import)", answer: r.answer,
+    status: ok ? "ok" : "failed", error: ok ? null : "empty answer (Lindevo import)", answer: r.answer?.slice(0, 4_000) ?? null, // run.ts ANSWER_CAP
     cited: r.lindevo_cited, citedUrls: r.lindevo_urls ?? [], mentioned: c.mentioned,
     otherHosts: c.otherHosts, competitorHosts: [] as string[], costUsd: 0, askedAt: r.asked_at,
   };

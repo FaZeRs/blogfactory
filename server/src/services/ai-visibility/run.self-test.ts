@@ -84,6 +84,9 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     const failedRows = await db.select().from(aiAnswerChecks).where(and(eq(aiAnswerChecks.siteId, site.id), eq(aiAnswerChecks.status, "failed")));
     assert.deepEqual(failedRows.map((r) => [r.engine, r.error, r.answer, r.question]), [["perplexity/b", "HTTP 500", null, "how do I find a plumber?"]]);
     assert.equal(failedRows[0]!.costUsd, 0.003, "a failed call that cost money is booked");
+    // a scheduled run backs off: the failure is minutes old, so nothing is asked yet
+    const backoff = await runVisibility(user.id, site.id, { now: new Date(), ask, sleep, apiKey: "k", failedBackoffMs: 6 * 60 * 60_000 });
+    assert.deepEqual([backoff.status, (backoff as any).asked], ["done", 0]);
     const before = calls.length;
     const retried = await runVisibility(user.id, site.id, { now, ask, sleep, apiKey: "k" });
     assert.deepEqual([(retried as any).asked, (retried as any).failed], [1, 0]);

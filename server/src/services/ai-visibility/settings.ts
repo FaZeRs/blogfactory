@@ -13,7 +13,7 @@ export const ENGINE_LABELS: Record<string, string> = {
 /** "openai/gpt-5.6-luna" becomes "OpenAI"; an unknown provider prefix is its own label. */
 export const engineLabel = (model: string) => {
   const prefix = model.split("/")[0] ?? model;
-  return ENGINE_LABELS[prefix] ?? prefix;
+  return Object.hasOwn(ENGINE_LABELS, prefix) ? ENGINE_LABELS[prefix]! : prefix;
 };
 
 export type VisibilitySettings = {

@@ -16,20 +16,11 @@ import {
   SLOT_STATUSES, localDate, logIdeaEvent, parseScheduledFor, slotsBetween, startIdea, type StartRun,
 } from "../services/ideas/schedule.js";
 import { getIdeaSettings } from "../services/ideas/settings.js";
-import { getSiteForUser } from "../services/user-settings.js";
+import { ownedSite, UUID, validation } from "./owned-site.js";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_RANGE_DAYS = 100;
 
-const validation = (field: string, message: string) => new ApiError(400, "validation_error", `Invalid ${field}`, [{ field, message }]);
 
-async function ownedSite(c: Parameters<typeof getUserId>[0], source: string | undefined | null) {
-  const userId = getUserId(c);
-  if (!source || !UUID.test(source)) throw validation("siteId", "A site id is required");
-  const site = await getSiteForUser(userId, source);
-  if (!site) throw new ApiError(404, "not_found", "Site not found");
-  return { userId, siteId: site.id };
-}
 
 /** Service errors become the route's HTTP errors. */
 async function api<T>(run: () => Promise<T>): Promise<T> {

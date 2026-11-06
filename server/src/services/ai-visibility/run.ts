@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { aiAnswerChecks, generationLogs, sites, userSettings } from "../../db/schema.js";
 import { checkAccountGuardrails } from "../account-guardrails.js";
@@ -17,6 +17,8 @@ export { isoWeek };
 export const PAUSE_MS = 2_000;
 export const MAX_RATE_WAIT_MS = 90_000;
 export const STALE_RUN_MS = 30 * 60_000;
+/** Scheduled retries of a failed pair wait this long, so a broken engine or empty key is not asked every hour. */
+export const FAILED_BACKOFF_MS = 6 * 60 * 60_000;
 const ANSWER_CAP = 4_000;
 const ESTIMATE_USD: Record<string, number> = { openai: 0.04, perplexity: 0.015, google: 0.08 } // measured 2026-11; Gemini runs 2–6 paid searches per answer;
 
@@ -27,6 +29,8 @@ export type RunOpts = {
   now?: Date;
   ask?: (args: AskArgs) => Promise<EngineAnswer>;
   sleep?: (ms: number) => Promise<void>;
+  /** Scheduled runs only: a pair that failed less than this long ago waits for a later pass. */
+  failedBackoffMs?: number;
   /** Tests only; the stored OpenRouter key is used when absent. */
   apiKey?: string;
 };
@@ -48,10 +52,12 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 type Pair = { question: string; hash: string; engine: string };
 
-async function pendingPairs(userId: string, siteId: string, week: string, questions: string[], engines: string[]): Promise<Pair[]> {
-  const done = await db.select({ engine: aiAnswerChecks.engine, hash: aiAnswerChecks.questionHash }).from(aiAnswerChecks)
-    .where(and(eq(aiAnswerChecks.userId, userId), eq(aiAnswerChecks.siteId, siteId), eq(aiAnswerChecks.week, week), eq(aiAnswerChecks.status, "ok")));
-  const ok = new Set(done.map((d) => `${d.engine}\n${d.hash}`));
+/** Pairs without an `ok` answer this week. A failure newer than `failedSince` counts as settled, so retries back off. */
+async function pendingPairs(userId: string, siteId: string, week: string, questions: string[], engines: string[], failedSince?: Date): Promise<Pair[]> {
+  const settled = await db.select({ engine: aiAnswerChecks.engine, hash: aiAnswerChecks.questionHash }).from(aiAnswerChecks)
+    .where(and(eq(aiAnswerChecks.userId, userId), eq(aiAnswerChecks.siteId, siteId), eq(aiAnswerChecks.week, week),
+      failedSince ? or(eq(aiAnswerChecks.status, "ok"), gte(aiAnswerChecks.askedAt, failedSince)) : eq(aiAnswerChecks.status, "ok")));
+  const ok = new Set(settled.map((d) => `${d.engine}\n${d.hash}`));
   return questions.flatMap((question) => {
     const hash = questionHash(question);
     return engines.filter((engine) => !ok.has(`${engine}\n${hash}`)).map((engine) => ({ question, hash, engine }));
@@ -71,7 +77,8 @@ export async function runVisibility(userId: string, siteId: string, opts: RunOpt
     .where(and(eq(userSettings.userId, userId), eq(userSettings.siteId, siteId))).limit(1);
   const settings = normalizeVisibilitySettings(stored?.v, site);
   const week = isoWeek(now);
-  const pending = await pendingPairs(userId, siteId, week, settings.questions, settings.engines);
+  const failedSince = opts.failedBackoffMs ? new Date(now.getTime() - opts.failedBackoffMs) : undefined;
+  const pending = await pendingPairs(userId, siteId, week, settings.questions, settings.engines, failedSince);
   if (!pending.length) return { status: "done", week, asked: 0, cited: 0, failed: 0, costUsd: 0 };
 
   const spentUsd = await monthCost(userId, siteId, now);
@@ -97,6 +104,8 @@ export async function runVisibility(userId: string, siteId: string, opts: RunOpt
   try {
     for (const pair of pending) {
       if (stopped.has(pair.engine)) continue;
+      // The estimate can undershoot; once real spend reaches the cap the rest stays pending.
+      if (spentUsd + totals.costUsd >= settings.monthlyCapUsd) break;
       if (!first) {
         // Each call is logged spend, so a run that starts under the limits can cross them; the rest stays pending.
         if ((await checkAccountGuardrails(userId, new Date())).blocked) break;
@@ -110,15 +119,15 @@ export async function runVisibility(userId: string, siteId: string, opts: RunOpt
       for (let attempt = 0; ; attempt += 1) {
         try {
           const res = await ask({ apiKey, model: pair.engine, question: pair.question });
-          cost = res.costUsd;
+          cost += res.costUsd;
           const c = classify({ answer: res.answer, citations: res.citations, domain, brandTerms: settings.brandTerms, competitors });
           row = { status: "ok", error: null, answer: res.answer.slice(0, ANSWER_CAP), ...c };
           ok = true;
           if (c.cited) totals.cited += 1;
         } catch (error) {
-          cost = Number((error as { costUsd?: number })?.costUsd) || 0;
+          // A rate-limited try that cost money is booked with the pair's row and spend log.
+          cost += Number((error as { costUsd?: number })?.costUsd) || 0;
           if (error instanceof RateLimitError && attempt < 2) {
-            totals.costUsd += cost;
             await sleep(Math.min(error.retryAfterMs ?? 30_000, MAX_RATE_WAIT_MS));
             continue;
           }
@@ -149,7 +158,7 @@ export async function runVisibility(userId: string, siteId: string, opts: RunOpt
           responseData: { aiVisibility: { siteId, week } },
         }).catch(() => console.error("[ai-visibility] Could not log spend"));
       }
-      await db.update(sites).set({ aiVisibilityRunStartedAt: new Date() }).where(eq(sites.id, siteId)); // keeps a long run from looking stale
+      await db.update(sites).set({ aiVisibilityRunStartedAt: new Date() }).where(and(eq(sites.id, siteId), eq(sites.userId, userId))); // keeps a long run from looking stale
     }
     totals.costUsd = Math.round(totals.costUsd * 1e6) / 1e6; // float sums of many small costs
     await finishOperationEvent({ id: eventId, status: "succeeded", durationMs: Date.now() - started, metadata: { asked: totals.asked, cited: totals.cited, failed: totals.failed, cost_usd: totals.costUsd } });
@@ -158,7 +167,7 @@ export async function runVisibility(userId: string, siteId: string, opts: RunOpt
     await finishOperationEvent({ id: eventId, status: "failed", durationMs: Date.now() - started, errorCode: "run_failed", metadata: { asked: totals.asked, cited: totals.cited, failed: totals.failed, cost_usd: totals.costUsd } }).catch(() => {});
     throw error;
   } finally {
-    await db.update(sites).set({ aiVisibilityRunStartedAt: null }).where(eq(sites.id, siteId)).catch(() => {});
+    await db.update(sites).set({ aiVisibilityRunStartedAt: null }).where(and(eq(sites.id, siteId), eq(sites.userId, userId))).catch(() => {});
   }
 }
 
@@ -172,16 +181,21 @@ const isoDay = (d: number) => d || 7;
 export async function drainVisibility(now = new Date(), limit = 5): Promise<{ processed: number; failed: number }> {
   const rows = await db.select({ userId: userSettings.userId, siteId: userSettings.siteId, raw: userSettings.aiVisibility, name: sites.name, domain: sites.domain })
     .from(userSettings).innerJoin(sites, and(eq(sites.id, userSettings.siteId), eq(sites.userId, userSettings.userId)))
-    .where(sql`${userSettings.aiVisibility}->>'enabled' = 'true'`);
+    .where(sql`${userSettings.aiVisibility}->>'enabled' = 'true'`)
+    // Least recently asked first: sites whose failed pairs retry every hour must not hold the per-pass limit.
+    .orderBy(sql`(SELECT MAX(${aiAnswerChecks.askedAt}) FROM ${aiAnswerChecks} WHERE ${aiAnswerChecks.siteId} = ${sites.id} AND ${aiAnswerChecks.userId} = ${sites.userId}) ASC NULLS FIRST`);
   const week = isoWeek(now);
+  const passStarted = Date.now();
   let processed = 0, failed = 0;
   for (const row of rows) {
     if (processed >= limit) break;
     const settings = normalizeVisibilitySettings(row.raw, row);
     if (!settings.questions.length || isoDay(now.getUTCDay()) < isoDay(settings.weekday)) continue;
     try {
-      if (!(await pendingPairs(row.userId, row.siteId!, week, settings.questions, settings.engines)).length) continue;
-      const result = await runVisibility(row.userId, row.siteId!, { now });
+      const failedSince = new Date(now.getTime() - FAILED_BACKOFF_MS);
+      if (!(await pendingPairs(row.userId, row.siteId!, week, settings.questions, settings.engines, failedSince)).length) continue;
+      // A pass can run for hours; the pass start would stamp the claim as already stale.
+      const result = await runVisibility(row.userId, row.siteId!, { now: new Date(now.getTime() + Date.now() - passStarted), failedBackoffMs: FAILED_BACKOFF_MS });
       if (result.status === "done") processed += 1;
     } catch {
       failed += 1;

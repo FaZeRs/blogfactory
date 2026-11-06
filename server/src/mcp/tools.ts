@@ -1256,7 +1256,7 @@ async function getAiVisibilityTool(principal: McpPrincipal, input: { site_id: st
   return {
     site_id: input.site_id,
     ...summary,
-    checks: checks.map((c) => ({ question: c.question, engine: c.engine, cited: c.cited, citedUrls: c.citedUrls, competitorHosts: c.competitorHosts })),
+    checks: checks.map((c) => ({ question: c.question, engine: c.engine, status: c.status, cited: c.cited, citedUrls: c.citedUrls, competitorHosts: c.competitorHosts })),
     next_action: summary.gaps.length ? "Gaps are questions where AI answers cite other sites; call discover_ideas to turn them into ideas." : "Weekly checks run from the web app's Search Growth page.",
   };
 }
@@ -1924,7 +1924,7 @@ export const MCP_TOOL_REGISTRY = {
       trend: z.array(z.object({ week: z.string(), share: z.number(), answered: z.number().int() })),
       topCompetitors: z.array(z.object({ host: z.string(), count: z.number().int(), flagged: z.boolean() })),
       gaps: z.array(z.object({ question: z.string(), competitorHosts: z.array(z.string()), otherHosts: z.array(z.string()), twoWeeks: z.boolean() })),
-      checks: z.array(z.object({ question: z.string(), engine: z.string(), cited: z.boolean(), citedUrls: z.array(z.string()), competitorHosts: z.array(z.string()) })),
+      checks: z.array(z.object({ question: z.string(), engine: z.string(), status: z.string(), cited: z.boolean(), citedUrls: z.array(z.string()), competitorHosts: z.array(z.string()) })),
       costThisMonth: z.number(),
       next_action: z.string(),
     }),

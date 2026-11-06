@@ -105,6 +105,7 @@ assert.equal(px.costUsd, 0);
 await assert.rejects(askEngine({ ...args, fetchImpl: reply(429, { error: { message: "slow down" } }, { "retry-after": "7" }) }),
   (e: any) => e instanceof RateLimitError && e.retryAfterMs === 7000);
 await assert.rejects(askEngine({ ...args, fetchImpl: reply(402, {}) }), QuotaError);
+await assert.rejects(askEngine({ ...args, fetchImpl: reply(429, { error: { message: "Quota exceeded for requests per minute" } }) }), RateLimitError, "a 429 is waited out even when it says quota");
 await assert.rejects(askEngine({ ...args, fetchImpl: reply(400, { error: { message: "Insufficient credits" } }) }), QuotaError);
 await assert.rejects(askEngine({ ...args, fetchImpl: reply(200, { usage: { cost: 0.004 }, choices: [{ message: { content: "  " } }] }) }),
   (e: any) => e instanceof EmptyAnswerError && e.costUsd === 0.004);

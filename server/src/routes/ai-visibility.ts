@@ -4,28 +4,20 @@ import { ApiError, readJsonObject, requiredString } from "../http/error-contract
 import { getUserId } from "../middleware/auth.js";
 import { ENGINE_ID, ENGINE_LABELS, MAX_ENGINES, getVisibilitySettings, normalizeVisibilitySettings, saveVisibilitySettings } from "../services/ai-visibility/settings.js";
 import { runVisibility, visibilityRunning } from "../services/ai-visibility/run.js";
-import { suggestQuestions, validateQuestions } from "../services/ai-visibility/questions.js";
+import { SuggestBlockedError, suggestQuestions, validateQuestions } from "../services/ai-visibility/questions.js";
 import { visibilitySummary } from "../services/ai-visibility/summary.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
+import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { addManualIdea } from "../services/ideas/manual.js";
 import { serializeIdea } from "../services/ideas/actions.js";
 import { getOpenRouterModels } from "../services/openrouter-models.js";
-import { getSiteForUser } from "../services/user-settings.js";
+import { ownedSite, validation } from "./owned-site.js";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const validation = (field: string, message: string) => new ApiError(400, "validation_error", `Invalid ${field}`, [{ field, message }]);
 
-async function ownedSite(c: Parameters<typeof getUserId>[0], source: string | undefined | null) {
-  const userId = getUserId(c);
-  if (!source || !UUID.test(source)) throw validation("siteId", "A site id is required");
-  const site = await getSiteForUser(userId, source);
-  if (!site) throw new ApiError(404, "not_found", "Site not found");
-  return { userId, siteId: site.id, site };
-}
 
 /** OpenRouter text models that bill web search, from the providers we label, without batch variants. */
 export const searchModels = (models: any[]) => models
-  .filter((m) => m.rawPricing?.webSearch > 0 && !m.id.includes(":batch") && (m.id.split("/")[0] ?? "") in ENGINE_LABELS)
+  .filter((m) => m.rawPricing?.webSearch > 0 && !m.id.includes(":batch") && Object.hasOwn(ENGINE_LABELS, m.id.split("/")[0] ?? ""))
   .map((m) => ({ id: m.id as string, label: (m.name || m.id) as string, searchPrice: m.rawPricing.webSearch as number }));
 
 export function createAiVisibilityRoutes() {
@@ -63,6 +55,7 @@ export function createAiVisibilityRoutes() {
     try {
       return c.json({ questions: await suggestQuestions(userId, siteId) });
     } catch (error) {
+      if (error instanceof SuggestBlockedError) throw new ApiError(400, "validation_error", error.message);
       // The LLM adapter reports the status only; 402 is OpenRouter's out-of-credits answer.
       if (error instanceof Error && /HTTP 402/.test(error.message)) throw new ApiError(400, "validation_error", "OpenRouter is out of credits. Top up the key in OpenRouter, then try again.");
       throw error;
@@ -74,6 +67,8 @@ export function createAiVisibilityRoutes() {
     if (await visibilityRunning(userId, siteId)) throw new ApiError(409, "conflict", "A check is already running");
     if (!(await getVisibilitySettings(userId, siteId)).questions.length) throw validation("questions", "Add questions first");
     if (!(await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
+    // A serverless function is cut off long before a run of minutes ends; only the persistent worker host can carry it.
+    if (!persistentBackgroundExecution()) throw new ApiError(400, "validation_error", "Run now needs the persistent background worker (BACKGROUND_EXECUTION_MODE=worker).");
     // Detached: the check takes minutes. Errors are logged without bodies; the weekly drain is the scheduled path.
     const started = runVisibility(userId, siteId).catch(() => { console.error("[ai-visibility] Manual run failed"); return null; });
     waitUntil(started);

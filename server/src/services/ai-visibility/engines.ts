@@ -62,8 +62,9 @@ export async function askEngine(args: AskArgs & { fetchImpl?: typeof fetch }): P
   const withCost = <E extends EngineError>(e: E) => { if (costUsd > 0) e.costUsd = costUsd; return e; };
 
   const fail = (status: number, message: string) => {
-    if (status === 402 || QUOTA_TEXT.test(message)) return withCost(new QuotaError(status));
+    // A 429 is always waited out: providers say "quota" for per-minute limits too. Billing stops come as 402 or credit text.
     if (status === 429) return withCost(new RateLimitError(retryAfterMs(res.headers)));
+    if (status === 402 || QUOTA_TEXT.test(message)) return withCost(new QuotaError(status));
     return withCost(new EngineError(`HTTP ${status}`, status));
   };
   if (!res.ok) throw fail(res.status, typeof body?.error?.message === "string" ? body.error.message : text.slice(0, 500));

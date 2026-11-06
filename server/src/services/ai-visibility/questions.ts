@@ -78,12 +78,15 @@ async function loadSuggestDeps(userId: string, engineSettings: unknown): Promise
 
 const replySchema = z.object({ questions: z.array(z.string()) });
 
+/** The account guardrails block new spend; the message is safe to show. */
+export class SuggestBlockedError extends Error {}
+
 /** One model call over Search Console questions, idea audience questions and seed topics. Up to 20, already validated. */
 export async function suggestQuestions(userId: string, siteId: string, deps?: SuggestDeps): Promise<string[]> {
   const site = await getSiteForUser(userId, siteId);
   if (!site) throw new Error("Site not found");
   const guard = await checkAccountGuardrails(userId);
-  if (guard.blocked) throw new Error(guard.message);
+  if (guard.blocked) throw new SuggestBlockedError(guard.message);
   const [settings, effective, idea] = await Promise.all([
     getVisibilitySettings(userId, siteId), getEffectiveSettings(userId, siteId), getIdeaSettings(userId, siteId),
   ]);
@@ -95,6 +98,7 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
   const topics = effectiveSeedTopics(idea, site);
   const lines = (title: string, items: string[]) => items.length ? `${title}:\n${items.map((i) => `- ${i}`).join("\n")}\n` : "";
   let costUsd = 0;
+  let ok = false;
   try {
     const res = await d.llm.json({
       role: "brief",
@@ -113,6 +117,7 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
       ].filter(Boolean).join("\n"),
     });
     costUsd = res.costUsd;
+    ok = true;
     return validateQuestions(res.value.questions, settings.brandTerms).questions
       .filter((q) => !settings.questions.some((e) => e.toLowerCase() === q.toLowerCase())).slice(0, 20);
   } catch (error) {
@@ -121,7 +126,7 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
   } finally {
     if (costUsd > 0) {
       await db.insert(generationLogs).values({
-        userId, usageType: "text", modelId: d.model, provider: d.model.split("/")[0] ?? null, status: "success", cost: costUsd,
+        userId, usageType: "text", modelId: d.model, provider: d.model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
         responseData: { aiVisibility: { siteId, suggest: true } },
       }).catch(() => console.error("[ai-visibility] Could not log suggestion spend"));
     }

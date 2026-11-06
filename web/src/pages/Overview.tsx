@@ -91,7 +91,7 @@ export default function Overview() {
         <StatCard label="Editorial review" value={data.attention.review} tone="warning" href="/review?severity=review" />
         <StatCard label="Warnings" value={data.attention.warning} tone="neutral" href="/review?severity=warning" />
       </div>
-      {aiVisibility?.available && aiVisibility.summary.week && <Link to="/overview/growth" className="type-meta inline-block hover:text-byword-blue">Cited in AI answers: <span className="font-semibold text-foreground">{Math.round(aiVisibility.summary.latest.share * 100)}%</span> this week</Link>}
+      {aiVisibility?.available && aiVisibility.summary.latest.answered > 0 && <Link to="/overview/growth" className="type-meta inline-block hover:text-byword-blue">Cited in AI answers: <span className="font-semibold text-foreground">{Math.round(aiVisibility.summary.latest.share * 100)}%</span> in the latest check</Link>}
 
       <BywordCard>
         <SectionHeader icon={AlertTriangle} title="Needs attention" description="Only drafts with a real editorial or delivery action." action={<Button asChild variant="outline" size="sm"><Link to="/review">Open queue <ArrowRight className="ml-1.5 h-4 w-4" /></Link></Button>} />
