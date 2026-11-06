@@ -134,6 +134,8 @@ export async function runTranslation(claim: TranslationClaim, opts: { signal?: A
     const t = result.translation;
     await db.update(postTranslations).set({
       title: t.title, slug: t.slug, description: t.description, content: t.content, imageAlt: t.imageAlt, keyword: t.keyword,
+      // What the engine wrote, so a later hand edit can be diffed against it (learning signals).
+      engineContent: t.content,
       // A translation revised to the owner's corrections, or edited by hand before, is theirs: it stays edited, so every
       // later update keeps protecting its wording.
       status: (opts.requests || prior?.status === "edited") && result.status === "ready" ? "edited" : result.status, findings: result.findings, sourceRevisionId: claim.revisionId,

@@ -61,6 +61,7 @@ import type { LiveTextModel } from "@/hooks/useTextModels";
 import { PersonaToolsTab } from "@/components/personas/PersonaToolsTab";
 import { PersonaPluginsTab } from "@/components/personas/PersonaPluginsTab";
 import { PersonaTestTab } from "@/components/personas/PersonaTestTab";
+import { LearnedRulesTab } from "@/components/personas/LearnedRulesTab";
 import { Switch } from "@/components/ui/switch";
 import { useTextModels } from "@/hooks/useTextModels";
 import { useSiteSettings } from "@/hooks/useSiteSettings";
@@ -748,11 +749,12 @@ export default function Personas() {
 
           <Tabs value={activeWorkspaceTab} onValueChange={setActiveWorkspaceTab} className="flex min-h-0 flex-1 flex-col">
             <div className="border-b border-border px-6 py-3">
-              <TabsList className="grid h-auto w-full grid-cols-4 gap-1 bg-muted/50 p-1">
+              <TabsList className="grid h-auto w-full grid-cols-5 gap-1 bg-muted/50 p-1">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="voice">Voice rules</TabsTrigger>
                 <TabsTrigger value="brand">Brand context</TabsTrigger>
                 <TabsTrigger value="profiles">Writer profiles</TabsTrigger>
+                <TabsTrigger value="learned">Learned rules</TabsTrigger>
               </TabsList>
             </div>
 
@@ -1051,6 +1053,10 @@ export default function Personas() {
                     ))}
                   </div>
                 </div>
+              </TabsContent>
+
+              <TabsContent value="learned" className="mt-0">
+                <LearnedRulesTab siteId={activeSiteId} />
               </TabsContent>
 
               <TabsContent value="profiles" className="mt-0 space-y-6">

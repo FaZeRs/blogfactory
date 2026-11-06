@@ -11,6 +11,7 @@ import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { SLUG_MAX, SLUG_RE, type Finding } from "../services/localization/checks.js";
 import { LOCALE_RE } from "../services/localization/settings.js";
 import { beginTranslation, runTranslation } from "../services/localization/translate-post.js";
+import { recordCommentSignal, recordTranslationEditSignal } from "../services/learning/signals.js";
 import { currentPostRevision } from "../services/post-revisions.js";
 import { isTranslationStale, staleSourceRevisions } from "../services/localization/stale.js";
 import { UUID, validation } from "./owned-site.js";
@@ -82,6 +83,7 @@ postTranslationsRoutes.put("/:id/translations/:locale", async (c) => {
   const [row] = await db.update(postTranslations)
     .set({ title, slug, description, content, imageAlt, status: "edited", findings: [], updatedAt: new Date() })
     .where(and(scope, sql`date_trunc('milliseconds', ${postTranslations.updatedAt}) = ${expected.toISOString()}::timestamptz`, ne(postTranslations.status, "running"))).returning();
+  if (row) await recordTranslationEditSignal({ userId, siteId: post.siteId, postId: post.id, locale, engineContent: row.engineContent, content });
   if (row) return c.json({ translation: serializeTranslation(row, await staleSourceRevisions(userId, [row.sourceRevisionId], await currentPostRevision(userId, post.id))) });
   const [current] = await db.select({ status: postTranslations.status }).from(postTranslations).where(scope).limit(1);
   if (!current) throw new ApiError(404, "not_found", "Translation not found");
@@ -116,6 +118,7 @@ postTranslationsRoutes.post("/:id/translations/:locale/revise", async (c) => {
     .where(and(eq(postTranslations.userId, userId), eq(postTranslations.siteId, post.siteId), eq(postTranslations.postId, post.id), eq(postTranslations.locale, locale))).limit(1);
   if (!existing || existing.status !== "running" && existing.content.trim() === "") throw new ApiError(404, "not_found", "There is no translation to revise yet. Translate the post first.");
   const claim = await beginTranslation(userId, post.id, locale);
+  await recordCommentSignal({ userId, siteId: post.siteId, postId: post.id, locale, comments });
   waitUntil(runTranslation(claim, { requests: comments }).catch((error) => { console.error("[localize] Translation revision failed", safeError(error)); }));
   return c.json({ started: true }, 202);
 });

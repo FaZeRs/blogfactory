@@ -14,6 +14,7 @@ import { finishOperationEvent, startOperationEvent } from "../operation-events.j
 import { getEffectiveSettings } from "../user-settings.js";
 import { type Finding, asciiSlug, toFindings, translationChecks } from "./checks.js";
 import { chooseKeyword, glossaryText } from "./keyword.js";
+import { styleRulesText, translationScope } from "../learning/rules.js";
 import { localizeBlogLinks, translatedSlugs } from "./links.js";
 import { patchTranslation } from "./patch.js";
 import { type Review, ReviewSchema, type Translated, TranslationSchema } from "./schema.js";
@@ -162,6 +163,7 @@ export async function localizeArticle(args: {
   let result: LocalizeResult | null = null;
   try {
     const glossary = glossaryText(locale);
+    const styleRules = await styleRulesText(userId, siteId, translationScope(locale.locale));
     const styleGuide = locale.styleGuide.trim() || "None: write natural, professional prose.";
     const keyword = await chooseKeyword({ llm, model: deps.models.review, dataForSeo: deps.dataForSeo, locale, en: { keyword: source.keyword ?? "", title: source.title }, signal: deps.signal });
     const keywordInstruction = keyword
@@ -180,6 +182,7 @@ export async function localizeArticle(args: {
         localeCode: locale.locale,
         styleGuide,
         glossary,
+        styleRules,
         addressRule: addressRule(locale),
         titleMax: gates.titleMax,
         descriptionMax: gates.descriptionMax,
@@ -214,6 +217,7 @@ export async function localizeArticle(args: {
             addressRule: addressRule(locale),
             styleGuide,
             glossary,
+            styleRules,
             en: fenceData("original", articleText(source)),
             tr: fenceData("translation", articleText(tr)),
           });

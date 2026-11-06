@@ -130,6 +130,7 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
     { drainSearchConsoleSync },
     { purgeExpiredOperationEvents },
     { drainWeightLearning },
+    { drainWeeklyDistill },
     { drainRefreshDetection },
     { drainVisibility },
     { readCronDrainConfig },
@@ -139,6 +140,7 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
     import("./search-console.js"),
     import("./operation-events.js"),
     import("./ideas/learning.js"),
+    import("./learning/distill.js"),
     import("./refresh/detect.js"),
     import("./ai-visibility/run.js"),
     import("../routes/cron.js"),
@@ -175,6 +177,8 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
           daily("search-console", () => drainSearchConsoleSync(config.searchConsole.limit)),
           daily("operation-events", () => purgeExpiredOperationEvents()),
           daily("idea-weights", () => drainWeightLearning()),
+          // Sunday (UTC) only, and at most once a week per site; the other days it returns at once.
+          daily("learning-distill", () => drainWeeklyDistill()),
           daily("refresh-detection", () => drainRefreshDetection()),
         ]);
         if (results.some((result) => result.status === "rejected")) throw new Error("Daily drain failed");

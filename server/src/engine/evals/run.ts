@@ -122,7 +122,7 @@ async function gate(parts: { title: string; description: string; raw: string; ma
 const uniqueGates = (blockers: { gate: string }[]) => [...new Set(blockers.map((b) => b.gate))];
 
 /** Brief, draft, gates, review and revise from the frozen evidence: the stages' own `run`, no database. */
-export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string, review = true): Promise<Generated> {
+export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string, review = true, extra: { styleRules?: string } = {}): Promise<Generated> {
   const now = deps.now ?? (() => new Date());
   // Stages read models from the run's settings, as a site's engine settings would set them.
   const runSettingsValue = model ? { models: Object.fromEntries(MODEL_ROLES.map((role) => [role, model])) } : {};
@@ -147,6 +147,7 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
     locale: brief.locale,
     sourceType: "article_keyword",
     voice: "",
+    styleRules: extra.styleRules,
     evidence,
     links: [],
     keywordData: false,
@@ -156,6 +157,7 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   const draftInput: DraftInput = {
     locale: brief.locale,
     voice: "",
+    styleRules: extra.styleRules,
     brief: planned,
     evidence,
     sources: frozen.sources.map(({ id, url, finalUrl, title }) => ({ id, url, finalUrl, title })),
