@@ -49,7 +49,7 @@ export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
   },
   deep: {
     stages: STAGES,
-    maxRevise: 2,
+    maxRevise: 3,
     review: ["factcheck", "reader"],
     research: { maxQueries: 6, maxPages: 12, maxClaimsPerPage: 6, maxCompetitors: 5, minVerifiedClaims: 3, useKeywordData: true },
     models: models("anthropic/claude-opus-5.5"),
