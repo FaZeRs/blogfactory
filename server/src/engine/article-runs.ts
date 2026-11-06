@@ -87,10 +87,8 @@ export async function startArticleRun(input: {
   const settings = await getEffectiveSettings(input.userId, input.siteId);
   const resolved = resolveRunSettings(input.mode, parseEngineSettings(settings.engineSettings));
   const models = { ...resolved.models };
-  if (endpoint.gateway === "openrouter") {
-    for (const role of Object.keys(models) as ModelRole[]) {
-      models[role] = await resolveEngineModel(endpoint, models[role]);
-    }
+  for (const role of Object.keys(models) as ModelRole[]) {
+    models[role] = await resolveEngineModel(endpoint, models[role]);
   }
   const guidance = {
     angle: input.guidance?.angle?.trim().slice(0, 500) || undefined,

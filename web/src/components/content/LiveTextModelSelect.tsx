@@ -18,6 +18,8 @@ const PREFERRED_TEXT_MODEL_IDS = [
   "openai/gpt-4o-mini",
 ];
 
+const NO_EXTRA_MODELS: { id: string; name: string }[] = [];
+
 function priceBadge(model: LiveTextModel) {
   if (model.provider === "subscription") return { text: "SUB", className: "text-byword-blue" };
   if (model.pricing === "free") return { text: "FREE", className: "text-primary" };
@@ -59,7 +61,7 @@ export function LiveTextModelSelect({
   value,
   onValueChange,
   triggerClassName,
-  extraModels = [],
+  extraModels = NO_EXTRA_MODELS,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -77,7 +79,8 @@ export function LiveTextModelSelect({
   ], [extraModels, liveModels]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const unavailable = isUnavailableModel(value, textModels);
+  // Checked against the live list only: extra options alone would flag every OpenRouter value while that list loads.
+  const unavailable = !extraModels.some((model) => model.id === value) && isUnavailableModel(value, liveModels);
   const selected = textModels.find((model) => model.id === value);
   const filteredModels = useMemo(() => {
     const needle = query.trim().toLowerCase();

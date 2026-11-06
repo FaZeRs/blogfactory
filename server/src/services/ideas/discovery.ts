@@ -22,7 +22,7 @@ import { runAutopilot } from "./schedule.js";
 import { combineScore, demandFactor, feasibilityFactor, trendFactor, type Factors } from "./score.js";
 import { effectiveSeedTopics, getIdeaSettings, type IdeaSettings } from "./settings.js";
 import { collectSignals, signalAgeDays, type CollectorDeps, type Signal } from "./signals.js";
-import { resolveEngineModel, userEngineLlm } from "../engine-llm.js";
+import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
 export type DiscoveryDeps = {
   llm: EngineLlm;
@@ -340,8 +340,9 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
 /** Logged so the account's monthly and daily guardrails count idea spend: a discovery's, or a manual idea's rating call. */
 export async function logIdeaSpend(input: { userId: string; model: string | null; costUsd: number; ok: boolean; discoveryId?: string }) {
   if (!(input.costUsd > 0)) return;
+  const model = input.model && billedModel(input.model);
   await db.insert(generationLogs).values({
-    userId: input.userId, usageType: "text", modelId: input.model, provider: input.model?.split("/")[0] ?? null,
+    userId: input.userId, usageType: "text", modelId: model, provider: model?.split("/")[0] ?? null,
     status: input.ok ? "success" : "failed", cost: input.costUsd, sessionId: input.discoveryId ?? null,
     responseData: { ideas: input.discoveryId ? { discoveryId: input.discoveryId } : { manual: true } },
   }).catch(() => console.error("[ideas] Could not log idea spend"));

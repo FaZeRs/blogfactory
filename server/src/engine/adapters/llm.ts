@@ -45,7 +45,7 @@ export function engineAiEndpoint(
   return openRouterKey ? { baseUrl: OPENROUTER_URL, apiKey: openRouterKey, gateway: "openrouter" } : null;
 }
 
-function parseJson(text: string): unknown {
+export function parseJson(text: string): unknown {
   try {
     return JSON.parse(text.trim());
   } catch (error) {

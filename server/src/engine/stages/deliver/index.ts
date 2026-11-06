@@ -5,6 +5,7 @@ import { currentPostRevision, setPostEditorialState } from "../../../services/po
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "../../../services/seo-metadata.js";
 import { coverPromptDraft, queueCoverRequests } from "../../../services/cover-tools.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
+import { parseModelId } from "../../adapters/subscription.js";
 import { appendProvenance, provenanceTag } from "../../components/provenance.js";
 import { componentProfile } from "../../profile.js";
 import type { ArticleRunRow, Stage } from "../../runtime/stage.js";
@@ -33,9 +34,13 @@ async function provenanceFor(run: ArticleRunRow, cited: string[], evidence: { id
   });
 }
 
-/** "anthropic/claude-sonnet-5.5" reads as "Claude Sonnet 5.5". */
-export const modelDisplayName = (id: string) =>
-  (id.split("/").pop() ?? id).split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+/** "anthropic/claude-sonnet-5.5" and "claude-code:claude-sonnet-5-5" read as "Claude Sonnet 5.5". */
+export const modelDisplayName = (id: string) => {
+  const { provider, model, fallback } = parseModelId(id);
+  // A CLI model id writes the version with a dash ("claude-opus-5-5").
+  const name = fallback ?? (provider ? model.replace(/(\d)-(?=\d)/g, "$1.") : model);
+  return (name.split("/").pop() ?? name).split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+};
 
 export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
   key: "deliver",

@@ -17,11 +17,18 @@ export async function userEngineLlm(userId: string, endpoint: EngineEndpoint): P
   return withSubscriptions(createEngineLlm(endpoint), { env: process.env, allowed: await userSubscriptions(userId) });
 }
 
+/** The model a logged cost belongs to: a subscription call costs $0, so any spend on a subscription id is its fallback's. */
+export function billedModel(id: string): string {
+  const parsed = parseModelId(id);
+  return parsed.provider ? parsed.fallback ?? id : parsed.model;
+}
+
 /** Resolves an OpenRouter model id; a subscription id keeps its CLI model and has only its fallback resolved. */
 export async function resolveEngineModel(endpoint: EngineEndpoint, id: string): Promise<string> {
   if (endpoint.gateway !== "openrouter") return id;
   const parsed = parseModelId(id);
   if (!parsed.provider) return resolveOpenRouterTextModel(endpoint.apiKey, id);
-  const fallback = parsed.fallback ? await resolveOpenRouterTextModel(endpoint.apiKey, parsed.fallback) : null;
+  // The fallback is a backup: an OpenRouter outage or a delisted model must not block the subscription itself.
+  const fallback = parsed.fallback ? await resolveOpenRouterTextModel(endpoint.apiKey, parsed.fallback).catch(() => parsed.fallback) : null;
   return `${parsed.provider}:${parsed.model}${fallback ? `|${fallback}` : ""}`;
 }

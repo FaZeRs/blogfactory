@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { EngineLlm } from "./llm.js";
-import { SubscriptionError, claudeArgs, codexArgs, parseClaudeEnvelope, parseModelId, subscriptionsFor, withSubscriptions, type Spawner } from "./subscription.js";
+import { SubscriptionError, claudeArgs, codexArgs, nodeSpawner, parseClaudeEnvelope, parseModelId, subscriptionsFor, withSubscriptions, type Spawner } from "./subscription.js";
 
 const schema = z.object({ title: z.string() });
 const req = { role: "brief" as const, model: "", system: "SYSTEM", user: "USER", schema, maxTokens: 100 };
@@ -81,6 +81,8 @@ test("Codex gets the schema shape only; a reply that breaks a limit gets one rep
   const s = z.object({ title: z.string().max(10), tags: z.array(z.string()).min(2) });
   expect(cliSchema(s)).toContain('"maxLength":10');
   expect(cliSchema(s, true)).not.toMatch(/maxLength|minItems|\$schema/);
+  // Strict structured output needs every property required; a property may be named like a limit keyword.
+  expect(cliSchema(z.object({ a: z.string(), format: z.string().optional() }), true)).toContain('"required":["a","format"]');
   const replies = [{ title: "far too long a title" }, { title: "short" }];
   const stdins: string[] = [];
   const spawner: Spawner = async (_cmd, _args, opts) => {
@@ -91,4 +93,14 @@ test("Codex gets the schema shape only; a reply that breaks a limit gets one rep
   const r = await llm.json({ ...req, schema: z.object({ title: z.string().max(10) }), model: "claude-code:opus" });
   expect(r.value).toEqual({ title: "short" });
   expect(stdins[1]).toContain("failed schema validation");
+});
+
+test("the spawner keeps multi-byte text whole and never starts a call whose signal is already aborted", async () => {
+  const opts = { env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, cwd: "/", stdin: "", timeoutMs: 10_000 };
+  const r = await nodeSpawner(process.execPath, ["-e", "process.stdout.write('x' + '\u2014'.repeat(200000))"], opts);
+  expect(r.stdout.length).toBe(200_001);
+  expect(r.stdout.includes("\uFFFD")).toBe(false);
+  const started = Date.now();
+  expect((await nodeSpawner("sleep", ["5"], { ...opts, signal: AbortSignal.abort() })).code).toBeNull();
+  expect(Date.now() - started).toBeLessThan(1000);
 });

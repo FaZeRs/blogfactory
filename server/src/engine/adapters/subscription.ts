@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import type { EngineLlm, EngineLlmRequest, EngineLlmResult } from "./llm.js";
+import { parseJson, type EngineLlm, type EngineLlmRequest, type EngineLlmResult } from "./llm.js";
 
 /**
  * Subscription models through the vendors' own CLIs (spec 2026-11-06-subscription-models). A role's model id
@@ -58,7 +58,12 @@ const MAX_OUTPUT = 4_000_000;
 
 export const nodeSpawner: Spawner = (cmd, args, opts) => new Promise((resolve) => {
   let stdout = "", stderr = "", timedOut = false, settled = false;
+  // An abort listener never fires for a signal that is already aborted (the lease expired between calls).
+  if (opts.signal?.aborted) return resolve({ code: null, stdout, stderr, timedOut, notFound: false });
   const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ["pipe", "pipe", "pipe"], detached: true });
+  // Decode as one stream: a multi-byte character split across two chunks would otherwise turn into U+FFFD.
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
   const killGroup = () => { try { if (child.pid) process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ } };
   const timer = setTimeout(() => { timedOut = true; killGroup(); }, opts.timeoutMs);
   const onAbort = () => killGroup();
@@ -117,7 +122,7 @@ export function parseClaudeEnvelope(stdout: string): unknown {
   }
   if (env.structured_output !== undefined) return env.structured_output;
   if (typeof env.result === "string") {
-    try { return JSON.parse(env.result); } catch { /* fall through */ }
+    try { return parseJson(env.result); } catch { /* fall through */ }
   }
   throw new SubscriptionError("bad_output", "Claude Code returned no structured output");
 }
@@ -133,25 +138,29 @@ export type SubscriptionDeps = {
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
 const LIMIT_KEYS = new Set(["minLength", "maxLength", "minItems", "maxItems", "pattern", "format", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]);
-const stripLimits = (v: unknown): unknown =>
-  Array.isArray(v) ? v.map(stripLimits)
-  : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([k]) => !LIMIT_KEYS.has(k)).map(([k, x]) => [k, stripLimits(x)]))
-  : v;
+/** `inProperties`: `v` maps property names to schemas, so its keys are names, never limit keywords. */
+const stripLimits = (v: unknown, inProperties = false): unknown => {
+  if (Array.isArray(v)) return v.map((x) => stripLimits(x));
+  if (!v || typeof v !== "object") return v;
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v)) if (inProperties || !LIMIT_KEYS.has(k)) out[k] = stripLimits(x, !inProperties && k === "properties");
+  // OpenAI's strict structured output needs every property listed as required; an optional zod field still accepts it.
+  if (!inProperties && out.properties && typeof out.properties === "object") out.required = Object.keys(out.properties);
+  return out;
+};
 
 /**
  * The request schema as JSON Schema, without the `$schema` draft URI Claude Code's validator rejects. `shapeOnly`
- * also drops length, count and pattern limits: Codex fails a schema that has them (the zod check still applies them).
+ * also drops length, count and pattern limits and marks every property required: Codex fails a schema that has limits
+ * or optional properties (the zod check still applies them).
  */
 export function cliSchema(schema: z.ZodType, shapeOnly = false): string {
   const { $schema: _draft, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
   return JSON.stringify(shapeOnly ? stripLimits(rest) : rest);
 }
 
-async function workDir(): Promise<string> {
-  const dir = join(tmpdir(), "blogfactory-subscription-work");
-  await mkdir(dir, { recursive: true });
-  return dir;
-}
+/** A fresh private directory per call: a fixed shared path in /tmp could be pre-seeded with project settings or instructions. */
+const freshDir = (prefix: string) => mkdtemp(join(tmpdir(), prefix));
 
 function baseEnv(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = { PATH: env.PATH ?? "/usr/local/bin:/usr/bin:/bin", HOME: env.HOME ?? tmpdir() };
@@ -163,9 +172,10 @@ async function runClaude<T>(req: EngineLlmRequest<T>, model: string, deps: Subsc
   const env = { ...baseEnv(deps.env), DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" } as Record<string, string>;
   if (deps.env.CLAUDE_CODE_OAUTH_TOKEN) env.CLAUDE_CODE_OAUTH_TOKEN = deps.env.CLAUDE_CODE_OAUTH_TOKEN;
   const schema = cliSchema(req.schema);
+  const cwd = await freshDir("blogfactory-claude-");
   const r = await (deps.spawner ?? nodeSpawner)(deps.env.ENGINE_CLAUDE_BIN || "claude", claudeArgs(model, schema, req.system), {
-    env, cwd: await workDir(), stdin: req.user, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal: req.signal,
-  });
+    env, cwd, stdin: req.user, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal: req.signal,
+  }).finally(() => rm(cwd, { recursive: true, force: true }).catch(() => {}));
   if (r.notFound) throw new SubscriptionError("unavailable", "Claude Code CLI is not installed on this host");
   if (r.timedOut) throw new SubscriptionError("timeout", "Claude Code call timed out");
   if (r.code !== 0 && !r.stdout.trim()) throw new SubscriptionError(failureKind(r.stderr), `Claude Code exited with ${r.code} (${failureKind(r.stderr)})`);
@@ -175,13 +185,14 @@ async function runClaude<T>(req: EngineLlmRequest<T>, model: string, deps: Subsc
 async function runCodex<T>(req: EngineLlmRequest<T>, model: string, deps: SubscriptionDeps): Promise<unknown> {
   const home = deps.env.ENGINE_CODEX_HOME?.trim();
   if (!home) throw new SubscriptionError("unavailable", "ENGINE_CODEX_HOME is not set");
-  const dir = await mkdtemp(join(tmpdir(), "blogfactory-codex-"));
+  const dir = await freshDir("blogfactory-codex-");
   try {
     const schemaFile = join(dir, "schema.json");
     const outFile = join(dir, "out.json");
-    await writeFile(schemaFile, cliSchema(req.schema, true));
+    const cwd = join(dir, "work");
+    await Promise.all([writeFile(schemaFile, cliSchema(req.schema, true)), mkdir(cwd)]);
     const r = await (deps.spawner ?? nodeSpawner)(deps.env.ENGINE_CODEX_BIN || "codex", codexArgs(model, schemaFile, outFile), {
-      env: { ...baseEnv(deps.env), CODEX_HOME: home }, cwd: await workDir(),
+      env: { ...baseEnv(deps.env), CODEX_HOME: home }, cwd,
       stdin: `${req.system}\n\n${req.user}`, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal: req.signal,
     });
     if (r.notFound) throw new SubscriptionError("unavailable", "Codex CLI is not installed on this host");
@@ -210,7 +221,7 @@ export function withSubscriptions(base: EngineLlm, deps: SubscriptionDeps): Engi
         if (!deps.allowed.includes(parsed.provider)) {
           throw new SubscriptionError("not_enabled", `${parsed.provider} models are not enabled for this account`);
         }
-        const run = (r: EngineLlmRequest<T>) => (parsed.provider === "claude-code" ? runClaude(r, parsed.model!, deps) : runCodex(r, parsed.model!, deps));
+        const run = (r: EngineLlmRequest<T>) => (parsed.provider === "claude-code" ? runClaude(r, parsed.model, deps) : runCodex(r, parsed.model, deps));
         let checked = req.schema.safeParse(await run(req));
         if (!checked.success) {
           // One repair round, as the API client does: the issues name paths and limits, never prompt text.
@@ -221,7 +232,11 @@ export function withSubscriptions(base: EngineLlm, deps: SubscriptionDeps): Engi
         return { value: checked.data, model: `${parsed.provider}:${parsed.model}`, promptTokens: 0, completionTokens: 0, costUsd: 0 };
       } catch (error) {
         if (req.signal?.aborted) throw error;
-        if (parsed.fallback) return base.json({ ...req, model: parsed.fallback });
+        if (parsed.fallback) {
+          // Without this line a missing CLI or an expired login silently moves every call to paid tokens. Kind only, never prompt text.
+          console.warn("[engine] subscription call failed; using the fallback", { provider: parsed.provider, kind: error instanceof SubscriptionError ? error.kind : (error as Error)?.name });
+          return base.json({ ...req, model: parsed.fallback });
+        }
         throw error;
       }
     },

@@ -11,7 +11,7 @@ import { effectiveSeedTopics, getIdeaSettings } from "../ideas/settings.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { mentions } from "./detect.js";
 import { getVisibilitySettings, MAX_QUESTIONS } from "./settings.js";
-import { resolveEngineModel, userEngineLlm } from "../engine-llm.js";
+import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -125,8 +125,9 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
     throw error;
   } finally {
     if (costUsd > 0) {
+      const model = billedModel(d.model);
       await db.insert(generationLogs).values({
-        userId, usageType: "text", modelId: d.model, provider: d.model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
+        userId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
         responseData: { aiVisibility: { siteId, suggest: true } },
       }).catch(() => console.error("[ai-visibility] Could not log suggestion spend"));
     }

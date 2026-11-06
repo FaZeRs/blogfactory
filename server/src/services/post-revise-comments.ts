@@ -17,7 +17,7 @@ import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
 import { PostVersionConflictError, updatePostWithRevision } from "./post-revisions.js";
 import { getEffectiveSettings } from "./user-settings.js";
 import { buildVoiceContentInstructions } from "./voice-content.js";
-import { resolveEngineModel, userEngineLlm } from "./engine-llm.js";
+import { billedModel, resolveEngineModel, userEngineLlm } from "./engine-llm.js";
 
 export const COMMENTS_MIN = 10;
 export const COMMENTS_MAX = 4000;
@@ -93,8 +93,9 @@ export async function reviseWithComments(input: { userId: string; postId: string
   } finally {
     await finishOperationEvent({ id: eventId, status: ok ? "succeeded" : "failed", durationMs: Date.now() - started, metadata: { cost_usd: costUsd, comments_length: input.comments.length } }).catch(() => {});
     if (costUsd > 0) {
+      const model = billedModel(deps.model);
       await db.insert(generationLogs).values({
-        userId, postId, usageType: "text", modelId: deps.model, provider: deps.model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
+        userId, postId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
         responseData: { reviseWithComments: true },
       }).catch(() => console.error("[revise-comments] Could not log spend"));
     }

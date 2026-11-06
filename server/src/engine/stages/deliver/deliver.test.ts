@@ -6,7 +6,13 @@ const enabled = dbTestsEnabled("deliver test");
 const t = enabled ? await import("../test-db.js") : null;
 const { db } = enabled ? await import("../../../db/index.js") : { db: null as never };
 const schema = enabled ? await import("../../../db/schema.js") : ({} as never);
-const { deliverStage } = await import("./index.js");
+const { deliverStage, modelDisplayName } = await import("./index.js");
+
+test("model display names: OpenRouter ids and subscription ids read the same", () => {
+  expect(modelDisplayName("anthropic/claude-sonnet-5.5")).toBe("Claude Sonnet 5.5");
+  expect(modelDisplayName("claude-code:claude-opus-5-5|anthropic/claude-opus-5.5")).toBe("Claude Opus 5.5");
+  expect(modelDisplayName("claude-code:claude-opus-5-5")).toBe("Claude Opus 5.5");
+});
 
 const postsOfRun = (userId: string, runId: string) =>
   db.select().from(schema.posts).where(and(eq(schema.posts.userId, userId), sql`${schema.posts.publishingMetadata}->'engine'->>'runId' = ${runId}`));
