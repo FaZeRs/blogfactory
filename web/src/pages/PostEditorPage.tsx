@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { MarkdownEditor } from "@/components/posts/MarkdownEditor";
 import { CoverPanel } from "@/components/posts/CoverPanel";
+import { TranslationPanel } from "@/components/posts/TranslationPanel";
+import { ENGLISH } from "@/lib/localization";
 import { GeneratedImagesPanel } from "@/components/posts/GeneratedImagesPanel";
 import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +121,7 @@ export default function PostEditorPage() {
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
   const [inlineImages, setInlineImages] = useState<string[]>([]);
   const [initialized, setInitialized] = useState(false);
+  const [locale, setLocale] = useState(ENGLISH);
 
   const contentRef = useRef<string>(content);
   const serverImagesRef = useRef<{ cover: string | null; inline: string[] }>({ cover: null, inline: [] });
@@ -410,6 +413,9 @@ export default function PostEditorPage() {
       {/* Scrollable Content */}
       <ScrollArea className="flex-1">
         <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
+          <TranslationPanel postId={post.id} siteId={post.site_id} locale={locale} onLocale={setLocale} />
+          {/* The English editor stays mounted (unsaved edits survive a language switch) and is hidden in a translation view. */}
+          <div hidden={locale !== ENGLISH}>
           {/* Generated Images Panel */}
           {(coverImageUrl || (inlineImages && inlineImages.length > 0)) && (
             <div className="mb-8">
@@ -564,6 +570,7 @@ export default function PostEditorPage() {
               </div>
             </BywordCard>
           )}
+          </div>
         </div>
       </ScrollArea>
     </WorkspaceBackground>

@@ -88,6 +88,7 @@ import {
   ManualImageProvider,
 } from "@/components/content/ImageGenerationSettings";
 import { EngineSettingsCard } from "@/components/content/EngineSettingsCard";
+import { LocalizationCard } from "@/components/content/LocalizationCard";
 import { LiveImageModelSelect } from "@/components/content/LiveImageModelSelect";
 import {
   BywordCard,
@@ -974,6 +975,7 @@ export default function Settings() {
           )}
 
           {activeSection === "basics" && <EngineSettingsCard siteId={activeSiteId} />}
+          {activeSection === "basics" && <LocalizationCard siteId={activeSiteId} />}
 
           {activeSection === "api-keys" && (
             <BywordCard>

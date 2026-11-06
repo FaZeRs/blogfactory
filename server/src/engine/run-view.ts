@@ -32,6 +32,8 @@ export function stageDetails(stage: StageKey, stored: unknown): Obj | null {
     case "gates":
     case "review":
       return pick(out, ["passed", "escalated", "reason", "blockers", "blockerCount", "warningCount", "dropped"]);
+    case "localize":
+      return { locales: arr(out.locales).map((l) => ({ ...pick(obj(l), ["locale", "status", "error", "costUsd"]), blockers: arr(obj(l).findings).filter((f) => obj(f).severity === "blocker").length, warnings: arr(obj(l).findings).filter((f) => obj(f).severity === "warning").length })) };
     case "deliver":
       return pick(out, ["postId", "created", "escalated"]);
     default:

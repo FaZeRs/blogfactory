@@ -10,6 +10,7 @@ import type { DraftOutput } from "./draft/schema.js";
 import type { ResearchOutput } from "./research/schema.js";
 import { buildBrandContextLines } from "../../services/generation-contracts.js";
 import { buildVoiceContentInstructions } from "../../services/voice-content.js";
+import { activeLocales, getLocalization } from "../../services/localization/settings.js";
 
 export const runSettings = (run: ArticleRunRow) => resolveRunSettings(run.mode as EngineMode, parseEngineSettings(run.settings));
 export const modelFor = (run: ArticleRunRow, role: ModelRole) => runSettings(run).models[role];
@@ -141,4 +142,9 @@ export async function renderArticle(run: ArticleRunRow, raw: string, withSourceT
 export function writerVoice(settings: Record<string, unknown>, topic: string): string {
   const brand = buildBrandContextLines(settings as never, topic);
   return [...buildVoiceContentInstructions(settings as never), ...(brand.length ? ["Brand context:", ...brand.map((l) => `- ${l}`)] : [])].join("\n");
+}
+
+/** A passed article is localized before delivery only when its site has localization on with a locale; otherwise it is delivered. */
+export async function afterChecks(run: ArticleRunRow): Promise<"localize" | "deliver"> {
+  return activeLocales(await getLocalization(run.userId, run.siteId)).length ? "localize" : "deliver";
 }

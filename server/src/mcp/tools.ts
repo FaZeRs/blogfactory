@@ -7,6 +7,7 @@ import { db } from "../db/index.js";
 import {
   ideaDiscoveries,
   imageAssets,
+  postTranslations,
   jobs,
   personas,
   postPublications,
@@ -42,6 +43,7 @@ import { IDEA_SORTS, IDEA_STATUSES, IdeaActionError, bookOwnedIdea, listIdeas, r
 import { queueDiscovery } from "../services/ideas/discovery.js";
 import { hasMcpScope, type McpPrincipal } from "./auth.js";
 import { ACTIVE_MCP_TOOL_NAMES, MCP_SCOPES, MCP_SERVER_VERSION, MCP_TOOL_NAMES, type McpScope } from "./contracts.js";
+import { isTranslationStale, staleSourceRevisions } from "../services/localization/stale.js";
 
 export const MCP_REVIEW_APP_URI = "ui://blogfactory/review-post.html";
 
@@ -509,7 +511,7 @@ async function getPost(principal: McpPrincipal, input: { post_id: string }) {
     throw new McpToolError("not_found", "Post not found.", "Call list_posts to choose an allowed post.");
   }
 
-  const [publicationRows, imageRows, revision] = await Promise.all([
+  const [publicationRows, imageRows, revision, translationRows] = await Promise.all([
     db
       .select({
         id: postPublications.id,
@@ -552,7 +554,13 @@ async function getPost(principal: McpPrincipal, input: { post_id: string }) {
       ))
       .orderBy(asc(imageAssets.type), asc(imageAssets.position), asc(imageAssets.createdAt)),
     currentPostRevision(principal.userId, post.id),
+    db
+      .select({ locale: postTranslations.locale, status: postTranslations.status, title: postTranslations.title, slug: postTranslations.slug, sourceRevisionId: postTranslations.sourceRevisionId })
+      .from(postTranslations)
+      .where(and(eq(postTranslations.userId, principal.userId), eq(postTranslations.siteId, post.siteId), eq(postTranslations.postId, post.id)))
+      .orderBy(asc(postTranslations.locale)),
   ]);
+  const staleTranslations = await staleSourceRevisions(principal.userId, translationRows.map((row) => row.sourceRevisionId), revision);
 
   const metadata = seoMetadata(post.seoMetadata);
   const seoStatus = seoStatusForArticle(post.seoMetadata, post.title, post.content);
@@ -616,6 +624,13 @@ async function getPost(principal: McpPrincipal, input: { post_id: string }) {
         position: row.position,
       }] : [];
     }),
+    translations: translationRows.map((row) => ({
+      locale: row.locale,
+      status: row.status,
+      stale: isTranslationStale(row, staleTranslations),
+      title: row.title,
+      slug: row.slug,
+    })),
     updated_at: isoDate(post.updatedAt),
   };
 }
@@ -1545,6 +1560,13 @@ export const MCP_TOOL_REGISTRY = {
         publications: z.array(publicationItem),
       }),
       images: z.array(imageItem),
+      translations: z.array(z.object({
+        locale: z.string(),
+        status: z.enum(["ready", "needs_review", "edited", "running"]),
+        stale: z.boolean(),
+        title: z.string(),
+        slug: z.string(),
+      })),
       updated_at: z.string(),
     }),
     requiredScope: "content:read",

@@ -3,6 +3,7 @@ import type { StageKey } from "../types.js";
 import { briefStage } from "./brief/index.js";
 import { deliverStage } from "./deliver/index.js";
 import { draftStage } from "./draft/index.js";
+import { localizeStage } from "./localize/index.js";
 import { gatesStage } from "./gates/index.js";
 import { researchStage } from "./research/index.js";
 import { reviewStage } from "./review/index.js";
@@ -16,5 +17,6 @@ export const STAGES: Record<StageKey, Stage<any, any>> = {
   gates: gatesStage,
   review: reviewStage,
   revise: reviseStage,
+  localize: localizeStage,
   deliver: deliverStage,
 };

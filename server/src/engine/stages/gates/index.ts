@@ -13,7 +13,7 @@ import { StageInputError } from "../../types.js";
 import { truncate } from "../../util.js";
 import type { DraftOutput } from "../draft/schema.js";
 import type { BriefOutput } from "../brief/schema.js";
-import { findStageOutput, latestDraft, latestStageOutput, renderArticle, runSettings } from "../shared.js";
+import { afterChecks, findStageOutput, latestDraft, latestStageOutput, renderArticle, runSettings } from "../shared.js";
 import { REVIEW_GATES } from "../review/schema.js";
 import type { GatesOutput } from "./schema.js";
 
@@ -100,7 +100,7 @@ export const gatesStage: Stage<GatesInput, GatesOutput> = {
     const base = { blockerCount: blockers.length, warningCount, blockers };
     if (blockers.length === 0) {
       // Only a draft with no code blockers reaches the paid review checks.
-      const to = runSettings(run).preset.review.length ? "review" : "deliver";
+      const to = runSettings(run).preset.review.length ? "review" : await afterChecks(run);
       return { next: { type: "advance", to }, output: { ...base, passed: true, escalated: false, reason: null } };
     }
     // Stop when the last revision did not shrink the blocker list it was given (from the gates or the review), or the mode's revise loops are spent.

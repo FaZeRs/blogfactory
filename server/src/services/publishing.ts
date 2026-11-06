@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 import { connect } from "framer-api";
 import { and, eq, desc, lt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { imageAssets, postPublications, posts, siteIntegrations, sites, userSettings } from "../db/schema.js";
+import { imageAssets, postPublications, postTranslations, posts, siteIntegrations, sites, userSettings } from "../db/schema.js";
 import { decryptSecret, encryptSecret, encryptedCredentialStatus, testedConnectionReady } from "./api-keys.js";
 import { normalizeImagePlacement, reflowInlineImages, type ImagePlacement, type PlacementImage } from "./image-placement.js";
 import { stripUnclosedBoldMarkers } from "./post-cleanup.js";
@@ -24,6 +24,7 @@ import {
   validateOrtakAlanMetadata,
   type OrtakAlanPublishingMetadata,
 } from "./ortak-alan-publishing.js";
+import { staleSourceRevisions } from "./localization/stale.js";
 
 export type IntegrationProvider = "wordpress" | "ghost" | "wix" | "framer" | "lindevo";
 export type PublishMode = "draft" | "publish";
@@ -128,7 +129,11 @@ interface ArticlePayload {
   authorId: string | null;
   inlineImages: PlacementImage[];
   appendedCta?: BrandCta | null;
+  /** The Latvian translation Lindevo stores on the same article; set only when it is ready or edited and current. */
+  lv?: LindevoTranslation;
 }
+
+export interface LindevoTranslation { title: string; slug: string; description: string; content: string; imageAlt: string }
 
 interface PublishingImageAsset {
   storagePath: string;
@@ -268,6 +273,8 @@ export function publishingIdempotencyKey(input: {
   postUpdatedAt: Date;
   revisionId?: string | null;
   options: PublishOptions;
+  /** The translation sent with the article: a new or edited one is new content even when the English revision is the same. */
+  translation?: LindevoTranslation;
 }) {
   return createHash("sha256").update(stableJson({
     userId: input.userId,
@@ -275,6 +282,7 @@ export function publishingIdempotencyKey(input: {
     integrationId: input.integrationId,
     contentVersion: input.revisionId || input.postUpdatedAt.toISOString(),
     options: input.options,
+    ...(input.translation ? { translation: input.translation } : {}),
   })).digest("hex");
 }
 
@@ -441,6 +449,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
     .where(and(eq(imageAssets.userId, userId), eq(imageAssets.postId, postId)));
   const brandCtas = await publishingBrandCtas(userId, integration.siteId);
   let article = buildArticlePayload(post, canonicalSeo, publishOptions, normalizeImagePlacement("auto"), assetRows, brandCtas, ortakAlanProfile);
+  if (provider === "lindevo") article.lv = await currentLindevoTranslation(userId, postId, integration.siteId, revision);
   let validation = { errors: [] as string[], warnings: [] as string[] };
   const idempotencyKey = publishingIdempotencyKey({
     userId,
@@ -449,6 +458,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
     postUpdatedAt: post.updatedAt,
     revisionId: revision?.id,
     options: { ...publishOptions, mode },
+    translation: article.lv,
   });
   const claim = await claimPublication({
     key: idempotencyKey,
@@ -554,6 +564,13 @@ export async function publishPost(userId: string, postId: string, integrationId:
               : await publishFramer(credentials as FramerCredentials, article, mode, integration.config as Record<string, unknown> | null);
 
     const result = externalResult;
+    // A Latvian slug the CMS only accepted with a suffix is stored, so links from other translations point at the real page.
+    const acceptedLvSlug = (result.responseData as { lvSlug?: unknown } | null)?.lvSlug;
+    if (provider === "lindevo" && article.lv && typeof acceptedLvSlug === "string" && acceptedLvSlug !== article.lv.slug && integration.siteId) {
+      await db.update(postTranslations).set({ slug: acceptedLvSlug }).where(and(
+        eq(postTranslations.userId, userId), eq(postTranslations.siteId, integration.siteId), eq(postTranslations.postId, postId), eq(postTranslations.locale, "lv"),
+      )).catch(() => console.error("[publishing] Could not store the accepted Latvian slug"));
+    }
     const publishedAt = new Date();
     publication = await db.transaction(async (tx) => {
       const [updatedPublication] = await tx
@@ -2208,7 +2225,45 @@ export function lindevoArticleArgs(article: ArticlePayload, category: string, th
     tags: article.tags,
     ...(thumbnail ? { thumbnail, imageAlt: truncateAtWord(article.coverAltText, 125) } : {}),
     ...(publishAt ? { publishAt: publishAt.toISOString() } : {}),
+    ...(article.lv ? { lv: { ...article.lv, content: replaceImageUrls(article.lv.content, inlineImages), imageAlt: truncateAtWord(article.lv.imageAlt, 125) } } : {}),
   };
+}
+
+/** A translation travels with the article only when it is ready or edited and made from the post's current revision. */
+async function currentLindevoTranslation(userId: string, postId: string, siteId: string, revision: { id: string; snapshot: unknown } | null | undefined): Promise<LindevoTranslation | undefined> {
+  if (!revision) return undefined;
+  const [row] = await db.select().from(postTranslations).where(and(
+    eq(postTranslations.userId, userId), eq(postTranslations.siteId, siteId), eq(postTranslations.postId, postId), eq(postTranslations.locale, "lv"),
+  )).limit(1);
+  if (!row || (row.status !== "ready" && row.status !== "edited")) return undefined;
+  if ((await staleSourceRevisions(userId, [row.sourceRevisionId], revision)).has(row.sourceRevisionId)) return undefined;
+  return { title: row.title, slug: row.slug, description: row.description, content: row.content, imageAlt: row.imageAlt };
+}
+
+const LV_SLUG_RETRIES = 6;
+/** Lindevo's own refusal (packages/api SlugTakenError): "Slug already exists: <slug> (<locale>)". Only the lv slug is retried. */
+const LV_SLUG_TAKEN_RE = /Slug already exists: \S+ \(lv\)/;
+const lvSlugTaken = (error: unknown) => LV_SLUG_TAKEN_RE.test(error instanceof Error ? error.message : "");
+
+/**
+ * Sends the article. A taken Latvian slug while a translation rides along retries it as -2 to -6, then reports the first
+ * error; an English slug conflict is reported at once. Returns the lv slug the CMS accepted, so it can be stored.
+ */
+export async function sendLindevoArticle(credentials: LindevoCredentials, name: "create_article" | "update_article", args: ReturnType<typeof lindevoArticleArgs> & { id?: string }, call = lindevoCall) {
+  try {
+    return { data: await call(credentials, name, args), lvSlug: args.lv?.slug };
+  } catch (first) {
+    if (!args.lv || !lvSlugTaken(first)) throw first;
+    for (let n = 2; n <= LV_SLUG_RETRIES; n++) {
+      const slug = `${args.lv.slug.slice(0, 96)}-${n}`;
+      try {
+        return { data: await call(credentials, name, { ...args, lv: { ...args.lv, slug } }), lvSlug: slug };
+      } catch (error) {
+        if (!lvSlugTaken(error)) throw error;
+      }
+    }
+    throw first;
+  }
 }
 
 async function lindevoImageBase64(pathOrUrl: string) {
@@ -2256,9 +2311,9 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
     if (url) uploaded.set(image.url, url);
   }
   const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded, publishAt);
-  const data = existing && previousId
-    ? await lindevoCall(credentials, "update_article", { id: previousId, ...args })
-    : await lindevoCall(credentials, "create_article", args);
+  const { data, lvSlug } = existing && previousId
+    ? await sendLindevoArticle(credentials, "update_article", { id: previousId, ...args })
+    : await sendLindevoArticle(credentials, "create_article", args);
   const id = typeof data.id === "string" ? data.id : null;
   return {
     status: "draft",
@@ -2266,7 +2321,7 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
     // Preview links carry a signed token, so only the dashboard edit link is stored.
     externalUrl: null,
     externalEditUrl: id ? `${new URL(credentials.mcpUrl).origin}/blog/${id}/edit` : null,
-    responseData: { id, slug: data.slug ?? args.slug, updated: Boolean(existing), inlineImagesUploaded: uploaded.size },
+    responseData: { id, slug: data.slug ?? args.slug, updated: Boolean(existing), inlineImagesUploaded: uploaded.size, ...(lvSlug ? { lvSlug } : {}) },
   };
 }
 

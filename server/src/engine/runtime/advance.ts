@@ -252,7 +252,8 @@ export async function advanceArticleRun(run: ArticleRunRow, deps: EngineDeps): P
       };
     }
 
-    if (run.spentUsd + preset.estimateUsd[stage] > run.budgetUsd) {
+    // A stage estimated at zero (gates, delivery, the self-limiting localize) is never refused: an overspent run still delivers its draft.
+    if (preset.estimateUsd[stage] > 0 && run.spentUsd + preset.estimateUsd[stage] > run.budgetUsd) {
       // The budget is frozen on the run, so waiting cannot help: fail instead of pausing forever.
       return {
         kind: "failed",

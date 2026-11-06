@@ -22,7 +22,7 @@ Verified on 2026-08-22:
 | `list_personas` | `content:read` | List safe persona metadata |
 | `list_publish_targets` | `content:read` | List non-secret CMS draft destinations |
 | `list_posts` | `content:read` | Find site-scoped content |
-| `get_post` | `content:read` | Read one compact post projection |
+| `get_post` | `content:read` | Read one compact post projection, including a read-only `translations` summary (locale, status, stale, title, slug) |
 | `create_draft` | `drafts:write` | Create a draft from caller-authored Markdown without provider generation |
 | `import_drafts` | `drafts:write` | Create up to 20 caller-authored Markdown drafts with duplicate-safe retries |
 | `generate_draft` | `drafts:write` | Start asynchronous draft generation |

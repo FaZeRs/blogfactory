@@ -4,7 +4,7 @@ process.env.DATABASE_URL ||= "postgres://blogfactory:blogfactory@localhost:5432/
 process.env.API_KEY_ENCRYPTION_SECRET ||= "publishing-self-test-secret";
 
 const { decryptSecret, encryptSecret } = await import("./api-keys.js");
-const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, lindevoArticleArgs, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, normalizeLindevoMcpUrl, parseLindevoToolResult, slugify } = await import("./publishing.js");
+const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, lindevoArticleArgs, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, normalizeLindevoMcpUrl, parseLindevoToolResult, sendLindevoArticle, slugify } = await import("./publishing.js");
 const { appendOrtakAlanDisclosures, completeSentenceWithinLimit, hasVisibleOrtakAlanSources, isMeaningfulTurkishAlt, normalizeOrtakAlanMetadata, ortakAlanFeatureImageCaption, ortakAlanTags, validateOrtakAlanMetadata } = await import("./ortak-alan-publishing.js");
 
 const ortakAlanMetadata = normalizeOrtakAlanMetadata({
@@ -208,6 +208,10 @@ assert.equal(lindevoArticleArgs(privateImageArticle, "operations").content, "![C
 if (savedPublicUrl === undefined) delete process.env.S3_PUBLIC_URL;
 else process.env.S3_PUBLIC_URL = savedPublicUrl;
 assert.equal("thumbnail" in lindevoArticleArgs({ title: "T", markdown: "", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "operations"), false);
+const lvArticle = { title: "T", markdown: "x", excerpt: "E", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [{ url: "https://cdn.example/chart.webp", altText: "Chart" }] };
+const lvArgs = lindevoArticleArgs({ ...lvArticle, lv: { title: "Nosaukums", slug: "nosaukums", description: "Apraksts", content: "![Diagramma](https://cdn.example/chart.webp)", imageAlt: "A".repeat(200) } } as never, "operations", undefined, new Map([["https://cdn.example/chart.webp", "https://store.example/chart-1.webp"]]));
+assert.deepEqual(lvArgs.lv, { title: "Nosaukums", slug: "nosaukums", description: "Apraksts", content: "![Diagramma](https://store.example/chart-1.webp)", imageAlt: "A".repeat(125) });
+assert.equal("lv" in lindevoArticleArgs(lvArticle as never, "operations"), false);
 process.env.API_KEY_ENCRYPTION_SECRET = "old-publishing-secret";
 const staleGhostCredentials = encryptSecret(JSON.stringify({ url: "https://old.example", adminApiKey: `${"a".repeat(24)}:${"b".repeat(64)}` }));
 process.env.API_KEY_ENCRYPTION_SECRET = "publishing-self-test-secret";
@@ -359,5 +363,23 @@ const wixRichContentWithTableFallback = markdownToWixRichContent(
 const fallbackTable = wixRichContentWithTableFallback.nodes.find((node) => node.type === "BULLETED_LIST");
 assert.equal(JSON.stringify(fallbackTable).includes("| Yöntem |"), false);
 assert.equal(JSON.stringify(fallbackTable).includes("Çevrim Süresi: 15-40 sn"), true);
+
+// A taken Latvian slug is retried with a suffix and the accepted slug is returned; an English conflict is not retried.
+{
+  const creds = { mcpUrl: "https://cms.example/mcp", token: "t", category: "news" } as never;
+  const args = { title: "T", slug: "en", description: "", content: "x", category: "news", tags: [], lv: { title: "L", slug: "lv-slug", description: "", content: "y", imageAlt: "" } } as never;
+  const sent: string[] = [];
+  const takenUntil3 = async (_c: unknown, _n: string, a: Record<string, any>) => {
+    sent.push(a.lv.slug);
+    if (a.lv.slug !== "lv-slug-3") throw new Error(`Slug already exists: ${a.lv.slug} (lv)`);
+    return { id: "1", slug: "en" };
+  };
+  const ok = await sendLindevoArticle(creds, "create_article", args, takenUntil3 as never);
+  assert.deepEqual([ok.lvSlug, sent], ["lv-slug-3", ["lv-slug", "lv-slug-2", "lv-slug-3"]]);
+  let calls = 0;
+  const enTaken = async () => { calls += 1; throw new Error("Slug already exists: en (en)"); };
+  await assert.rejects(sendLindevoArticle(creds, "create_article", args, enTaken as never), /\(en\)/);
+  assert.equal(calls, 1, "an English slug conflict is reported at once");
+}
 
 console.log("publishing self-check passed");

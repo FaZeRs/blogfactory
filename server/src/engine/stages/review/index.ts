@@ -8,7 +8,7 @@ import { truncate } from "../../util.js";
 import type { BriefOutput } from "../brief/schema.js";
 import { loadWriterContext, type DraftInput } from "../draft/index.js";
 import type { DraftOutput } from "../draft/schema.js";
-import { evidenceText, findStageOutput, latestDraft, modelFor, runSettings } from "../shared.js";
+import { afterChecks, evidenceText, findStageOutput, latestDraft, modelFor, runSettings } from "../shared.js";
 import { FactcheckSchema, REVIEW_GATES, ReaderSchema, type ReviewOutput } from "./schema.js";
 
 export type ReviewInput = DraftInput & { draft: DraftOutput; previousBlockers: number | null; reviseCount: number };
@@ -151,6 +151,8 @@ export const reviewStage: Stage<ReviewInput, ReviewOutput> = {
   async run(input, ctx) {
     const { run } = ctx;
     const { outcome, rows } = await reviewDraft(input, ctx);
+    // A passed article is localized before delivery when the site asks for it; an escalated one is delivered as it is.
+    if (outcome.output.passed && outcome.next.type === "advance" && outcome.next.to === "deliver") outcome.next = { type: "advance", to: await afterChecks(run) };
     // A retried attempt replaces its own rows; the gates stage shares the attempt number, so only these gates are touched.
     await db.transaction(async (tx) => {
       const where = and(

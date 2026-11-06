@@ -8,6 +8,7 @@ export type StageKey =
   | "gates"
   | "review"
   | "revise"
+  | "localize"
   | "deliver";
 
 export type ModelRole =
@@ -16,7 +17,9 @@ export type ModelRole =
   | "brief"
   | "draft"
   | "revise"
-  | "review";
+  | "review"
+  | "localize"
+  | "localize_review";
 
 export type Transition =
   | { type: "advance"; to: StageKey }

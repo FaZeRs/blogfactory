@@ -7,6 +7,7 @@ import { errorResponse, handleApiError, normalizeApiErrors } from "./http/error-
 
 import { authRoutes } from "./routes/auth.js";
 import { postsRoutes } from "./routes/posts.js";
+import { postTranslationsRoutes } from "./routes/post-translations.js";
 import { feedsRoutes } from "./routes/feeds.js";
 import { personasRoutes } from "./routes/personas.js";
 import { jobsRoutes } from "./routes/jobs.js";
@@ -52,6 +53,7 @@ app.use("/api/*", operationLedgerMiddleware);
 
 app.route("/api/auth", authRoutes);
 app.route("/api/posts", postsRoutes);
+app.route("/api/posts", postTranslationsRoutes);
 app.route("/api/feeds", feedsRoutes);
 app.route("/api/personas", personasRoutes);
 app.route("/api/jobs", jobsRoutes);

@@ -17,6 +17,8 @@ const ROLES = [
   ["brief", "Brief"],
   ["draft", "Draft"],
   ["revise", "Revise"],
+  ["localize", "Translate"],
+  ["localize_review", "Translation review"],
   ["review", "Review"],
 ] as const;
 
