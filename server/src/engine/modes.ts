@@ -27,7 +27,7 @@ export type EngineSettings = {
 };
 
 const STAGES: StageKey[] = ["research", "brief", "draft", "gates", "revise", "deliver"];
-const MODEL_ROLES: ModelRole[] = ["research_queries", "research_claims", "brief", "draft", "revise"];
+export const MODEL_ROLES: ModelRole[] = ["research_queries", "research_claims", "brief", "draft", "revise"];
 const HAIKU = "anthropic/claude-haiku-5.5";
 
 function models(writer: string): Record<ModelRole, string> {

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createFakeLlm } from "../adapters/fake-llm.js";
 import { MODE_PRESETS } from "../modes.js";
-import { generateArticleForEval, runEval, type ChatFn } from "./run.js";
+import { generateArticleForEval, parseEvalMode, runEval, type ChatFn } from "./run.js";
 import { frozenEvidence, loadEvalBriefs, type EvalBrief } from "./schema.js";
 
 const brief = (await loadEvalBriefs())[0] as EvalBrief;
@@ -88,4 +88,11 @@ test("recorded briefs get an ASCII id one past the highest number, and keep only
   const b = briefFromResearch("11-x", "topic here", "tr", { queries: [], skipped: 0, sources: [src, { ...src, finalUrl: "https://b.example/y" }], rows: [row(true, 0), row(true, 0), row(true, 0), row(false, 1)] });
   expect(b.sources.map((s) => s.url)).toEqual(["https://a.example/x"]);
   expect(b.evidence).toHaveLength(3);
+});
+
+test("a mode can name one model for every role", () => {
+  expect(parseEvalMode("normal")).toEqual({ base: "normal", model: undefined });
+  expect(parseEvalMode("normal@nvidia/nemotron-3.5-super-vl:free")).toEqual({ base: "normal", model: "nvidia/nemotron-3.5-super-vl:free" });
+  expect(() => parseEvalMode("quick")).toThrow(/Unknown mode/);
+  expect(() => parseEvalMode("deep@")).toThrow(/no model/);
 });

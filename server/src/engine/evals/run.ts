@@ -4,7 +4,7 @@ import { renderCitations } from "../citations.js";
 import { ENGINE_CONFIG } from "../config.js";
 import { gateBlockers } from "../gates/types.js";
 import { runCodeGates } from "../gates/index.js";
-import { resolveRunSettings } from "../modes.js";
+import { MODEL_ROLES, resolveRunSettings } from "../modes.js";
 import { DATA_RULE, fenceData, preparePrompt } from "../prompts/load.js";
 import type { ArticleRunRow, StageContext } from "../runtime/stage.js";
 import { briefStage, type BriefInput } from "../stages/brief/index.js";
@@ -17,7 +17,17 @@ import { buildWriterSystemPrompt } from "../../services/generation-contracts.js"
 import { EVAL_THRESHOLDS, RUBRIC_DIMENSIONS, decideRules, type RubricDimension, type VariantSummary } from "./decide.js";
 import { frozenEvidence, type EvalBrief } from "./schema.js";
 
-export type EvalMode = "fast" | EngineMode;
+/** A mode, optionally with one model for every role: `normal@deepseek/deepseek-v4-flash`. */
+export type EvalMode = "fast" | EngineMode | `${"fast" | EngineMode}@${string}`;
+
+export function parseEvalMode(mode: string): { base: "fast" | EngineMode; model?: string } {
+  const at = mode.indexOf("@");
+  const base = at < 0 ? mode : mode.slice(0, at);
+  if (base !== "fast" && base !== "normal" && base !== "deep") throw new Error(`Unknown mode "${mode}" (fast, normal or deep, optionally @<model id>)`);
+  const model = at < 0 ? undefined : mode.slice(at + 1).trim();
+  if (at >= 0 && !model) throw new Error(`Mode "${mode}" names no model after @`);
+  return { base, model };
+}
 export type Verdict = "win" | "loss" | "tie";
 
 /** Plain-text completion, what fast mode does: no JSON schema. */
@@ -64,13 +74,23 @@ export type EvalDraft = {
 
 const lowest = () => Object.fromEntries(RUBRIC_DIMENSIONS.map((d) => [d, 1])) as Record<RubricDimension, number>;
 
+const RATE_LIMIT_RETRIES = 5;
+
 function metered(llm: EngineLlm) {
   const meter = { costUsd: 0 };
   const wrapped: EngineLlm = {
     async json(req) {
-      const r = await llm.json(req);
-      meter.costUsd += r.costUsd;
-      return r;
+      // Free models rate-limit often; one 429 must not end a whole eval.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const r = await llm.json(req);
+          meter.costUsd += r.costUsd;
+          return r;
+        } catch (e) {
+          if (!(e instanceof RateLimitError) || attempt >= RATE_LIMIT_RETRIES) throw e;
+          await new Promise((resolve) => setTimeout(resolve, Math.min(e.retryAfterMs ?? 20_000, 60_000)));
+        }
+      }
     },
   };
   return { llm: wrapped, meter };
@@ -90,9 +110,11 @@ async function gate(parts: { title: string; description: string; raw: string; ma
 const uniqueGates = (blockers: { gate: string }[]) => [...new Set(blockers.map((b) => b.gate))];
 
 /** Brief, draft, gates and revise from the frozen evidence: the stages' own `run`, no database. */
-export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}): Promise<Generated> {
+export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string): Promise<Generated> {
   const now = deps.now ?? (() => new Date());
-  const settings = resolveRunSettings(mode, {});
+  // Stages read models from the run's settings, as a site's engine settings would set them.
+  const runSettingsValue = model ? { models: Object.fromEntries(MODEL_ROLES.map((role) => [role, model])) } : {};
+  const settings = resolveRunSettings(mode, runSettingsValue);
   const frozen = frozenEvidence(brief, now());
   const verified = frozen.evidence.filter((e) => e.verified);
   if (verified.length < settings.preset.research.minVerifiedClaims) {
@@ -100,7 +122,7 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   }
   const urlOf = new Map(frozen.sources.map((s) => [s.id, s.finalUrl]));
   const evidence = verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" }));
-  const run = { id: "eval", userId: "eval", siteId: "eval", mode, settings: {}, locale: brief.locale, topic: brief.topic, sourceType: "article_keyword", reviseCount: 0 } as unknown as ArticleRunRow;
+  const run = { id: "eval", userId: "eval", siteId: "eval", mode, settings: runSettingsValue, locale: brief.locale, topic: brief.topic, sourceType: "article_keyword", reviseCount: 0 } as unknown as ArticleRunRow;
   const ctx = (reviseCount: number): StageContext => ({
     run: { ...run, reviseCount },
     attempt: 1,
@@ -245,12 +267,13 @@ async function draftFor(brief: EvalBrief, mode: EvalMode, deps: EvalDeps, judge:
   try {
     let costUsd = 0;
     let g: Generated;
-    if (mode === "fast") {
-      const fast = await generateArticleForEval(brief, fastModel, deps);
+    const { base, model } = parseEvalMode(mode);
+    if (base === "fast") {
+      const fast = await generateArticleForEval(brief, model ?? fastModel, deps);
       costUsd = fast.costUsd;
       g = fast;
     } else {
-      g = await generateEngineArticle(brief, mode, gen.llm, deps);
+      g = await generateEngineArticle(brief, base, gen.llm, deps, model);
       costUsd = gen.meter.costUsd;
     }
     const rubric = await judgeRubric(judge, deps.judgeModel, brief, g, deps.now?.());

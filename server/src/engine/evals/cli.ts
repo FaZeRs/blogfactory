@@ -11,11 +11,10 @@ import type { ArticleRunRow, StageContext } from "../runtime/stage.js";
 import { researchCore } from "../stages/research/index.js";
 import { RateLimitError } from "../types.js";
 import { briefFromResearch, nextBriefId } from "./record.js";
-import { runEval, type ChatFn, type EvalMode } from "./run.js";
+import { parseEvalMode, runEval, type ChatFn, type EvalMode } from "./run.js";
 import { EVALS_DIR, loadEvalBriefFiles, loadEvalBriefs } from "./schema.js";
 
 const OUT_DIR = fileURLToPath(new URL("../../../.eval/", import.meta.url));
-const MODES = ["fast", "normal", "deep"] as const;
 
 const USAGE = `Usage:
   npm run eval:engine -- [--mode fast|normal|deep]... [--briefs <glob>] [--judge-model <id>] [--out <path>]
@@ -24,7 +23,8 @@ const USAGE = `Usage:
 Evaluates the generation modes on frozen briefs (no research, no network for evidence) and judges the
 articles with a rubric and pairwise against the first --mode (the baseline). Default modes: fast normal.
 
-  --mode <m>            fast | normal | deep; repeatable; the first one is the baseline
+  --mode <m>            fast | normal | deep, optionally @<model id> to run every role on that model
+                        (e.g. normal@deepseek/deepseek-v4-flash); repeatable; the first one is the baseline
   --briefs <glob>       brief files to use (default: every file in src/engine/evals/briefs)
   --judge-model <id>    model that scores and compares (default: ${MODE_PRESETS.deep.models.draft})
   --out <path>          report file (default: server/.eval/<timestamp>.json)
@@ -118,8 +118,7 @@ async function main() {
     return;
   }
   const modes = (values.mode?.length ? values.mode : ["fast", "normal"]) as string[];
-  const bad = modes.find((m) => !(MODES as readonly string[]).includes(m));
-  if (bad) throw new Error(`Unknown --mode "${bad}" (fast, normal or deep)`);
+  modes.forEach(parseEvalMode);
   const endpoint = engineAiEndpoint(process.env, process.env.OPENROUTER_API_KEY ?? null);
   if (!endpoint) throw new Error("No model endpoint: set OPENROUTER_API_KEY, or ENGINE_AI_BASE_URL with ENGINE_AI_API_KEY.");
 
