@@ -58,7 +58,8 @@ const URLS = [1, 2, 3].map((i) => `https://source${i}.example/report`);
 
 const sentence = (n: number, i: number) =>
   `Item ${n}${i} describes a plain step that a small team can plan, test and repeat each week without buying anything new.`;
-const para = (n: number) => Array.from({ length: 5 }, (_, i) => sentence(n, i)).join(" ");
+// Two-sentence paragraphs, as the style gate expects (its paragraph-length check).
+const para = (n: number) => [[0, 1], [2, 3], [4]].map((ids) => ids.map((i) => sentence(n, i)).join(" ")).join("\n\n");
 const FAQ = [
   "## Frequently Asked Questions",
   "### How often should a team review its energy use?",
@@ -119,7 +120,8 @@ const SERP_ANALYSIS = {
   informationGain: [{ point: "Battery sizing follows evening use, not roof size", claimIds: ["c3", "c99"] }],
 };
 
-export type Script = { drafts: string[]; revisions: string[] };
+/** `factchecks` and `readers` are the review replies in order; once spent, a check finds nothing. */
+export type Script = { drafts: string[]; revisions: string[]; factchecks?: unknown[]; readers?: unknown[] };
 
 export function makeDeps(script: Script) {
   const base = createFakeLlm({
@@ -129,9 +131,15 @@ export function makeDeps(script: Script) {
     revise: script.revisions.map(draftReply),
   });
   // Claim extraction is matched to its page, because pages are read in parallel.
+  const reviews = { factcheck: [...(script.factchecks ?? [])], reader: [...(script.readers ?? [])] };
   const llm: typeof base = {
     ...base,
     json: (req) => {
+      if (req.role === "review") {
+        // The two checks run in parallel, so each is told apart by its prompt.
+        const which = req.system.includes("fact-checker") ? "factcheck" : "reader";
+        return createFakeLlm({ review: [reviews[which].shift() ?? { issues: [] }] }).json(req);
+      }
       if (req.role === "research_claims" && req.user.includes("## Ranking pages")) {
         return createFakeLlm({ research_claims: [SERP_ANALYSIS] }).json(req);
       }

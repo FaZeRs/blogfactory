@@ -7,7 +7,7 @@ import { sanitizeText } from "../../util.js";
 import { componentVars, loadWriterContext, toDraftOutput, type DraftInput } from "../draft/index.js";
 import { DraftSchema, type DraftOutput } from "../draft/schema.js";
 import type { GatesOutput } from "../gates/schema.js";
-import { evidenceText, latestDraft, latestStageOutput, linksText, modelFor } from "../shared.js";
+import { evidenceText, findStageOutput, latestDraft, linksText, modelFor } from "../shared.js";
 
 export type ReviseInput = DraftInput & { draft: DraftOutput; blockers: GatesOutput["blockers"] };
 
@@ -30,9 +30,10 @@ export const reviseStage: Stage<ReviseInput, DraftOutput> = {
   key: "revise",
   promptVersion: await promptVersion("revise"),
   async input({ run }) {
-    const [context, draft, gates] = await Promise.all([loadWriterContext(run), latestDraft(run), latestStageOutput<GatesOutput>(run, "gates")]);
-    if (gates.blockers.length === 0) throw new StageInputError("revise was reached without blockers to fix");
-    return { ...context, draft, blockers: gates.blockers };
+    // The blockers come from whichever of the gates and the review ran last.
+    const [context, draft, checked] = await Promise.all([loadWriterContext(run), latestDraft(run), findStageOutput<GatesOutput>(run, "gates", "review")]);
+    if (!checked?.output.blockers.length) throw new StageInputError("revise was reached without blockers to fix");
+    return { ...context, draft, blockers: checked.output.blockers };
   },
   async run(input, ctx) {
     const g = ENGINE_CONFIG.gates;
@@ -65,7 +66,7 @@ export const reviseStage: Stage<ReviseInput, DraftOutput> = {
       system: prompt.system,
       user: prompt.user,
       schema: DraftSchema,
-      maxTokens: 12_000,
+      maxTokens: 20_000,
       signal: ctx.signal,
     });
     // The runtime raises revise_count when this stage advances; the title stays the brief's.

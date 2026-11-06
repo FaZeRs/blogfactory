@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { fakeCtx } from "../test-helpers.js";
 import { briefStage, linkCandidates, serpText, type BriefInput } from "./index.js";
-import { PLAN, fitLengthPlan, planTarget, validateBrief, type Brief } from "./schema.js";
+import { PLAN, fitLengthPlan, planTarget, repairBrief, validateBrief, type Brief } from "./schema.js";
 
 const input: BriefInput = {
   topic: "solar panels",
@@ -98,4 +98,16 @@ test("serpText lists gaps, information gain and the target; empty input is None"
   expect(t).toContain("p [c1]");
   expect(t).toContain("- Q?");
   expect(t).toContain("about 1800 words");
+});
+
+test("repairBrief fixes near misses in titles and the description; a fixed brief validates", () => {
+  const long = "A title that is clearly longer than the sixty character limit allows";
+  const desc = `${"Learn what solar panels cost a small site, what they return each year, ".repeat(2)}and how to pick one now.`;
+  expect(desc.length).toBeGreaterThan(155);
+  const fixed = repairBrief(good({ titleOptions: [...good().titleOptions, long], chosenTitle: "Solar panels, simply", description: desc }));
+  expect(fixed.titleOptions).toEqual(["Solar panels, simply", ...good().titleOptions]);
+  expect(fixed.description.length).toBeLessThanOrEqual(155);
+  expect(validateBrief(fixed, check)).toEqual([]);
+  expect(repairBrief(good({ chosenTitle: long })).chosenTitle).toBe(good().titleOptions[0]);
+  expect(repairBrief(good())).toEqual(good());
 });

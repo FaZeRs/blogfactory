@@ -12,6 +12,7 @@ import { GeneratedImagesPanel } from "@/components/posts/GeneratedImagesPanel";
 import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { PublishDialog } from "@/components/posts/PublishDialog";
+import { ReviseWithCommentsDialog } from "@/components/posts/ReviseWithCommentsDialog";
 import { EditorialSafetyPanel, type EditorialState, type PostRevision } from "@/components/posts/EditorialSafetyPanel";
 import type { OrtakAlanMetadata } from "@/components/posts/ortak-alan-publishing";
 import { BywordCard, BywordPageShell, WorkspaceBackground } from "@/components/layout/BywordSurface";
@@ -363,6 +364,24 @@ export default function PostEditorPage() {
               )}
               Save
             </Button>
+
+            <ReviseWithCommentsDialog
+              postId={id!}
+              updatedAt={post.updated_at}
+              disabled={isSaving || Boolean(hasChanges)}
+              disabledReason={hasChanges ? "Save changes before revising" : undefined}
+              onRevised={(revised) => {
+                setTitle(revised.title);
+                setContent(revised.content);
+                queryClient.invalidateQueries({ queryKey: ["posts"] });
+                queryClient.invalidateQueries({ queryKey: ["post", id] });
+                for (const key of ["post-revisions", "post-revision-scorecard", "post-preflight"]) queryClient.invalidateQueries({ queryKey: [key, id] });
+              }}
+              onReload={async () => {
+                await queryClient.refetchQueries({ queryKey: ["post", id] });
+                setInitialized(false);
+              }}
+            />
 
             <PublishDialog
               postId={id!}

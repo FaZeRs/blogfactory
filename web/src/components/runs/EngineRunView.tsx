@@ -22,6 +22,7 @@ const STEPS: Record<string, { title: string; about: string }> = {
   brief: { title: "Plan", about: "Picks the angle, title and outline, and assigns evidence to each section." },
   draft: { title: "Write", about: "Writes the article from the plan, citing the verified claims." },
   gates: { title: "Quality checks", about: "Checks sources, links, length, structure, copying and brand voice." },
+  review: { title: "Review", about: "Fact-checks the draft against the evidence and reads it as your audience would." },
   revise: { title: "Revise", about: "Fixes the problems the quality checks found." },
   deliver: { title: "Deliver", about: "Saves the draft to your Review Queue." },
 };
@@ -30,13 +31,17 @@ const ORDER = ["research", "brief", "draft", "gates", "deliver"];
 const GATES: Record<string, string> = {
   citations: "Claims cite verified sources",
   components: "Lindevo components",
+  factcheck: "Fact-check against the evidence",
   faq: "FAQ answers the planned questions",
   links: "Links work",
   "links-warnings": "Link warnings",
   meta: "Title, description and length",
   overlap: "No text copied from sources",
+  reader: "Reader review",
   similarity: "Not a duplicate of your posts",
   structure: "Headings and structure",
+  style: "Style",
+  "style-warnings": "Style suggestions",
   voice: "Brand voice rules",
   "voice-warnings": "Brand voice suggestions",
 };
@@ -58,6 +63,9 @@ function summary(stage: EngineStageRun, d: Details): string {
       return `${num(d.words)?.toLocaleString() ?? "?"} words`;
     case "gates":
       if (d.passed) return "All checks passed";
+      return `${num(d.blockerCount) ?? 0} problem${num(d.blockerCount) === 1 ? "" : "s"} found${d.escalated ? " · needs your review" : " · sent to revise"}`;
+    case "review":
+      if (d.passed) return "Fact-check and reader review passed";
       return `${num(d.blockerCount) ?? 0} problem${num(d.blockerCount) === 1 ? "" : "s"} found${d.escalated ? " · needs your review" : " · sent to revise"}`;
     case "deliver":
       return d.escalated ? "Saved to Review Queue with open problems" : "Saved to Review Queue";
@@ -267,8 +275,11 @@ function issueText(issues: unknown) {
   return list(issues).map((i) => text((i as { message?: unknown }).message)).filter(Boolean);
 }
 
-function GatesBody({ d, attempt, engine }: { d: Details; attempt: number; engine: EngineRunDetail }) {
-  const rows = (engine.gates ?? []).filter((g) => g.attempt === attempt);
+const REVIEW_GATES = ["factcheck", "reader"];
+
+/** The gates and the review share attempt numbers, so each stage shows only its own gate rows. */
+function GatesBody({ d, attempt, engine, review }: { d: Details; attempt: number; engine: EngineRunDetail; review?: boolean }) {
+  const rows = (engine.gates ?? []).filter((g) => g.attempt === attempt && REVIEW_GATES.includes(g.gate) === Boolean(review));
   const blockers = rows.filter((g) => g.severity !== "warning");
   const warnings = rows.filter((g) => g.severity === "warning" && !g.passed);
   return (
@@ -310,6 +321,8 @@ function StageBody({ stage, engine }: { stage: EngineStageRun; engine: EngineRun
       return <BriefBody d={d} />;
     case "gates":
       return <GatesBody d={d} attempt={stage.attempt} engine={engine} />;
+    case "review":
+      return <GatesBody d={d} attempt={stage.attempt} engine={engine} review />;
     case "draft":
     case "revise":
       return <p className="text-sm">“{text(d.title)}” · {num(d.words)?.toLocaleString()} words. The full text is on the draft.</p>;

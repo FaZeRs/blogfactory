@@ -25,10 +25,10 @@ const engine: EngineRunDetail = {
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function mount() {
+function mount(over: Partial<EngineRunDetail> = {}) {
   const el = document.createElement("div");
   document.body.appendChild(el);
-  act(() => createRoot(el).render(<MemoryRouter><EngineRunView engine={engine} /></MemoryRouter>));
+  act(() => createRoot(el).render(<MemoryRouter><EngineRunView engine={{ ...engine, ...over }} /></MemoryRouter>));
   return el;
 }
 const click = (el: HTMLElement, text: string) => {
@@ -54,5 +54,24 @@ describe("EngineRunView", () => {
     expect(el.textContent).not.toContain("All firms use a CRM.");
     click(el, "Show 1 rejected");
     expect(el.textContent).toContain("Rejected: quote not found");
+  });
+
+  it("shows the review stage with its own gate rows, apart from the quality checks", () => {
+    const el = mount({
+      state: "done",
+      stages: [
+        { stage: "gates", attempt: 1, status: "succeeded", model: null, costUsd: 0, startedAt: at(0), finishedAt: at(1), error: null, details: { passed: true } },
+        { stage: "review", attempt: 1, status: "succeeded", model: "m", costUsd: 0.02, startedAt: at(2), finishedAt: at(9), error: null, details: { passed: false, blockerCount: 1, escalated: false } },
+      ],
+      gates: [
+        { gate: "meta", attempt: 1, passed: true, severity: "blocker", issues: [], metrics: {} },
+        { gate: "factcheck", attempt: 1, passed: false, severity: "blocker", issues: [{ message: "Claim is not supported by the evidence: \u201CX\u201D" }], metrics: {} },
+      ],
+    });
+    expect(el.textContent).toContain("1 problem found · sent to revise");
+    click(el, "Review");
+    expect(el.textContent).toContain("Fact-check against the evidence");
+    expect(el.textContent).toContain("Claim is not supported by the evidence");
+    expect(el.textContent).not.toContain("Title, description and length");
   });
 });

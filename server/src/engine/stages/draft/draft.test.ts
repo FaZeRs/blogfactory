@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { DATA_RULE, fenceData, loadPrompt, renderPrompt } from "../../prompts/load.js";
-import { normalizeDraftMarkdown } from "../shared.js";
+import { htmlBlocksToMarkdown, normalizeDraftMarkdown, unflattenMarkdown, writerVoice } from "../shared.js";
 import { fakeCtx } from "../test-helpers.js";
 import { draftStage, type DraftInput } from "./index.js";
 
@@ -55,4 +55,58 @@ test("fenceData wraps text in a tag the text cannot close, and rejects bad label
   expect(out.endsWith(`</${tag}>`)).toBe(true);
   expect(() => fenceData("Bad Label", "x")).toThrow();
   expect(DATA_RULE).toContain("untrusted");
+});
+
+test("a long article whose line breaks became double spaces is repaired; normal Markdown is untouched", () => {
+  const flat = `Intro sentence one. ${"Filler words go here. ".repeat(60)}  **Takeaways**  - First point.  - Second point.  ## Section heading  Body text. ${"More body. ".repeat(80)}`;
+  const fixed = unflattenMarkdown(flat);
+  expect(fixed).toContain("\n\n## Section heading\n\n");
+  expect(fixed).toContain("\n\n- First point.\n\n- Second point.");
+  const normal = `Intro.\n\n## Heading\n\n${"Text with  two spaces. ".repeat(80)}\n\n- a\n- b\n`;
+  expect(unflattenMarkdown(normal)).toBe(normal);
+  expect(normalizeDraftMarkdown(flat)).toContain("\n## Section heading\n");
+});
+
+test("an article written as HTML blocks becomes Markdown; components and plain Markdown are left alone", () => {
+  const html = `<p>Intro with <strong>bold</strong> and <a href="https://x.example">a link</a>.{{c:e1}}</p><h2>First</h2><p>Body.</p><ul><li>One</li><li>Two</li></ul><h3>Sub</h3><ol><li>Step</li><li>Next</li></ol><Callout type="tip">Keep</Callout>`;
+  expect(htmlBlocksToMarkdown(html)).toBe(`Intro with **bold** and [a link](https://x.example).{{c:e1}}\n\n## First\n\nBody.\n\n- One\n- Two\n\n### Sub\n\n1. Step\n2. Next\n\n<Callout type="tip">Keep</Callout>`);
+  const md = "Intro.\n\n<p>one stray tag</p>\n\n## Heading\n";
+  expect(htmlBlocksToMarkdown(md)).toBe(md);
+});
+
+test("writerVoice adds the site's brand profile and only the knowledge relevant to the topic", () => {
+  const voice = writerVoice({
+    articleVoice: "professional",
+    brandCompanyName: "Lindevo",
+    brandTargetAudience: "Owners of small businesses in the Baltics",
+    brandMentions: "light",
+    brandCtas: [{ label: "Book a 30-minute discovery call" }],
+    knowledgeBaseEnabled: true,
+    knowledgeDocuments: [
+      { title: "Approval rules", content: "Every system has agreed approval rules and a named person for exceptions." },
+      { title: "Office hours", content: "The Liepāja office keeps opening hours on weekdays." },
+    ],
+  }, "approval rules for AI systems");
+  expect(voice).toContain("professional style");
+  expect(voice).toContain("Brand context:");
+  expect(voice).toContain("Company name: Lindevo");
+  expect(voice).toContain("Target reader: Owners of small businesses in the Baltics");
+  expect(voice).toContain("Book a 30-minute discovery call");
+  expect(voice).toContain("named person for exceptions");
+  expect(writerVoice({}, "x")).not.toContain("Brand context");
+});
+
+test("HTML inside code examples is never converted, even when the article itself is HTML", () => {
+  const example = "```html\n<h2>Account</h2>\n<p>Name</p>\n<p>Email</p>\n```";
+  const md = `Intro text.\n\n${example}\n\nUse \`<p>\` tags for paragraphs.\n`;
+  expect(htmlBlocksToMarkdown(md)).toBe(md);
+  const html = `<p>One.</p><h2>Two</h2><p>Three \`<p>x</p>\`.</p>\n\n${example}`;
+  const out = htmlBlocksToMarkdown(html);
+  expect(out).toContain("## Two");
+  expect(out).toContain("Three `<p>x</p>`.");
+  expect(out).toContain(example);
+});
+
+test("an HTML article wrapped in a markdown fence is unwrapped, then converted", () => {
+  expect(normalizeDraftMarkdown("```markdown\n<p>One.</p><h2>Two</h2><p>Three.</p>\n```")).toBe("One.\n\n## Two\n\nThree.\n");
 });

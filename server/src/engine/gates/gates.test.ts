@@ -9,6 +9,7 @@ import { overlapGate } from "./overlap.js";
 import { similarityGate } from "./similarity.js";
 import { structureGate } from "./structure.js";
 import { type EvidenceItem, type GateInput, type SourceItem, gateBlockers } from "./types.js";
+import { STYLE_PHRASES, styleGate } from "./style.js";
 import { voiceGate } from "./voice.js";
 
 const cfg = ENGINE_CONFIG.gates;
@@ -58,7 +59,7 @@ const messages = (r: { issues: { message: string }[] }) => r.issues.map((i) => i
 test("a clean article passes every code gate, in a fixed order", async () => {
   const results = await runCodeGates(input, { checkLink: ok, config: ENGINE_CONFIG });
   expect(results.map((r) => r.gate)).toEqual([
-    "structure", "meta", "faq", "voice", "voice-warnings", "citations", "links", "links-warnings", "overlap", "similarity",
+    "structure", "meta", "faq", "voice", "voice-warnings", "style", "style-warnings", "citations", "links", "links-warnings", "overlap", "similarity",
   ]);
   expect(gateBlockers(results)).toEqual([]);
   expect(results.find((r) => r.gate === "meta")?.metrics?.words).toBeGreaterThan(cfg.minWords);
@@ -149,4 +150,57 @@ test("similarity gate blocks a near-copy of an existing post and passes a new on
   const r = similarityGate({ ...input, existingPosts: [{ content: base, id: "p1", title: "x" }], markdown: fresh }, cfg);
   expect(r.passed).toBe(true);
   expect(r.metrics?.maxSimilarity).toBeLessThan(cfg.similarityMax);
+});
+
+test("style: 3 phrase hits or too many em dashes block; 1-2 hits only suggest; code and URLs are ignored", () => {
+  const filler = Array.from({ length: 200 }, (_, i) => `Plain sentence number ${i} about topic${i}.`).join(" ");
+  expect(STYLE_PHRASES.length).toBeGreaterThanOrEqual(25);
+  const [clean, cleanWarn] = styleGate(filler);
+  expect(clean?.passed && cleanWarn?.passed).toBe(true);
+
+  const [one, oneWarn] = styleGate(`${filler} Let us Delve into the details. It is worth noting that it works.`);
+  expect(one?.passed).toBe(true);
+  expect(oneWarn?.issues).toHaveLength(2);
+  expect(oneWarn?.issues[0]?.excerpt?.length).toBeLessThanOrEqual(160);
+
+  const three = styleGate(`${filler} We delve into it. Seamlessly done. This is a game changer for teams.`);
+  expect(three[0]?.passed).toBe(false);
+  expect(three[0]?.issues).toHaveLength(3);
+  expect(three[1]?.passed).toBe(true);
+  expect(gateBlockers(three)[0]?.gate).toBe("style");
+
+  const dashed = `${filler} ${"A short clause \u2014 then another. ".repeat(15)}`;
+  expect(styleGate(dashed)[0]?.passed).toBe(false);
+  expect(styleGate(`${filler} One clause \u2014 one dash.`)[0]?.passed).toBe(true);
+
+  const ignored = `${filler}\n\n\`\`\`\ndelve seamlessly tapestry\n\`\`\`\n\nSee [the page](https://x.example/delve-seamlessly-tapestry).`;
+  expect(styleGate(ignored).every((r) => r.passed)).toBe(true);
+});
+
+test("a site's banned phrases block anywhere, banned words only as whole words", async () => {
+  const { voiceGate, withSiteVoice } = await import("./voice.js");
+  const voice = withSiteVoice(ENGINE_CONFIG.voice, { bannedPhrases: ["booking engine"], bannedWords: ["seamless", "tu"] });
+  const issues = (text: string) => voiceGate(text, voice).find((r) => r.gate === "voice")!.issues.map((i) => i.excerpt);
+  expect(issues("A Booking Engine for hotels.")).toEqual(["Booking Engine"]);
+  expect(issues("A seamless setup.")).toEqual(["seamless"]);
+  expect(issues("Seamlessly done on Tuesday, tune it.")).toEqual([]);
+  expect(withSiteVoice(ENGINE_CONFIG.voice, {})).toBe(ENGINE_CONFIG.voice);
+});
+
+test("style blocks dense prose: an average over 22 words a sentence names the longest sentences", async () => {
+  const { styleGate, proseSentences } = await import("./style.js");
+  const long = "This sentence keeps going with one clause after another, which is the habit that makes plain articles hard to read for a busy owner who just wants the answer.";
+  const short = "This sentence is short and clear. It says one thing.";
+  const dense = Array.from({ length: 12 }, () => `${long} ${long}`).join("\n\n");
+  const plain = Array.from({ length: 12 }, () => `${short} ${short}`).join("\n\n");
+  const issues = (md: string) => styleGate(md).find((r) => r.gate === "style")!.issues;
+  expect(issues(dense).length).toBe(5);
+  expect(issues(dense)[0]!.message).toMatch(/sentences average 29/);
+  expect(issues(plain)).toEqual([]);
+  // Two-sentence paragraphs of 15 words pass; walls of 4 long-ish sentences (60 words) are split.
+  const mid = "This sentence has a fair number of words in it, fifteen in all here.";
+  const walls = Array.from({ length: 16 }, () => [mid, mid, mid, mid].join(" ")).join("\n\n");
+  expect(issues(walls).map((i) => i.message)[0]).toMatch(/paragraphs average 56 words/);
+  expect(issues(Array.from({ length: 16 }, () => `${mid} ${mid}`).join("\n\n"))).toEqual([]);
+  expect(proseSentences("## Heading\n\n- a list item that is long enough\n\n<key-takeaways>\n\nOne real sentence here[¹](https://x.example).{{c:c1}} Another one follows.")).toEqual(["One real sentence here.", "Another one follows."]);
 });

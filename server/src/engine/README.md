@@ -1,7 +1,7 @@
 # Staged blog engine
 
 `server/src/engine/` holds the staged generation engine behind the `normal` and `deep` modes
-(research, brief, draft, gates, revise, deliver). Fast mode does not use it.
+(research, brief, draft, gates, review, revise, deliver). Fast mode does not use it.
 
 - Spec: `docs/superpowers/specs/2026-11-03-blog-engine-design.md`.
 - Ported from the Lindevo content engine; keep tests with the code.

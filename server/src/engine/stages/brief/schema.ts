@@ -70,6 +70,27 @@ export function fitLengthPlan(b: Brief, target?: number | null): Brief {
 }
 
 /** What code checks and the model cannot be trusted with. The messages join the repair feedback. */
+/**
+ * Code fixes for near misses a cheap model makes, so a whole brief call is not spent on a few characters: title options
+ * over the limit are dropped, a valid chosen title missing from the options is added, a chosen title over the limit is
+ * replaced by the first valid option, and a description just over the limit is cut at a word boundary.
+ */
+/** A description over the limit, cut at a word boundary (never below 70% of the limit). */
+export function fitDescription(text: string): string {
+  if (text.length <= g.descriptionMax) return text;
+  const cut = text.slice(0, g.descriptionMax);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), Math.floor(g.descriptionMax * 0.7))).replace(/[\s,;:—–-]+$/, "");
+}
+
+export function repairBrief(b: Brief): Brief {
+  const fits = (t: string) => t.length <= g.titleMax;
+  const options = b.titleOptions.filter(fits);
+  const chosenTitle = fits(b.chosenTitle) ? b.chosenTitle : options[0] ?? b.chosenTitle;
+  if (fits(chosenTitle) && !options.includes(chosenTitle)) options.unshift(chosenTitle);
+  const description = b.description.length <= g.descriptionMax + 40 ? fitDescription(b.description) : b.description;
+  return { ...b, chosenTitle, titleOptions: options.length >= b.titleOptions.length || options.length >= 3 ? options : b.titleOptions, description };
+}
+
 export function validateBrief(b: Brief, ctx: { verifiedIds: Set<string>; links: Set<string>; minClaims: number; profile?: ComponentProfile }): string[] {
   const issues: string[] = [];
   const range = (name: string, n: number, r: { min: number; max: number }) => {

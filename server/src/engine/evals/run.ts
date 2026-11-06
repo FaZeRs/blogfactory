@@ -4,11 +4,12 @@ import { renderCitations } from "../citations.js";
 import { ENGINE_CONFIG } from "../config.js";
 import { gateBlockers } from "../gates/types.js";
 import { runCodeGates } from "../gates/index.js";
-import { resolveRunSettings } from "../modes.js";
+import { MODEL_ROLES, resolveRunSettings } from "../modes.js";
 import { DATA_RULE, fenceData, preparePrompt } from "../prompts/load.js";
 import type { ArticleRunRow, StageContext } from "../runtime/stage.js";
 import { briefStage, type BriefInput } from "../stages/brief/index.js";
 import { draftStage, type DraftInput } from "../stages/draft/index.js";
+import { reviewDraft } from "../stages/review/index.js";
 import { reviseStage } from "../stages/revise/index.js";
 import { evidenceText, normalizeDraftMarkdown } from "../stages/shared.js";
 import { RateLimitError, type EngineMode, type ModelRole } from "../types.js";
@@ -17,7 +18,24 @@ import { buildWriterSystemPrompt } from "../../services/generation-contracts.js"
 import { EVAL_THRESHOLDS, RUBRIC_DIMENSIONS, decideRules, type RubricDimension, type VariantSummary } from "./decide.js";
 import { frozenEvidence, type EvalBrief } from "./schema.js";
 
-export type EvalMode = "fast" | EngineMode;
+/**
+ * A mode, optionally with one model for every role and `#noreview` to skip the review stage:
+ * `normal@deepseek/deepseek-v4-flash#noreview`.
+ */
+export type EvalMode = "fast" | EngineMode | `${"fast" | EngineMode}${"@" | "#"}${string}`;
+
+export function parseEvalMode(mode: string): { base: "fast" | EngineMode; model?: string; review: boolean } {
+  const hash = mode.indexOf("#");
+  const flag = hash < 0 ? "" : mode.slice(hash + 1);
+  if (flag && flag !== "noreview") throw new Error(`Unknown flag "#${flag}" in mode "${mode}" (only #noreview)`);
+  const spec = hash < 0 ? mode : mode.slice(0, hash);
+  const at = spec.indexOf("@");
+  const base = at < 0 ? spec : spec.slice(0, at);
+  if (base !== "fast" && base !== "normal" && base !== "deep") throw new Error(`Unknown mode "${mode}" (fast, normal or deep, optionally @<model id> and #noreview)`);
+  const model = at < 0 ? undefined : spec.slice(at + 1).trim();
+  if (at >= 0 && !model) throw new Error(`Mode "${mode}" names no model after @`);
+  return { base, model, review: flag !== "noreview" };
+}
 export type Verdict = "win" | "loss" | "tie";
 
 /** Plain-text completion, what fast mode does: no JSON schema. */
@@ -41,12 +59,13 @@ const score = z.number().int().min(1).max(10);
 export const RubricSchema = z.object({
   accuracy: score,
   clarity: score,
-  note: z.string().max(400),
+  // No length limit: judges overrun one often, and only the scores and winner are kept.
+  note: z.string(),
   specificity: score,
   usefulness: score,
   voice: score,
 });
-export const PairwiseSchema = z.object({ reason: z.string().max(400), winner: z.enum(["A", "B", "tie"]) });
+export const PairwiseSchema = z.object({ reason: z.string(), winner: z.enum(["A", "B", "tie"]) });
 
 export type EvalDraft = {
   briefId: string;
@@ -58,25 +77,38 @@ export type EvalDraft = {
   passed: boolean;
   rubric: Record<RubricDimension, number>;
   costUsd: number;
+  findings?: Finding[];
   /** Set when generation threw: the slot is scored as a failure, not skipped. */
   error?: string;
 };
 
 const lowest = () => Object.fromEntries(RUBRIC_DIMENSIONS.map((d) => [d, 1])) as Record<RubricDimension, number>;
 
+const RATE_LIMIT_RETRIES = 5;
+
 function metered(llm: EngineLlm) {
   const meter = { costUsd: 0 };
   const wrapped: EngineLlm = {
     async json(req) {
-      const r = await llm.json(req);
-      meter.costUsd += r.costUsd;
-      return r;
+      // Free models rate-limit often; one 429 must not end a whole eval.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const r = await llm.json(req);
+          meter.costUsd += r.costUsd;
+          return r;
+        } catch (e) {
+          if (!(e instanceof RateLimitError) || attempt >= RATE_LIMIT_RETRIES) throw e;
+          await new Promise((resolve) => setTimeout(resolve, Math.min(e.retryAfterMs ?? 20_000, 60_000)));
+        }
+      }
     },
   };
   return { llm: wrapped, meter };
 }
 
-type Generated = { title: string; description: string; markdown: string; failedGates: string[] };
+/** `findings`: every blocker list the loop met, by revise round, so a report shows what each check flagged. */
+type Finding = { round: number; gate: string; message: string; excerpt?: string };
+type Generated = { title: string; description: string; markdown: string; failedGates: string[]; findings?: Finding[] };
 
 /** The same code gates the engine runs, with link checks stubbed: an eval never touches the network. */
 async function gate(parts: { title: string; description: string; raw: string; markdown: string }, frozen: ReturnType<typeof frozenEvidence>, evidence = frozen.evidence) {
@@ -89,10 +121,12 @@ async function gate(parts: { title: string; description: string; raw: string; ma
 
 const uniqueGates = (blockers: { gate: string }[]) => [...new Set(blockers.map((b) => b.gate))];
 
-/** Brief, draft, gates and revise from the frozen evidence: the stages' own `run`, no database. */
-export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}): Promise<Generated> {
+/** Brief, draft, gates, review and revise from the frozen evidence: the stages' own `run`, no database. */
+export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string, review = true): Promise<Generated> {
   const now = deps.now ?? (() => new Date());
-  const settings = resolveRunSettings(mode, {});
+  // Stages read models from the run's settings, as a site's engine settings would set them.
+  const runSettingsValue = model ? { models: Object.fromEntries(MODEL_ROLES.map((role) => [role, model])) } : {};
+  const settings = resolveRunSettings(mode, runSettingsValue);
   const frozen = frozenEvidence(brief, now());
   const verified = frozen.evidence.filter((e) => e.verified);
   if (verified.length < settings.preset.research.minVerifiedClaims) {
@@ -100,7 +134,7 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   }
   const urlOf = new Map(frozen.sources.map((s) => [s.id, s.finalUrl]));
   const evidence = verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" }));
-  const run = { id: "eval", userId: "eval", siteId: "eval", mode, settings: {}, locale: brief.locale, topic: brief.topic, sourceType: "article_keyword", reviseCount: 0 } as unknown as ArticleRunRow;
+  const run = { id: "eval", userId: "eval", siteId: "eval", mode, settings: runSettingsValue, locale: brief.locale, topic: brief.topic, sourceType: "article_keyword", reviseCount: 0 } as unknown as ArticleRunRow;
   const ctx = (reviseCount: number): StageContext => ({
     run: { ...run, reviseCount },
     attempt: 1,
@@ -131,13 +165,29 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   let draft = (await draftStage.run(draftInput, ctx(0))).output;
   let revisions = 0;
   let previous: number | null = null;
+  let previousReview: number | null = null;
+  const findings: Finding[] = [];
+  const note = (list: { gate: string; message: string; excerpt?: string }[]) =>
+    findings.push(...list.map((b) => ({ round: revisions, gate: b.gate, message: b.message, ...(b.excerpt ? { excerpt: b.excerpt } : {}) })));
   for (;;) {
     const markdown = renderCitations(draft.markdown, frozen.evidence, frozen.sources, settings.citationStyle, brief.locale);
-    const blockers = await gate({ title: draft.title, description: draft.description, raw: draft.markdown, markdown }, frozen);
-    // Same stop rules as the gates stage: revise loops are spent, or the last revision did not shrink the list.
-    const stalled = previous !== null && blockers.length >= previous;
-    if (blockers.length === 0 || revisions >= settings.preset.maxRevise || stalled) {
-      return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(blockers) };
+    let blockers = await gate({ title: draft.title, description: draft.description, raw: draft.markdown, markdown }, frozen);
+    if (blockers.length === 0 && review && settings.preset.review.length) {
+      // The paid review checks read only a draft the code gates passed, as in the engine.
+      const { outcome } = await reviewDraft({ ...draftInput, draft, previousBlockers: previousReview, reviseCount: revisions }, ctx(revisions));
+      note(outcome.output.blockers);
+      if (outcome.next.type !== "advance" || outcome.next.to === "deliver") {
+        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(outcome.output.escalated ? outcome.output.blockers : []), findings };
+      }
+      blockers = outcome.output.blockers;
+      previousReview = blockers.length;
+    } else {
+      note(blockers);
+      // Same stop rules as the gates stage: revise loops are spent, or the last revision did not shrink the list.
+      const stalled = previous !== null && blockers.length >= previous;
+      if (blockers.length === 0 || revisions >= settings.preset.maxRevise || stalled) {
+        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(blockers), findings };
+      }
     }
     previous = blockers.length;
     draft = (await reviseStage.run({ ...draftInput, draft, blockers }, ctx(revisions))).output;
@@ -180,7 +230,7 @@ export async function judgeRubric(llm: EngineLlm, judgeModel: string, brief: Eva
     evidence: promptEvidence(brief, now),
     article: fenceData("draft", article(d)),
   });
-  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: RubricSchema, maxTokens: 600 });
+  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: RubricSchema, maxTokens: 4000 });
   return Object.fromEntries(RUBRIC_DIMENSIONS.map((k) => [k, value[k]])) as Record<RubricDimension, number>;
 }
 
@@ -203,7 +253,7 @@ export async function judgePairwise(llm: EngineLlm, judgeModel: string, brief: E
     a: fenceData("draft-a", article(a)),
     b: fenceData("draft-b", article(b)),
   });
-  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: PairwiseSchema, maxTokens: 300 });
+  const { value } = await llm.json({ role: JUDGE, model: judgeModel, system: p.system, user: p.user, schema: PairwiseSchema, maxTokens: 4000 });
   if (value.winner === "tie") return "tie";
   return (value.winner === "A") === candidateIsA ? "win" : "loss";
 }
@@ -245,16 +295,17 @@ async function draftFor(brief: EvalBrief, mode: EvalMode, deps: EvalDeps, judge:
   try {
     let costUsd = 0;
     let g: Generated;
-    if (mode === "fast") {
-      const fast = await generateArticleForEval(brief, fastModel, deps);
+    const { base, model, review } = parseEvalMode(mode);
+    if (base === "fast") {
+      const fast = await generateArticleForEval(brief, model ?? fastModel, deps);
       costUsd = fast.costUsd;
       g = fast;
     } else {
-      g = await generateEngineArticle(brief, mode, gen.llm, deps);
+      g = await generateEngineArticle(brief, base, gen.llm, deps, model, review);
       costUsd = gen.meter.costUsd;
     }
     const rubric = await judgeRubric(judge, deps.judgeModel, brief, g, deps.now?.());
-    return { briefId: brief.id, mode, title: g.title, description: g.description, markdown: g.markdown, failedGates: g.failedGates, passed: g.failedGates.length === 0, rubric, costUsd };
+    return { briefId: brief.id, mode, title: g.title, description: g.description, markdown: g.markdown, failedGates: g.failedGates, passed: g.failedGates.length === 0, rubric, costUsd, ...(g.findings?.length ? { findings: g.findings } : {}) };
   } catch (e) {
     if (e instanceof RateLimitError) throw e;
     const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);

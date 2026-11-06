@@ -9,10 +9,9 @@ import type { ArticleRunRow, Stage } from "../../runtime/stage.js";
 import { StageInputError, type EngineMode } from "../../types.js";
 import { sanitizeText, wordCount } from "../../util.js";
 import { MIN_FAQ_ANSWER_LENGTH } from "../../markdown/faq.js";
-import { buildVoiceContentInstructions } from "../../../services/voice-content.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
-import { PLAN, BriefOutputSchema, type BriefOutput } from "../brief/schema.js";
-import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, type PromptEvidence } from "../shared.js";
+import { PLAN, BriefOutputSchema, fitDescription, type BriefOutput } from "../brief/schema.js";
+import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, writerVoice, type PromptEvidence } from "../shared.js";
 import { DraftSchema, type DraftOutput } from "./schema.js";
 
 export type DraftInput = {
@@ -60,7 +59,7 @@ export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput>
   const verified = evidence.filter((e) => e.verified);
   return {
     locale: run.locale,
-    voice: buildVoiceContentInstructions(settings as never).join("\n"),
+    voice: writerVoice(settings as never, run.topic),
     brief,
     evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
     sources: sources.map((s) => ({ id: s.id, url: s.url, finalUrl: s.finalUrl, title: s.title })),
@@ -77,7 +76,8 @@ export function toDraftOutput(input: DraftInput, locale: string, parts: { title:
   const { markdown, unresolved } = renderCitationsDetailed(raw, evidence, input.sources.map((s) => ({ ...s, markdown: "" })), input.citationStyle, locale);
   return {
     title: sanitizeText(parts.title),
-    description: sanitizeText(parts.description),
+    // Revisions overrun the limit by a few characters; a cut at a word boundary beats another paid round.
+    description: fitDescription(sanitizeText(parts.description)),
     markdown: raw,
     citedClaimIds: extractMarkerIds(raw),
     unresolvedMarkers: unresolved,
@@ -114,7 +114,7 @@ export const draftStage: Stage<DraftInput, DraftOutput> = {
       system: prompt.system,
       user: prompt.user,
       schema: DraftSchema,
-      maxTokens: 12_000,
+      maxTokens: 20_000,
       signal: ctx.signal,
     });
     // The brief already validated the title it chose, so the model's own title is ignored.

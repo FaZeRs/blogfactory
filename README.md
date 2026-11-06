@@ -48,7 +48,7 @@ For generation, **Ideas** finds and scores topics for each site and explains eve
 - they read the top-ranking pages and plan around their gaps;
 - they write with citations;
 - they check the draft before it reaches review.
-Each step is visible in Runs. Drafts for a Lindevo site use its markdown components and pass its linter.
+Each step is visible in Runs. A fact-check and, in deep mode, a reader review catch unsupported claims and invented numbers before review. Every article follows the site's brand profile and voice rules, and the banned language is checked, not only suggested. Drafts for a Lindevo site use its markdown components and pass its linter. **Revise with comments** in the editor rewrites a draft from your notes.
 
 **Cited in AI answers** (Search Growth) asks AI answer engines (OpenAI, Perplexity and Google, all through OpenRouter web search) the questions your customers ask, once a week. It records which answers cite your site, which mention your brand, and which competitors they cite instead. A question where competitors are cited and you aren't becomes an idea.
 

@@ -103,7 +103,7 @@ export async function researchCore(input: ResearchInput, ctx: StageContext, spen
     system: qPrompt.system,
     user: qPrompt.user,
     schema: ResearchQueriesSchema,
-    maxTokens: 800,
+    maxTokens: 4000,
     signal: ctx.signal,
   });
   spent.push(usage(planned));
@@ -163,7 +163,7 @@ export async function researchCore(input: ResearchInput, ctx: StageContext, spen
         system: prompt.system,
         user: prompt.user,
         schema: ClaimExtractionSchema,
-        maxTokens: 2500,
+        maxTokens: 8000,
         signal: ctx.signal,
       });
       spent.push(usage(r));

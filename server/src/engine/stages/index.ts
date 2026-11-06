@@ -5,6 +5,7 @@ import { deliverStage } from "./deliver/index.js";
 import { draftStage } from "./draft/index.js";
 import { gatesStage } from "./gates/index.js";
 import { researchStage } from "./research/index.js";
+import { reviewStage } from "./review/index.js";
 import { reviseStage } from "./revise/index.js";
 
 /** The stage registry handed to `loadEngineDeps(run, STAGES)`. */
@@ -13,6 +14,7 @@ export const STAGES: Record<StageKey, Stage<any, any>> = {
   brief: briefStage,
   draft: draftStage,
   gates: gatesStage,
+  review: reviewStage,
   revise: reviseStage,
   deliver: deliverStage,
 };
