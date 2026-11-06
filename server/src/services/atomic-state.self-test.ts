@@ -29,6 +29,9 @@ assert.notEqual(
   publishingIdempotencyKey({ ...request, options: { ...request.options, publishAt: new Date("2026-12-15T00:00:00Z") } }),
   "a new publish date creates a new publish operation",
 );
+const lv = { title: "T", slug: "t", description: "", content: "x", imageAlt: "" };
+assert.notEqual(publishingIdempotencyKey(request), publishingIdempotencyKey({ ...request, translation: lv }), "a translation made ready later is sent");
+assert.notEqual(publishingIdempotencyKey({ ...request, translation: lv }), publishingIdempotencyKey({ ...request, translation: { ...lv, content: "y" } }), "an edited translation is sent again");
 
 assert.deepEqual(publishingFailureState(false, new Error("provider failed")), {
   status: "failed",

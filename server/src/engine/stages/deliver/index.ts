@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../../db/index.js";
-import { articleGateResults, articleRuns, jobs, postTranslations, posts, sites } from "../../../db/schema.js";
+import { articleGateResults, articleRuns, jobs, postRevisions, postTranslations, posts, sites } from "../../../db/schema.js";
 import { currentPostRevision, setPostEditorialState } from "../../../services/post-revisions.js";
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "../../../services/seo-metadata.js";
 import { coverPromptDraft, queueCoverRequests } from "../../../services/cover-tools.js";
@@ -90,15 +90,21 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
     if (run.jobId) {
       await db.update(jobs).set({ resultPostIds: [post.id] }).where(and(eq(jobs.id, run.jobId), eq(jobs.userId, run.userId)));
     }
-    // The translations made before delivery belong to the revision that was just created. A retry keeps rows that exist (a person may have edited them).
+    // The translations were made from the draft as delivered, which is revision 1. On a retry after someone edited the
+    // post, the current revision is newer, and pinning to it would hide that the translations are now stale.
+    const firstRevision = revision?.revisionNumber === 1 ? revision : (await db.select({ id: postRevisions.id }).from(postRevisions)
+      .where(and(eq(postRevisions.userId, run.userId), eq(postRevisions.postId, post.id), eq(postRevisions.revisionNumber, 1))).limit(1))[0];
+    // A retry keeps rows that exist (a person may have edited them).
     try {
       const localized = await findStageOutput<LocalizeOutput>(run, "localize");
       const made = (localized?.output.locales ?? []).filter((l) => l.status !== "failed");
+      // The translation was made before the English got its provenance tag; Lindevo's parity lint needs the same last component in both.
+      const provenance = /<provenance\b[^>]*><\/provenance>\s*$/.exec(post.content)?.[0].trim();
       if (made.length) {
         await db.insert(postTranslations).values(made.map((l) => ({
           userId: run.userId, siteId: run.siteId, postId: post.id, locale: l.locale,
-          title: l.title, slug: l.slug, description: l.description, content: l.content, imageAlt: l.imageAlt, keyword: l.keyword,
-          status: l.status === "ready" ? "ready" : "needs_review", findings: l.findings, sourceRevisionId: revision?.id ?? null, costUsd: l.costUsd,
+          title: l.title, slug: l.slug, description: l.description, content: provenance ? appendProvenance(l.content, provenance).trimEnd() : l.content, imageAlt: l.imageAlt, keyword: l.keyword,
+          status: l.status === "ready" ? "ready" : "needs_review", findings: l.findings, sourceRevisionId: firstRevision?.id ?? null, costUsd: l.costUsd,
         }))).onConflictDoNothing();
       }
     } catch (err) {

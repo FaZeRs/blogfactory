@@ -19,6 +19,8 @@ export type LocalizeInput = {
 };
 
 const ERROR_MAX = 200;
+/** A locale is started only with this much of the stage lease left: an aborted stage is retried and, after three, fails the run and its English draft. */
+const LOCALE_MIN_MS = 10 * 60_000;
 
 /**
  * After the English article passed its checks and before delivery: translates it into each of the site's enabled locales.
@@ -40,8 +42,10 @@ export const localizeStage: Stage<LocalizeInput, LocalizeOutput> = {
     let spent = 0;
     for (const locale of input.locales) {
       const left = input.remainingUsd - spent;
-      if (left <= 0) {
-        locales.push({ locale: locale.locale, status: "failed", title: "", slug: "", description: "", content: "", imageAlt: "", keyword: null, findings: [], costUsd: 0, error: "The run budget is spent" });
+      const outOfTime = !!run.leaseExpiresAt && run.leaseExpiresAt.getTime() - ctx.deps.now().getTime() < LOCALE_MIN_MS;
+      if (left <= 0 || outOfTime) {
+        const error = left <= 0 ? "The run budget is spent" : "No time left in this run; translate it from the post editor";
+        locales.push({ locale: locale.locale, status: "failed", title: "", slug: "", description: "", content: "", imageAlt: "", keyword: null, findings: [], costUsd: 0, error });
         continue;
       }
       try {
@@ -57,8 +61,11 @@ export const localizeStage: Stage<LocalizeInput, LocalizeOutput> = {
       } catch (error) {
         // An aborted attempt (the lease ran out) is retried by the runtime; anything else is recorded and the English still ships.
         if (ctx.signal.aborted) throw error;
+        // `localizeArticle` attaches what it spent before failing; the next locale's budget must count it.
+        const cost = Number((error as { costUsd?: unknown } | null)?.costUsd) || 0;
+        spent += cost;
         locales.push({
-          locale: locale.locale, status: "failed", title: "", slug: "", description: "", content: "", imageAlt: "", keyword: null, findings: [], costUsd: 0,
+          locale: locale.locale, status: "failed", title: "", slug: "", description: "", content: "", imageAlt: "", keyword: null, findings: [], costUsd: cost,
           error: truncate(error instanceof Error ? error.message : "Localization failed", ERROR_MAX),
         });
       }

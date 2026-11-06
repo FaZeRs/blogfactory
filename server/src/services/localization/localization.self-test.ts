@@ -221,6 +221,13 @@ assert.equal(formalAddressGate("tulkojums tevišķi", lv).passed, true, "whole w
   assert.deepEqual(gateBlockers(warned), [], "repeat and link findings are warnings");
   assert.deepEqual(toFindings(warned).map((f) => f.gate).sort(), ["links", "repeat"]);
   assert.ok(toFindings(warned).every((f) => f.severity === "warning"));
+
+  // The Sources heading is held to the glossary's term, and only when there is one.
+  const withSources = `${TR}\n\n## Sources\n\n1. [A](https://a.example) — a.example`;
+  const sourcesIn = (loc: typeof lv) => toFindings(translationChecks({ en: { title: "T", description: "D", markdown: EN }, tr: { title: "Virsraksts", description: "Apraksts", slug: "virsraksts", markdown: withSources }, locale: loc, profile: "markdown", gates: cfg, voice: ENGINE_CONFIG.voice }))
+    .filter((f) => /sources heading/.test(f.message)).map((f) => f.message);
+  assert.deepEqual(sourcesIn({ ...lv, glossary: [...lv.glossary, { source: "Sources", target: "Avoti" }] }), ['the sources heading is still the English "Sources"; the glossary says "Avoti"']);
+  assert.deepEqual(sourcesIn({ ...lv, glossary: lv.glossary.filter((g) => g.source.toLowerCase() !== "sources") }), [], "no glossary term, no warning");
 }
 
 console.log("localization self-test passed");

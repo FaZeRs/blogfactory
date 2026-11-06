@@ -43,7 +43,7 @@ import { IDEA_SORTS, IDEA_STATUSES, IdeaActionError, bookOwnedIdea, listIdeas, r
 import { queueDiscovery } from "../services/ideas/discovery.js";
 import { hasMcpScope, type McpPrincipal } from "./auth.js";
 import { ACTIVE_MCP_TOOL_NAMES, MCP_SCOPES, MCP_SERVER_VERSION, MCP_TOOL_NAMES, type McpScope } from "./contracts.js";
-import { staleSourceRevisions } from "../services/localization/stale.js";
+import { isTranslationStale, staleSourceRevisions } from "../services/localization/stale.js";
 
 export const MCP_REVIEW_APP_URI = "ui://blogfactory/review-post.html";
 
@@ -627,7 +627,7 @@ async function getPost(principal: McpPrincipal, input: { post_id: string }) {
     translations: translationRows.map((row) => ({
       locale: row.locale,
       status: row.status,
-      stale: row.status !== "running" && staleTranslations.has(row.sourceRevisionId),
+      stale: isTranslationStale(row, staleTranslations),
       title: row.title,
       slug: row.slug,
     })),

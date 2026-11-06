@@ -9,6 +9,7 @@ const t = enabled ? await import("../test-db.js") : null;
 const { db } = enabled ? await import("../../../db/index.js") : { db: null as never };
 const schema = enabled ? await import("../../../db/schema.js") : ({} as never);
 const { localizeArticle } = await import("../../../services/localization/localize.js");
+const { localizeStage } = await import("./index.js");
 const { saveLocalization } = await import("../../../services/localization/settings.js");
 const { beginTranslation, runTranslation, translatePost, RUNNING_STALE_MS } = await import("../../../services/localization/translate-post.js");
 const { updatePostWithRevision, currentPostRevision } = await import("../../../services/post-revisions.js");
@@ -258,6 +259,20 @@ describe.skipIf(!enabled)("the localize stage", () => {
     expect((row!.findings as { severity: string }[]).some((f) => f.severity === "blocker")).toBe(true);
   });
 
+  test("a locale is not started without enough lease left, so the stage still advances to deliver", async () => {
+    const { run } = await setup({ enabled: true, locales: [LV] });
+    const made = t!.makeDeps({ drafts: [t!.GOOD_ARTICLE], revisions: [] });
+    const localizer = withLocalizer(made.deps, { reviews: [] });
+    const deps = { ...made.deps, llm: localizer.llm };
+    const at = await t!.drive(run.id, deps, "localize");
+    const ctx = { run: { ...at, leaseExpiresAt: new Date(Date.now() + 60_000) }, deps, signal: new AbortController().signal, attempt: 1 };
+    const out = await localizeStage.run(await localizeStage.input(ctx), ctx);
+    expect(out.next).toEqual({ type: "advance", to: "deliver" });
+    expect(out.output.locales[0]!.status).toBe("failed");
+    expect(out.output.locales[0]!.error).toMatch(/No time left/);
+    expect(localizer.translations()).toBe(0);
+  });
+
   test("a site without localization goes straight from the checks to deliver", async () => {
     const { run } = await setup(null);
     const { deps } = t!.makeDeps({ drafts: [t!.GOOD_ARTICLE], revisions: [] });
@@ -306,7 +321,7 @@ describe.skipIf(!enabled)("translatePost", () => {
     expect(after!.id).not.toBe(saved.sourceRevisionId);
   });
 
-  test("an existing translation is updated: it is the base, the English change is listed, and a hand-edited row stays edited until re-made", async () => {
+  test("an existing translation is updated: it is the base, the English change is listed, and a hand-edited row stays edited, so its wording stays protected on the next update too", async () => {
     const { user, post: p } = await post();
     const first = fake({ localize: [tr()], localize_review: [CLEAN] });
     await translatePost(user.id, p.id, "lv", { deps: deps(first.llm) });
@@ -319,7 +334,7 @@ describe.skipIf(!enabled)("translatePost", () => {
     expect(user1).toContain("Rediģēts virsraksts");
     expect(user1).toContain("Brand new sentence.");
     const saved = (await row(p.id))!;
-    expect(saved.status).toBe("ready");
+    expect(saved.status).toBe("edited");
     expect(saved.costUsd).toBeCloseTo(0.04);
     const rev = await currentPostRevision(user.id, p.id);
     expect(saved.sourceRevisionId).toBe(rev!.id);
@@ -340,19 +355,29 @@ describe.skipIf(!enabled)("translatePost", () => {
     void claim;
   });
 
-  test("a failed run removes a new row and restores an old one", async () => {
+  test("a failed run records why on the row (needs review) and keeps the earlier text; a cancelled one is restored silently", async () => {
     const { user, post: p } = await post();
     const none = fake({ localize: [], localize_review: [] });
     await expect(translatePost(user.id, p.id, "lv", { deps: deps(none.llm) })).rejects.toThrow();
-    expect(await row(p.id)).toBeUndefined();
+    const failedNew = (await row(p.id))!;
+    expect([failedNew.status, failedNew.content]).toEqual(["needs_review", ""]);
+    expect((failedNew.findings as { gate: string; message: string }[])[0]).toMatchObject({ gate: "run" });
+    expect((failedNew.findings as { message: string }[])[0]!.message).toMatch(/^The translation could not finish: /);
     const ok = fake({ localize: [tr()], localize_review: [CLEAN] });
     await translatePost(user.id, p.id, "lv", { deps: deps(ok.llm) });
     const before = (await row(p.id))!;
     await expect(translatePost(user.id, p.id, "lv", { deps: deps(none.llm) })).rejects.toThrow();
     const after = (await row(p.id))!;
-    expect(after.status).toBe("ready");
-    expect(after.title).toBe(before.title);
-    expect(after.updatedAt.getTime()).toBe(before.updatedAt.getTime());
+    expect([after.status, after.title, after.content]).toEqual(["needs_review", before.title, before.content]);
+    // A cancelled run (the lease or the request went away) leaves the row as it was.
+    const ok2 = fake({ localize: [tr()], localize_review: [CLEAN] });
+    await translatePost(user.id, p.id, "lv", { deps: deps(ok2.llm) });
+    const settled = (await row(p.id))!;
+    const controller = new AbortController();
+    controller.abort();
+    await expect(translatePost(user.id, p.id, "lv", { signal: controller.signal, deps: { ...deps(none.llm), signal: controller.signal } })).rejects.toThrow();
+    const restored = (await row(p.id))!;
+    expect([restored.status, restored.updatedAt.getTime()]).toEqual([settled.status, settled.updatedAt.getTime()]);
   });
 
   test("tenant scope: another user's post is not found, and a locale the site has not enabled is refused", async () => {

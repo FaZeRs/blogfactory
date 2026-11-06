@@ -421,7 +421,7 @@ const draftProgressForJob = (job: Job): DraftProgress | null => {
 
 const ENGINE_STEP_LABELS: Record<string, string> = {
   engine_research: "Researching", engine_brief: "Planning", engine_draft: "Writing",
-  engine_gates: "Quality checks", engine_revise: "Revising", engine_deliver: "Delivering",
+  engine_gates: "Quality checks", engine_revise: "Revising", engine_localize: "Translating", engine_deliver: "Delivering",
 };
 const stepLabel = (step?: string) => ENGINE_STEP_LABELS[step ?? ""] ?? (step || "queued").replace(/_/g, " ");
 

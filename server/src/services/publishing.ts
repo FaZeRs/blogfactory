@@ -273,6 +273,8 @@ export function publishingIdempotencyKey(input: {
   postUpdatedAt: Date;
   revisionId?: string | null;
   options: PublishOptions;
+  /** The translation sent with the article: a new or edited one is new content even when the English revision is the same. */
+  translation?: LindevoTranslation;
 }) {
   return createHash("sha256").update(stableJson({
     userId: input.userId,
@@ -280,6 +282,7 @@ export function publishingIdempotencyKey(input: {
     integrationId: input.integrationId,
     contentVersion: input.revisionId || input.postUpdatedAt.toISOString(),
     options: input.options,
+    ...(input.translation ? { translation: input.translation } : {}),
   })).digest("hex");
 }
 
@@ -455,6 +458,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
     postUpdatedAt: post.updatedAt,
     revisionId: revision?.id,
     options: { ...publishOptions, mode },
+    translation: article.lv,
   });
   const claim = await claimPublication({
     key: idempotencyKey,
@@ -560,6 +564,13 @@ export async function publishPost(userId: string, postId: string, integrationId:
               : await publishFramer(credentials as FramerCredentials, article, mode, integration.config as Record<string, unknown> | null);
 
     const result = externalResult;
+    // A Latvian slug the CMS only accepted with a suffix is stored, so links from other translations point at the real page.
+    const acceptedLvSlug = (result.responseData as { lvSlug?: unknown } | null)?.lvSlug;
+    if (provider === "lindevo" && article.lv && typeof acceptedLvSlug === "string" && acceptedLvSlug !== article.lv.slug && integration.siteId) {
+      await db.update(postTranslations).set({ slug: acceptedLvSlug }).where(and(
+        eq(postTranslations.userId, userId), eq(postTranslations.siteId, integration.siteId), eq(postTranslations.postId, postId), eq(postTranslations.locale, "lv"),
+      )).catch(() => console.error("[publishing] Could not store the accepted Latvian slug"));
+    }
     const publishedAt = new Date();
     publication = await db.transaction(async (tx) => {
       const [updatedPublication] = await tx
@@ -2230,19 +2241,25 @@ async function currentLindevoTranslation(userId: string, postId: string, siteId:
 }
 
 const LV_SLUG_RETRIES = 6;
-const SLUG_CONFLICT_RE = /slug[^]*(exist|taken|conflict|duplicate|in use)|(exist|taken|conflict|duplicate|in use)[^]*slug/i;
+/** Lindevo's own refusal (packages/api SlugTakenError): "Slug already exists: <slug> (<locale>)". Only the lv slug is retried. */
+const LV_SLUG_TAKEN_RE = /Slug already exists: \S+ \(lv\)/;
+const lvSlugTaken = (error: unknown) => LV_SLUG_TAKEN_RE.test(error instanceof Error ? error.message : "");
 
-/** Sends the article; a slug conflict while a translation rides along retries its slug as -2 to -6, then reports the first error. */
-async function sendLindevoArticle(credentials: LindevoCredentials, name: "create_article" | "update_article", args: ReturnType<typeof lindevoArticleArgs> & { id?: string }) {
+/**
+ * Sends the article. A taken Latvian slug while a translation rides along retries it as -2 to -6, then reports the first
+ * error; an English slug conflict is reported at once. Returns the lv slug the CMS accepted, so it can be stored.
+ */
+export async function sendLindevoArticle(credentials: LindevoCredentials, name: "create_article" | "update_article", args: ReturnType<typeof lindevoArticleArgs> & { id?: string }, call = lindevoCall) {
   try {
-    return await lindevoCall(credentials, name, args);
+    return { data: await call(credentials, name, args), lvSlug: args.lv?.slug };
   } catch (first) {
-    if (!args.lv || !SLUG_CONFLICT_RE.test(first instanceof Error ? first.message : "")) throw first;
+    if (!args.lv || !lvSlugTaken(first)) throw first;
     for (let n = 2; n <= LV_SLUG_RETRIES; n++) {
+      const slug = `${args.lv.slug.slice(0, 96)}-${n}`;
       try {
-        return await lindevoCall(credentials, name, { ...args, lv: { ...args.lv, slug: `${args.lv.slug.slice(0, 96)}-${n}` } });
+        return { data: await call(credentials, name, { ...args, lv: { ...args.lv, slug } }), lvSlug: slug };
       } catch (error) {
-        if (!SLUG_CONFLICT_RE.test(error instanceof Error ? error.message : "")) throw error;
+        if (!lvSlugTaken(error)) throw error;
       }
     }
     throw first;
@@ -2294,7 +2311,7 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
     if (url) uploaded.set(image.url, url);
   }
   const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded, publishAt);
-  const data = existing && previousId
+  const { data, lvSlug } = existing && previousId
     ? await sendLindevoArticle(credentials, "update_article", { id: previousId, ...args })
     : await sendLindevoArticle(credentials, "create_article", args);
   const id = typeof data.id === "string" ? data.id : null;
@@ -2304,7 +2321,7 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
     // Preview links carry a signed token, so only the dashboard edit link is stored.
     externalUrl: null,
     externalEditUrl: id ? `${new URL(credentials.mcpUrl).origin}/blog/${id}/edit` : null,
-    responseData: { id, slug: data.slug ?? args.slug, updated: Boolean(existing), inlineImagesUploaded: uploaded.size },
+    responseData: { id, slug: data.slug ?? args.slug, updated: Boolean(existing), inlineImagesUploaded: uploaded.size, ...(lvSlug ? { lvSlug } : {}) },
   };
 }
 

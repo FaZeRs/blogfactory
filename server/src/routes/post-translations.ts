@@ -8,23 +8,20 @@ import { ApiError, readJsonObject, safeError } from "../http/error-contract.js";
 import { getUserId } from "../middleware/auth.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
-import { SLUG_MAX, type Finding } from "../services/localization/checks.js";
+import { SLUG_MAX, SLUG_RE, type Finding } from "../services/localization/checks.js";
 import { LOCALE_RE } from "../services/localization/settings.js";
 import { beginTranslation, runTranslation } from "../services/localization/translate-post.js";
 import { currentPostRevision } from "../services/post-revisions.js";
-import { staleSourceRevisions } from "../services/localization/stale.js";
+import { isTranslationStale, staleSourceRevisions } from "../services/localization/stale.js";
 import { UUID, validation } from "./owned-site.js";
 
 export const postTranslationsRoutes = new Hono();
-
-const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function serializeTranslation(row: typeof postTranslations.$inferSelect, stale: Set<string | null>) {
   return {
     locale: row.locale,
     status: row.status,
-    // A placeholder that is still being made has no text to be out of date.
-    stale: row.status !== "running" && stale.has(row.sourceRevisionId),
+    stale: isTranslationStale(row, stale),
     title: row.title,
     slug: row.slug,
     description: row.description,
@@ -114,8 +111,9 @@ postTranslationsRoutes.post("/:id/translations/:locale/revise", async (c) => {
   if (comments.length < REQUESTS_MIN || comments.length > REQUESTS_MAX) throw validation("comments", `Write ${REQUESTS_MIN}–${REQUESTS_MAX} characters of corrections`);
   if (!persistentBackgroundExecution()) throw new ApiError(400, "validation_error", "Revising needs the persistent background worker (BACKGROUND_EXECUTION_MODE=worker).");
   if (!engineAiEndpoint(process.env, await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
+  if (!post.siteId) throw new ApiError(400, "validation_error", "This post has no site, so it has no languages");
   const [existing] = await db.select({ content: postTranslations.content, status: postTranslations.status }).from(postTranslations)
-    .where(and(eq(postTranslations.userId, userId), eq(postTranslations.postId, post.id), eq(postTranslations.locale, locale))).limit(1);
+    .where(and(eq(postTranslations.userId, userId), eq(postTranslations.siteId, post.siteId), eq(postTranslations.postId, post.id), eq(postTranslations.locale, locale))).limit(1);
   if (!existing || existing.status !== "running" && existing.content.trim() === "") throw new ApiError(404, "not_found", "There is no translation to revise yet. Translate the post first.");
   const claim = await beginTranslation(userId, post.id, locale);
   waitUntil(runTranslation(claim, { requests: comments }).catch((error) => { console.error("[localize] Translation revision failed", safeError(error)); }));

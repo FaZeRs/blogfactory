@@ -284,6 +284,10 @@ export async function localizeArticle(args: {
       patched: patchedTotal,
     };
     return result;
+  } catch (error) {
+    // The caller books what a failed translation already spent (the engine stage counts it against the run budget).
+    if (error && typeof error === "object") (error as { costUsd?: number }).costUsd = spent;
+    throw error;
   } finally {
     const findings = result?.findings ?? [];
     await finishOperationEvent({

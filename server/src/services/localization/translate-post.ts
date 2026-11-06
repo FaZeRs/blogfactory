@@ -36,6 +36,8 @@ export type TranslationClaim = {
   prior: TranslationRow | null;
   /** The post revision the translation is made from. */
   revisionId: string | null;
+  /** That revision's own English text, so the text translated and the revision recorded always match. */
+  english: { title: string; summary: string | null; content: string };
 };
 
 /**
@@ -50,20 +52,25 @@ export async function beginTranslation(userId: string, postId: string, locale: s
   const target = settings.enabled ? settings.locales.find((l) => l.locale === locale) : undefined;
   if (!target) throw new ApiError(400, "validation_error", "This language is not enabled for the site");
   const siteId = post.siteId;
-  const revisionId = (await currentPostRevision(userId, postId))?.id ?? null;
+  // The source text comes from the same revision row as the id: an English edit committing in between cannot pair old
+  // text with the new revision (which would make an outdated translation look current).
+  const revision = await currentPostRevision(userId, postId);
+  const revisionId = revision?.id ?? null;
+  const snapshot = revision ? postRevisionSnapshot(revision.snapshot) : null;
+  const english = snapshot ? { title: snapshot.title, summary: snapshot.summary, content: snapshot.content } : { title: post.title, summary: post.summary, content: post.content };
 
   const prior = await db.transaction(async (tx) => {
     const inserted = await tx.insert(postTranslations).values({ userId, siteId, postId, locale, status: "running", updatedAt: now }).onConflictDoNothing().returning({ id: postTranslations.id });
     if (inserted.length) return null;
     const [row] = await tx.select().from(postTranslations)
-      .where(and(eq(postTranslations.postId, postId), eq(postTranslations.locale, locale), eq(postTranslations.userId, userId))).for("update");
+      .where(and(eq(postTranslations.postId, postId), eq(postTranslations.locale, locale), eq(postTranslations.userId, userId), eq(postTranslations.siteId, siteId))).for("update");
     if (!row) throw new ApiError(404, "not_found", "Post not found");
     if (row.status === "running" && now.getTime() - row.updatedAt.getTime() < RUNNING_STALE_MS) throw new ApiError(409, "conflict", "A translation is already running");
-    await tx.update(postTranslations).set({ status: "running", updatedAt: now }).where(and(eq(postTranslations.id, row.id), eq(postTranslations.userId, userId)));
+    await tx.update(postTranslations).set({ status: "running", updatedAt: now }).where(and(eq(postTranslations.id, row.id), eq(postTranslations.userId, userId), eq(postTranslations.siteId, siteId)));
     // The text of a dead run is still the best base there is, and it needs a person's eyes.
     return row.status === "running" ? { ...row, status: "needs_review" } : row;
   });
-  return { userId, siteId, post, locale: target, prior, revisionId };
+  return { userId, siteId, post, locale: target, prior, revisionId, english };
 }
 
 async function loadDeps(userId: string, siteId: string, postRow: typeof posts.$inferSelect, signal?: AbortSignal): Promise<LocalizeDeps> {
@@ -86,12 +93,12 @@ async function loadDeps(userId: string, siteId: string, postRow: typeof posts.$i
 
 /** What the post says in English now: its summary (or SEO description), content, cover alt text and primary query. */
 async function sourceOf(claim: TranslationClaim) {
-  const { userId, post } = claim;
+  const { userId, post, english } = claim;
   const seo = seoMetadata(post.seoMetadata);
   const [cover] = await db.select({ alt: imageAssets.altText }).from(imageAssets)
     .where(and(eq(imageAssets.userId, userId), eq(imageAssets.postId, post.id), eq(imageAssets.type, "cover")))
     .orderBy(desc(imageAssets.createdAt)).limit(1);
-  return { title: post.title, description: post.summary || seo?.metaDescription || "", markdown: post.content, imageAlt: cover?.alt ?? "", keyword: seo?.primaryQuery ?? null };
+  return { title: english.title, description: english.summary || seo?.metaDescription || "", markdown: english.content, imageAlt: cover?.alt ?? "", keyword: seo?.primaryQuery ?? null };
 }
 
 /** What changed in the English since the translation's source revision, for update mode. */
@@ -110,7 +117,7 @@ async function changesSince(claim: TranslationClaim, content: string): Promise<s
  */
 export async function runTranslation(claim: TranslationClaim, opts: { signal?: AbortSignal; deps?: LocalizeDeps; requests?: string } = {}): Promise<LocalizeResult> {
   const { userId, siteId, post, locale, prior } = claim;
-  const where = and(eq(postTranslations.postId, post.id), eq(postTranslations.locale, locale.locale), eq(postTranslations.userId, userId));
+  const where = and(eq(postTranslations.postId, post.id), eq(postTranslations.locale, locale.locale), eq(postTranslations.userId, userId), eq(postTranslations.siteId, siteId));
   try {
     const deps = opts.deps ?? await loadDeps(userId, siteId, post, opts.signal);
     const source = await sourceOf(claim);
@@ -127,16 +134,33 @@ export async function runTranslation(claim: TranslationClaim, opts: { signal?: A
     const t = result.translation;
     await db.update(postTranslations).set({
       title: t.title, slug: t.slug, description: t.description, content: t.content, imageAlt: t.imageAlt, keyword: t.keyword,
-      // A translation revised to the owner's corrections is theirs: later updates keep its wording.
-      status: opts.requests && result.status === "ready" ? "edited" : result.status, findings: result.findings, sourceRevisionId: claim.revisionId,
+      // A translation revised to the owner's corrections, or edited by hand before, is theirs: it stays edited, so every
+      // later update keeps protecting its wording.
+      status: (opts.requests || prior?.status === "edited") && result.status === "ready" ? "edited" : result.status, findings: result.findings, sourceRevisionId: claim.revisionId,
       costUsd: (prior?.costUsd ?? 0) + result.costUsd, updatedAt: new Date(),
     }).where(where);
     return result;
   } catch (error) {
-    if (prior && prior.content.trim() !== "") await db.update(postTranslations).set({ status: prior.status, updatedAt: prior.updatedAt }).where(where).catch(() => {});
-    else await db.delete(postTranslations).where(where).catch(() => {});
+    // The run is in the background, so the reason is kept on the row for the editor to show; the text of a previous
+    // translation stays. A cancelled run (lease or request gone) is restored silently instead.
+    if (opts.signal?.aborted) {
+      if (prior && prior.content.trim() !== "") await db.update(postTranslations).set({ status: prior.status, updatedAt: prior.updatedAt }).where(where).catch(() => {});
+      else await db.delete(postTranslations).where(where).catch(() => {});
+    } else {
+      const failure: Finding = { gate: "run", severity: "blocker", message: `The translation could not finish: ${failureReason(error)}` };
+      const earlier = (prior?.findings as Finding[] | undefined)?.filter((f) => f.gate !== "run") ?? [];
+      await db.update(postTranslations).set({ status: "needs_review", findings: [failure, ...earlier], updatedAt: new Date() }).where(where).catch(() => {});
+    }
     throw error;
   }
+}
+
+/** A reason safe to show: our own API messages and the model clients' short status lines, never provider or prompt text. */
+export function failureReason(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  const message = error instanceof Error ? error.message : "";
+  if (/^(LLM |Claude Code|Codex|claude-code|codex|Subscription|OpenRouter)/.test(message)) return message.slice(0, 200);
+  return "the model call failed. Try again, or check the model settings.";
 }
 
 /** The on-demand "Translate" / "Update translation": `beginTranslation`, then `runTranslation`. */

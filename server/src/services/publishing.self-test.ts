@@ -4,7 +4,7 @@ process.env.DATABASE_URL ||= "postgres://blogfactory:blogfactory@localhost:5432/
 process.env.API_KEY_ENCRYPTION_SECRET ||= "publishing-self-test-secret";
 
 const { decryptSecret, encryptSecret } = await import("./api-keys.js");
-const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, lindevoArticleArgs, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, normalizeLindevoMcpUrl, parseLindevoToolResult, slugify } = await import("./publishing.js");
+const { applyOrtakAlanMetadata, appendBrandCta, articleBody, encryptProviderCredentials, ghostErrorMessage, ghostPostFields, lindevoArticleArgs, markdownToHtml, markdownToWixRichContent, normalizeGhostUrl, normalizeLindevoMcpUrl, parseLindevoToolResult, sendLindevoArticle, slugify } = await import("./publishing.js");
 const { appendOrtakAlanDisclosures, completeSentenceWithinLimit, hasVisibleOrtakAlanSources, isMeaningfulTurkishAlt, normalizeOrtakAlanMetadata, ortakAlanFeatureImageCaption, ortakAlanTags, validateOrtakAlanMetadata } = await import("./ortak-alan-publishing.js");
 
 const ortakAlanMetadata = normalizeOrtakAlanMetadata({
@@ -363,5 +363,23 @@ const wixRichContentWithTableFallback = markdownToWixRichContent(
 const fallbackTable = wixRichContentWithTableFallback.nodes.find((node) => node.type === "BULLETED_LIST");
 assert.equal(JSON.stringify(fallbackTable).includes("| Yöntem |"), false);
 assert.equal(JSON.stringify(fallbackTable).includes("Çevrim Süresi: 15-40 sn"), true);
+
+// A taken Latvian slug is retried with a suffix and the accepted slug is returned; an English conflict is not retried.
+{
+  const creds = { mcpUrl: "https://cms.example/mcp", token: "t", category: "news" } as never;
+  const args = { title: "T", slug: "en", description: "", content: "x", category: "news", tags: [], lv: { title: "L", slug: "lv-slug", description: "", content: "y", imageAlt: "" } } as never;
+  const sent: string[] = [];
+  const takenUntil3 = async (_c: unknown, _n: string, a: Record<string, any>) => {
+    sent.push(a.lv.slug);
+    if (a.lv.slug !== "lv-slug-3") throw new Error(`Slug already exists: ${a.lv.slug} (lv)`);
+    return { id: "1", slug: "en" };
+  };
+  const ok = await sendLindevoArticle(creds, "create_article", args, takenUntil3 as never);
+  assert.deepEqual([ok.lvSlug, sent], ["lv-slug-3", ["lv-slug", "lv-slug-2", "lv-slug-3"]]);
+  let calls = 0;
+  const enTaken = async () => { calls += 1; throw new Error("Slug already exists: en (en)"); };
+  await assert.rejects(sendLindevoArticle(creds, "create_article", args, enTaken as never), /\(en\)/);
+  assert.equal(calls, 1, "an English slug conflict is reported at once");
+}
 
 console.log("publishing self-check passed");

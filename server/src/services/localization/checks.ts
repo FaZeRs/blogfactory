@@ -18,7 +18,7 @@ export type CheckedTranslation = CheckText & { slug: string };
 export type Finding = { gate: string; severity: "blocker" | "warning"; message: string; excerpt?: string; hint?: string };
 
 export const SLUG_MAX = 100;
-const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ABSOLUTE_URL_RE = /^https?:\/\//i;
 const MARK_LINK_RE = /\[[⁰¹²³⁴⁵⁶⁷⁸⁹]+\]\([^)\s]+\)/g;
 const SOURCES_ITEM_RE = /^\d+\.[ \t].*?\]\(([^)\s]+)\)/gm;
@@ -235,7 +235,10 @@ export function translationChecks(input: CheckInput): GateResult[] {
   const { en, tr, locale } = input;
   const plain = `${tr.title}\n${tr.description}\n${toPlainText(tr.markdown)}`;
   const staleLinks = untranslatedBlogLinks(tr.markdown);
-  const sourcesLeft = tr.markdown.split("\n").some((l) => l.trim() === "## Sources") && !locale.locale.startsWith("fr");
+  // The glossary says what the heading is in this language; without an entry there is nothing to hold it to (in French
+  // or Danish "Sources" is already right).
+  const sourcesTerm = locale.glossary.find((g) => g.source.trim().toLowerCase() === "sources")?.target.trim();
+  const sourcesLeft = !!sourcesTerm && sourcesTerm.toLowerCase() !== "sources" && tr.markdown.split("\n").some((l) => l.trim() === "## Sources");
   return [
     parityGate(en.markdown, tr.markdown, input.profile),
     citationsGate(en.markdown, tr.markdown),
@@ -250,7 +253,7 @@ export function translationChecks(input: CheckInput): GateResult[] {
     })), "warning"),
     gateResult("links", [
       ...staleLinks.map((url): GateIssue => ({ excerpt: url, message: "links to the English edition of another post, which has no translation in this language yet" })),
-      ...(sourcesLeft ? [{ message: 'the sources heading is still the English "Sources"' }] : []),
+      ...(sourcesLeft ? [{ message: `the sources heading is still the English "Sources"; the glossary says "${sourcesTerm}"` }] : []),
     ], "warning"),
   ];
 }

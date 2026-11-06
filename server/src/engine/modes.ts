@@ -18,7 +18,7 @@ export type ModePreset = {
   };
   models: Record<ModelRole, string>;
   budgetUsd: number;
-  /** Rough per-stage model cost, used to refuse a run the budget cannot cover. Gates and delivery call no model; localize is 0 because it spends only what the run budget has left and never fails the run. */
+  /** Rough per-stage model cost, used to refuse a run the budget cannot cover; a stage at 0 is never refused. Gates and delivery call no model; localize is 0 because it spends only what the run budget has left and never fails the run. */
   estimateUsd: Record<StageKey, number>;
 };
 

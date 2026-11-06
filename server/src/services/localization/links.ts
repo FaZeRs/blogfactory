@@ -43,7 +43,8 @@ export function untranslatedBlogLinks(markdown: string): string[] {
 
 /**
  * English slug to translated slug for the site's posts that have a translation in `locale`. A post's English slug
- * is its SEO metadata slug; a post without one has no entry. Scoped to the user and site.
+ * is its SEO metadata slug; a post without one has no entry. A translation that needs review is never sent to the
+ * CMS, so it has no page to link to. Scoped to the user and site.
  */
 export async function translatedSlugs(userId: string, siteId: string, locale: string, exceptPostId?: string): Promise<Map<string, string>> {
   const rows = await db
@@ -55,6 +56,7 @@ export async function translatedSlugs(userId: string, siteId: string, locale: st
       eq(postTranslations.siteId, siteId),
       eq(postTranslations.locale, locale),
       ne(postTranslations.slug, ""),
+      ne(postTranslations.status, "needs_review"),
       ...(exceptPostId ? [ne(postTranslations.postId, exceptPostId)] : []),
     ));
   return new Map(rows.flatMap((r) => (r.en ? [[r.en, r.slug] as const] : [])));

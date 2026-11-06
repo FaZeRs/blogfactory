@@ -31,3 +31,7 @@ export async function staleSourceRevisions(userId: string, sourceIds: (string | 
   for (const id of others) if (found.get(id) !== now) stale.add(id);
   return stale;
 }
+
+/** A translation is stale when its source revision is; a placeholder that is still being made has no text to be out of date. */
+export const isTranslationStale = (row: { status: string; sourceRevisionId: string | null }, stale: Set<string | null>) =>
+  row.status !== "running" && stale.has(row.sourceRevisionId);
