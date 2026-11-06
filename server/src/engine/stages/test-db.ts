@@ -58,7 +58,8 @@ const URLS = [1, 2, 3].map((i) => `https://source${i}.example/report`);
 
 const sentence = (n: number, i: number) =>
   `Item ${n}${i} describes a plain step that a small team can plan, test and repeat each week without buying anything new.`;
-const para = (n: number) => Array.from({ length: 5 }, (_, i) => sentence(n, i)).join(" ");
+// Two-sentence paragraphs, as the style gate expects (its paragraph-length check).
+const para = (n: number) => [[0, 1], [2, 3], [4]].map((ids) => ids.map((i) => sentence(n, i)).join(" ")).join("\n\n");
 const FAQ = [
   "## Frequently Asked Questions",
   "### How often should a team review its energy use?",

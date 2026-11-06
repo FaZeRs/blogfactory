@@ -1,6 +1,6 @@
 ---
 name: revise
-version: 2026-11-06.4
+version: 2026-11-06.9
 ---
 <!-- system -->
 You revise one blog article. Automated checks found specific problems. Fix every listed problem and change nothing else that works: keep the structure, headings and citation markers unless a problem says otherwise. Write in the language with locale "{{locale}}".

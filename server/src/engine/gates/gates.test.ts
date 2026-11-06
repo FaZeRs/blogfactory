@@ -186,3 +186,21 @@ test("a site's banned phrases block anywhere, banned words only as whole words",
   expect(issues("Seamlessly done on Tuesday, tune it.")).toEqual([]);
   expect(withSiteVoice(ENGINE_CONFIG.voice, {})).toBe(ENGINE_CONFIG.voice);
 });
+
+test("style blocks dense prose: an average over 22 words a sentence names the longest sentences", async () => {
+  const { styleGate, proseSentences } = await import("./style.js");
+  const long = "This sentence keeps going with one clause after another, which is the habit that makes plain articles hard to read for a busy owner who just wants the answer.";
+  const short = "This sentence is short and clear. It says one thing.";
+  const dense = Array.from({ length: 12 }, () => `${long} ${long}`).join("\n\n");
+  const plain = Array.from({ length: 12 }, () => `${short} ${short}`).join("\n\n");
+  const issues = (md: string) => styleGate(md).find((r) => r.gate === "style")!.issues;
+  expect(issues(dense).length).toBe(5);
+  expect(issues(dense)[0]!.message).toMatch(/sentences average 29/);
+  expect(issues(plain)).toEqual([]);
+  // Two-sentence paragraphs of 15 words pass; walls of 4 long-ish sentences (60 words) are split.
+  const mid = "This sentence has a fair number of words in it, fifteen in all here.";
+  const walls = Array.from({ length: 16 }, () => [mid, mid, mid, mid].join(" ")).join("\n\n");
+  expect(issues(walls).map((i) => i.message)[0]).toMatch(/paragraphs average 56 words/);
+  expect(issues(Array.from({ length: 16 }, () => `${mid} ${mid}`).join("\n\n"))).toEqual([]);
+  expect(proseSentences("## Heading\n\n- a list item that is long enough\n\n<key-takeaways>\n\nOne real sentence here[¹](https://x.example).{{c:c1}} Another one follows.")).toEqual(["One real sentence here.", "Another one follows."]);
+});

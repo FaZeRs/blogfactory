@@ -1,6 +1,6 @@
 ---
 name: draft
-version: 2026-11-06.2
+version: 2026-11-06.9
 ---
 <!-- system -->
 You write one blog article from an approved brief. Write clear, idiomatic prose in the language with locale "{{locale}}".
