@@ -35,8 +35,11 @@ async function loadDeps(userId: string, engineSettings: unknown): Promise<Revise
 }
 
 /** The run that wrote this post (`article_runs.post_id`, set at delivery) gives the verified evidence; hand-made posts have none. */
-async function runEvidence(userId: string, postId: string) {
-  const [run] = await db.select({ id: articleRuns.id }).from(articleRuns).where(and(eq(articleRuns.postId, postId), eq(articleRuns.userId, userId))).limit(1);
+async function runEvidence(userId: string, siteId: string | null, postId: string) {
+  // A run always has a site, so a post without one has no run.
+  if (!siteId) return "";
+  const [run] = await db.select({ id: articleRuns.id }).from(articleRuns)
+    .where(and(eq(articleRuns.postId, postId), eq(articleRuns.userId, userId), eq(articleRuns.siteId, siteId))).limit(1);
   if (!run) return "";
   const rows = await db.select({ claim: articleEvidence.claim, quote: articleEvidence.quote }).from(articleEvidence)
     .where(and(eq(articleEvidence.runId, run.id), eq(articleEvidence.userId, userId), eq(articleEvidence.verified, true))).limit(60);
@@ -63,7 +66,7 @@ export async function reviseWithComments(input: { userId: string; postId: string
     comments: fenceData("comments", sanitizeText(input.comments)),
     meta: fenceData("meta", `Title: ${post.title}\nDescription: ${post.summary ?? ""}`),
     draft: fenceData("article", post.content),
-    evidence: fenceData("evidence", (await runEvidence(userId, postId)) || "None: this article has no verified evidence list."),
+    evidence: fenceData("evidence", (await runEvidence(userId, post.siteId, postId)) || "None: this article has no verified evidence list."),
   });
 
   const started = Date.now();

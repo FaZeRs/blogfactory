@@ -69,6 +69,7 @@ test("reader severity: missing_step and unanswered_question block only when they
   expect(issue("unclear", "Who should check the roof before an installation")).toBe(false);
   expect(issue("padding", "Explain how evening use decides the battery size")).toBe(false);
   expect(matchesPlan("nothing relevant", ["Size the battery"])).toBe(false);
+  expect(matchesPlan("Explain what this means for your team", ["Explain what solar costs and how your team pays for it"])).toBe(false);
 });
 
 test("mode gating: normal runs the fact-check only, deep also the reader; both use the review role", async () => {

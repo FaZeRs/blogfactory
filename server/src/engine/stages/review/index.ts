@@ -42,7 +42,9 @@ export const normalizeForMatch = (text: string) =>
     .trim()
     .toLowerCase();
 
-const words = (text: string) => new Set(normalizeForMatch(text).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4));
+/** Common long words that would let any issue "match" any plan item. */
+const STOP_WORDS = new Set(["that", "this", "with", "your", "what", "when", "which", "from", "have", "they", "their", "them", "then", "than", "there", "about", "into", "more", "also", "only", "some", "will", "does", "each", "should", "would", "could", "explain", "show", "make", "need"]);
+const words = (text: string) => new Set(normalizeForMatch(text).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !STOP_WORDS.has(w)));
 
 /** A loose match: the issue shares at least 2 long words (or all of them, for a short plan item) with a planned item. */
 export function matchesPlan(issueText: string, planned: string[]): boolean {
