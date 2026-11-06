@@ -328,9 +328,9 @@ async function engineResearch(userId: string, siteId: string, jobId: string) {
       .innerJoin(articleSources, and(eq(articleSources.id, articleEvidence.sourceId), eq(articleSources.userId, userId)))
       .where(and(eq(articleEvidence.runId, run.id), eq(articleEvidence.userId, userId)))
       .orderBy(desc(articleEvidence.verified), articleEvidence.id).limit(30),
-    db.select({ gate: articleGateResults.gate, passed: articleGateResults.passed, severity: articleGateResults.severity, attempt: articleGateResults.attempt })
+    db.select({ gate: articleGateResults.gate, passed: articleGateResults.passed, severity: articleGateResults.severity })
       .from(articleGateResults).where(and(eq(articleGateResults.runId, run.id), eq(articleGateResults.userId, userId)))
-      .orderBy(desc(articleGateResults.attempt)),
+      .orderBy(desc(articleGateResults.createdAt)),
     db.select({ output: articleStageRuns.output }).from(articleStageRuns)
       .where(and(eq(articleStageRuns.runId, run.id), eq(articleStageRuns.userId, userId), eq(articleStageRuns.stage, "brief"), inArray(articleStageRuns.status, ["succeeded", "reused"])))
       .orderBy(desc(articleStageRuns.startedAt)).limit(1),
@@ -339,13 +339,15 @@ async function engineResearch(userId: string, siteId: string, jobId: string) {
       .orderBy(desc(articleStageRuns.startedAt)).limit(1),
   ]);
   const searchAdapter = (research?.output as { output?: { searchAdapter?: unknown } } | null)?.output?.searchAdapter;
-  // Only the final gate attempt matters to a reviewer.
-  const finalAttempt = gates[0]?.attempt;
+  // Only each check's latest result matters to a reviewer. The gates and review stages count attempts separately,
+  // so the newest row per gate name is the final one.
+  const seenGates = new Set<string>();
+  const finalGates = gates.filter((gate) => !seenGates.has(gate.gate) && !!seenGates.add(gate.gate));
   const keywordData = (brief?.output as { output?: { keywordData?: unknown } } | null)?.output?.keywordData;
   return {
     mode: run.mode as "normal" | "deep",
     claims: claims.map((claim) => ({ claim: claim.claim, quote: claim.quote, url: claim.url, fetched_via: claim.fetchedVia || "unknown", verified: claim.verified })),
-    gates: gates.filter((gate) => gate.attempt === finalAttempt).map((gate) => ({ gate: gate.gate, passed: gate.passed, severity: gate.severity || "info" })),
+    gates: finalGates.map((gate) => ({ gate: gate.gate, passed: gate.passed, severity: gate.severity || "info" })),
     adapters: { search: typeof searchAdapter === "string" ? searchAdapter : "none", keyword_data: Boolean(keywordData) },
   };
 }
