@@ -18,6 +18,18 @@ For an existing database that predates the migration ledger, first confirm its s
 
 Never run PostgreSQL integration tests against the shared production database. Use a disposable database.
 
+## AI answer visibility cost
+
+A weekly check costs about $0.04 per question on OpenAI, $0.015 on Perplexity and $0.05-0.13 on Google. Gemini runs 2-6 paid web searches per answer. Measured in November 2026: 21 questions on the three default engines is about $2.50 a week. Each site has a monthly cap (default $15), and a run whose estimate would pass the cap is skipped, with the reason shown on **Run now**. The spend is in `generation_logs`, so account guardrails and Usage include it.
+
+## Lindevo AI citation history import
+
+One-off backfill of Lindevo's `content_engine.ai_citations` into `ai_answer_checks` (engines labelled `... (Lindevo import)`). Reads the source in a read-only transaction and is idempotent (`ON CONFLICT DO NOTHING`). Run from the repo root with `DATABASE_URL` pointing at the BlogFactory database; add `--dry-run` first to see the counts:
+
+```bash
+npm run import:lindevo-citations -- --site <siteId> --source-url <lindevo postgres url> [--dry-run]
+```
+
 ## Production delivery
 
 The private `BlogFactoryHQ/blogfactory-cloud` repository merges this public core through a fail-closed sync workflow, validates it, and builds API and web images in GHCR. Production pins those images by SHA-256 digest in a Docker Compose stack on the Hetzner Nuremberg host:
@@ -105,7 +117,7 @@ Expected results:
 - Host port 5432 is not published or reachable externally.
 - Unauthenticated `/mcp`: HTTP 401 with `WWW-Authenticate: Bearer`, never the React shell.
 - OAuth protected-resource metadata: HTTP 200 with resource `https://blogfactory.io/mcp` and all three supported scopes.
-- Authenticated capability response: exactly 26 tools from the server catalog.
+- Authenticated capability response: exactly 27 tools from the server catalog.
 - No live-publish or delete tool in discovery.
 - Running API and web image digests resolve to the intended private Cloud commit.
 

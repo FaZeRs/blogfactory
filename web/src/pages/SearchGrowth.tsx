@@ -41,6 +41,7 @@ import {
   useSearchConsoleInsights,
 } from "@/hooks/useSearchConsole";
 import { useSites } from "@/hooks/useSites";
+import { AiVisibilityPanel } from "@/components/growth/AiVisibilityPanel";
 import { InternalLinksPanel } from "@/components/search-growth/InternalLinksPanel";
 import { SearchGrowthDependencyBand } from "@/components/search-growth/SearchGrowthDependencyBand";
 import { IndexingPanel } from "@/pages/Indexing";
@@ -145,7 +146,10 @@ export default function SearchGrowth() {
 
         {tab === "overview" && (
           <TabsContent value="overview" className="mt-0">
-            <SearchGrowthOverview onSelectTab={setTab} onOpenOptimize={openOptimize} />
+            <div className="space-y-6">
+              <SearchGrowthOverview onSelectTab={setTab} onOpenOptimize={openOptimize} />
+              <AiVisibilityPanel />
+            </div>
           </TabsContent>
         )}
         {tab === "optimize" && (

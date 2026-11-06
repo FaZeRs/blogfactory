@@ -50,6 +50,8 @@ For generation, **Ideas** finds and scores topics for each site and explains eve
 - they check the draft before it reaches review.
 Each step is visible in Runs. Drafts for a Lindevo site use its markdown components and pass its linter.
 
+**Cited in AI answers** (Search Growth) asks AI answer engines (OpenAI, Perplexity and Google, all through OpenRouter web search) the questions your customers ask, once a week. It records which answers cite your site, which mention your brand, and which competitors they cite instead. A question where competitors are cited and you aren't becomes an idea.
+
 Agents do the work through MCP. The web app is where operators see what needs attention, resolve blockers, review the current version, and approve a CMS handoff. The server-enforced authority ceiling is intentionally narrow: no live publishing, deletes, credential access, arbitrary providers, or admin tools through MCP.
 
 <p align="center">

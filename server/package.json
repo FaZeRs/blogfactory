@@ -15,6 +15,7 @@
     "test:mcp:pilot": "bun run src/run-mcp-pilot-smoke.ts",
     "credentials:check": "bun run src/credentials-check.ts",
     "db:migrate": "bun run src/db/migrate.ts",
+    "import:lindevo-citations": "bun run src/scripts/import-lindevo-citations.ts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
