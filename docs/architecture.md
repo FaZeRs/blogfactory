@@ -126,6 +126,22 @@ The backend decides eligibility and claims work. Schedulers must stay thin; do n
 
 `server/src/engine/` runs the `normal` and `deep` generation modes as durable stages (research, brief, draft, quality gates, revise, deliver). `article-runs.ts` starts a run from the same generation request as fast mode; state lives in `article_runs`, with `article_stage_runs`, `article_sources`, `article_evidence`, and `article_gate_results` as user-scoped children. The worker's `articles` drain claims runs with a lease and advances one stage at a time; retries, 429 rescheduling, and lease recovery are in `engine/runtime/`. Search (SearXNG or DataForSEO), page reading (Crawl4AI or plain fetch), and the LLM client are adapters in `engine/adapters/`; the LLM is OpenAI-compatible (the user's OpenRouter key, or the instance `ENGINE_AI_*` endpoint). Engine settings are per user at `GET/PUT /api/settings/engine`. The engine delivers a draft post only; escalated runs reach the Review Queue as `engine_escalated`. Fast mode does not use the engine. `npm run eval:engine` runs the golden-brief eval harness.
 
+**Quality loop.** After the code gates pass, the `review` stage reads the draft with the `review` model role (default: the mode's writer):
+- **Fact-check** (normal and deep) checks the draft against the verified evidence.
+- **Reader review** (deep only) reads it as the brief's audience.
+- **What blocks:** a contradiction, a cited claim its quote doesn't support, an unsourced number, and (reader) a planned step or question that's missing. Everything else is a warning.
+- **Discarded:** an issue whose excerpt isn't in the draft.
+- **Loop:** blockers go to `revise`, then gates, then review again, sharing `maxRevise` (normal 2, deep 3) and the stall rule.
+- **Other checks:**
+  - the `style` code gate blocks machine-sounding phrases and heavy em-dash use;
+  - the voice gate also blocks the site's own banned words (as whole words) and phrases (`user_settings.content_rules`).
+- **Prompt context:** the brief, draft and revise prompts get the site's voice rules plus its brand profile (company, audience, value propositions, CTAs and the most relevant knowledge chunks) through `writerVoice`.
+- **Draft repair:** `normalizeDraftMarkdown` repairs drafts that cheap models flatten (line breaks returned as spaces) or write as HTML.
+
+**Revise with comments:** `POST /api/posts/:id/revise-with-comments` rewrites a post from the owner's comments, with the run's evidence when there is one, and saves a new revision under the same optimistic lock. It adds no MCP tool.
+
+**Evals:** `npm run eval:engine -- --mode normal@<model>` runs every role on one model, and `#noreview` skips the review stage, so cheap or free OpenRouter models and the quality loop can be compared on the golden briefs. Reports record every finding by revise round.
+
 Research also reads the top-ranking pages for the topic (`article_sources.kind = 'competitor'`), extracts their outlines and the questions people ask, and produces a gap and information-gain analysis that the brief plans around. When a run's destination is Lindevo (`componentProfile` in `engine/profile.ts`), the brief, draft and revise prompts use Lindevo's markdown components, the `components` gate checks them with Lindevo's linter vendored in `engine/components/`, and deliver appends the `<provenance>` block. Other destinations get plain Markdown.
 
 ## Ideas and scheduling
