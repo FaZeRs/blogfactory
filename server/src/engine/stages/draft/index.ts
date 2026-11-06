@@ -9,10 +9,9 @@ import type { ArticleRunRow, Stage } from "../../runtime/stage.js";
 import { StageInputError, type EngineMode } from "../../types.js";
 import { sanitizeText, wordCount } from "../../util.js";
 import { MIN_FAQ_ANSWER_LENGTH } from "../../markdown/faq.js";
-import { buildVoiceContentInstructions } from "../../../services/voice-content.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
 import { PLAN, BriefOutputSchema, fitDescription, type BriefOutput } from "../brief/schema.js";
-import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, type PromptEvidence } from "../shared.js";
+import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, writerVoice, type PromptEvidence } from "../shared.js";
 import { DraftSchema, type DraftOutput } from "./schema.js";
 
 export type DraftInput = {
@@ -60,7 +59,7 @@ export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput>
   const verified = evidence.filter((e) => e.verified);
   return {
     locale: run.locale,
-    voice: buildVoiceContentInstructions(settings as never).join("\n"),
+    voice: writerVoice(settings as never, run.topic),
     brief,
     evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
     sources: sources.map((s) => ({ id: s.id, url: s.url, finalUrl: s.finalUrl, title: s.title })),

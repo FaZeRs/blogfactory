@@ -7,9 +7,8 @@ import { DATA_RULE, fenceData, preparePrompt, promptVersion } from "../../prompt
 import type { Stage, StageContext } from "../../runtime/stage.js";
 import { StageInputError, type EngineMode } from "../../types.js";
 import { sanitizeText, truncate } from "../../util.js";
-import { buildVoiceContentInstructions } from "../../../services/voice-content.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
-import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, type LinkCandidate, type PromptEvidence } from "../shared.js";
+import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, writerVoice, type LinkCandidate, type PromptEvidence } from "../shared.js";
 import type { ResearchOutput, SerpAnalysis } from "../research/schema.js";
 import { BriefModelSchema, PLAN, fitLengthPlan, planTarget, repairBrief, validateBrief, type Brief, type BriefOutput } from "./schema.js";
 
@@ -84,7 +83,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       topic: run.topic,
       locale: run.locale,
       sourceType: run.sourceType,
-      voice: buildVoiceContentInstructions(settings as never).join("\n"),
+      voice: writerVoice(settings as never, run.topic),
       evidence: verified.map((e) => ({ id: e.id, claim: e.claim, quote: e.quote, url: urlOf.get(e.sourceId) ?? "" })),
       links: linkCandidates(settings),
       guidance: editorGuidance(run.settings),

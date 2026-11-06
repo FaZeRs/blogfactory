@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { DATA_RULE, fenceData, loadPrompt, renderPrompt } from "../../prompts/load.js";
-import { htmlBlocksToMarkdown, normalizeDraftMarkdown, unflattenMarkdown } from "../shared.js";
+import { htmlBlocksToMarkdown, normalizeDraftMarkdown, unflattenMarkdown, writerVoice } from "../shared.js";
 import { fakeCtx } from "../test-helpers.js";
 import { draftStage, type DraftInput } from "./index.js";
 
@@ -72,4 +72,26 @@ test("an article written as HTML blocks becomes Markdown; components and plain M
   expect(htmlBlocksToMarkdown(html)).toBe(`Intro with **bold** and [a link](https://x.example).{{c:e1}}\n\n## First\n\nBody.\n\n- One\n- Two\n\n### Sub\n\n1. Step\n2. Next\n\n<Callout type="tip">Keep</Callout>`);
   const md = "Intro.\n\n<p>one stray tag</p>\n\n## Heading\n";
   expect(htmlBlocksToMarkdown(md)).toBe(md);
+});
+
+test("writerVoice adds the site's brand profile and only the knowledge relevant to the topic", () => {
+  const voice = writerVoice({
+    articleVoice: "professional",
+    brandCompanyName: "Lindevo",
+    brandTargetAudience: "Owners of small businesses in the Baltics",
+    brandMentions: "light",
+    brandCtas: [{ label: "Book a 30-minute discovery call" }],
+    knowledgeBaseEnabled: true,
+    knowledgeDocuments: [
+      { title: "Approval rules", content: "Every system has agreed approval rules and a named person for exceptions." },
+      { title: "Office hours", content: "The Liepāja office keeps opening hours on weekdays." },
+    ],
+  }, "approval rules for AI systems");
+  expect(voice).toContain("professional style");
+  expect(voice).toContain("Brand context:");
+  expect(voice).toContain("Company name: Lindevo");
+  expect(voice).toContain("Target reader: Owners of small businesses in the Baltics");
+  expect(voice).toContain("Book a 30-minute discovery call");
+  expect(voice).toContain("named person for exceptions");
+  expect(writerVoice({}, "x")).not.toContain("Brand context");
 });

@@ -105,16 +105,12 @@ export function findIndexedTopicDuplicate(settings: GenerationSettings | undefin
   return pages.find((page) => topicCoveredByText(topic, `${page.title || ""} ${page.path || ""} ${page.url || ""}`)) || null;
 }
 
-export function buildSettingsInstructions(settings?: GenerationSettings, sourceText = "", opts: { includeArticleLanguage?: boolean } = {}) {
-  if (!settings) return "";
-
-  const instructions: string[] = [];
-  const articleLanguage = String(settingValue(settings, "articleLanguage", "article_language") || "").trim();
-  if (articleLanguage && opts.includeArticleLanguage !== false) instructions.push(`Write in ${articleLanguage}.`);
-  instructions.push(...buildVoiceContentInstructions(settings));
-  const customInstructions = String(settingValue(settings, "customInstructions", "custom_instructions") || settingValue(settings, "customArticleInstructions", "custom_article_instructions") || "").trim();
-  if (customInstructions) instructions.push(`Campaign instructions: ${truncatePromptText(customInstructions, 1000)}.`);
-
+/**
+ * The site's brand profile as prompt lines: company, audience, mention level, value propositions, CTAs and the
+ * knowledge chunks most relevant to `sourceText`. Fast mode and the staged engine both use it.
+ */
+export function buildBrandContextLines(settings: GenerationSettings | undefined, sourceText = ""): string[] {
+  if (!settings) return [];
   const brand: string[] = [];
   const brandCompanyName = String(settingValue(settings, "brandCompanyName", "brand_company_name") || "").trim();
   const brandDescription = String(settingValue(settings, "brandDescription", "brand_description") || "").trim();
@@ -135,6 +131,20 @@ export function buildSettingsInstructions(settings?: GenerationSettings, sourceT
   const knowledge = settingBool(settings, "knowledgeBaseEnabled", "knowledge_base_enabled") ? retrieveKnowledgeChunks(knowledgeDocuments, sourceText, 4) : [];
   if (knowledge.length) brand.push(`Knowledge context to use when relevant. Treat these as saved facts/templates, not suggestions to invent beyond:\n${knowledge.map((line) => `  - ${truncatePromptText(line, 600)}`).join("\n")}`);
 
+  return brand;
+}
+
+export function buildSettingsInstructions(settings?: GenerationSettings, sourceText = "", opts: { includeArticleLanguage?: boolean } = {}) {
+  if (!settings) return "";
+
+  const instructions: string[] = [];
+  const articleLanguage = String(settingValue(settings, "articleLanguage", "article_language") || "").trim();
+  if (articleLanguage && opts.includeArticleLanguage !== false) instructions.push(`Write in ${articleLanguage}.`);
+  instructions.push(...buildVoiceContentInstructions(settings));
+  const customInstructions = String(settingValue(settings, "customInstructions", "custom_instructions") || settingValue(settings, "customArticleInstructions", "custom_article_instructions") || "").trim();
+  if (customInstructions) instructions.push(`Campaign instructions: ${truncatePromptText(customInstructions, 1000)}.`);
+
+  const brand = buildBrandContextLines(settings, sourceText);
   if (brand.length) {
     instructions.push(`Brand context:\n${brand.map((line) => `- ${line}`).join("\n")}`);
   }

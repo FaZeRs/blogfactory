@@ -8,6 +8,8 @@ import type { ArticleRunRow } from "../runtime/stage.js";
 import { StageInputError, type EngineMode, type ModelRole, type StageKey } from "../types.js";
 import type { DraftOutput } from "./draft/schema.js";
 import type { ResearchOutput } from "./research/schema.js";
+import { buildBrandContextLines } from "../../services/generation-contracts.js";
+import { buildVoiceContentInstructions } from "../../services/voice-content.js";
 
 export const runSettings = (run: ArticleRunRow) => resolveRunSettings(run.mode as EngineMode, parseEngineSettings(run.settings));
 export const modelFor = (run: ArticleRunRow, role: ModelRole) => runSettings(run).models[role];
@@ -124,4 +126,13 @@ export function normalizeDraftMarkdown(md: string): string {
 export async function renderArticle(run: ArticleRunRow, raw: string, withSourceText = false) {
   const [evidence, sources] = await Promise.all([loadEvidence(run), loadSources(run, withSourceText)]);
   return { evidence, sources, markdown: renderCitations(raw, evidence, sources, runSettings(run).citationStyle, run.locale) };
+}
+
+/**
+ * The writer's voice rules and the site's brand profile (company, audience, value propositions, CTAs, and the saved
+ * knowledge most relevant to the topic), one instruction per line.
+ */
+export function writerVoice(settings: Record<string, unknown>, topic: string): string {
+  const brand = buildBrandContextLines(settings as never, topic);
+  return [...buildVoiceContentInstructions(settings as never), ...(brand.length ? ["Brand context:", ...brand.map((l) => `- ${l}`)] : [])].join("\n");
 }
