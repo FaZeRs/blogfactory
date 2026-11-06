@@ -22,7 +22,7 @@ export function createPostReviseRoutes(deps: { reviseDeps?: ReviseDeps } = {}) {
     const expectedUpdatedAt = new Date(typeof body.expectedUpdatedAt === "string" ? body.expectedUpdatedAt : NaN);
     if (Number.isNaN(expectedUpdatedAt.getTime())) throw invalid("expectedUpdatedAt", "expectedUpdatedAt must be an ISO timestamp");
 
-    const result = await reviseWithComments({ userId, postId: id, comments, expectedUpdatedAt, deps: deps.reviseDeps });
+    const result = await reviseWithComments({ userId, postId: id, comments, expectedUpdatedAt, deps: deps.reviseDeps, signal: c.req.raw.signal });
     // Same follow-up as a manual save: the new text needs fresh canonical SEO.
     const seoJob = result.changed ? await enqueueSeoMetadata({ userId, postId: id, trigger: "save" }) : null;
     if (seoJob?.queued) waitUntil(drainSeoMetadata(userId, 1));

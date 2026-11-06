@@ -9,6 +9,9 @@ import { bootstrapUserAccess, isAdminEmail, publicUser } from "../services/acces
 import { updateGlobalSettings, updateSiteSettings } from "../services/user-settings.js";
 import { readJsonObject, requiredString } from "../http/error-contract.js";
 
+/** Emails are stored and matched lowercased (migration 0044 enforces one account per email). */
+export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
 export const authRoutes = new Hono();
 
 const LOCAL_DEV_EMAIL = "local@blogfactory.dev";
@@ -138,7 +141,7 @@ authRoutes.post("/signup", async (c) => {
   }
 
   const body = await readJsonObject(c);
-  const email = requiredString(body, "email");
+  const email = normalizeEmail(requiredString(body, "email"));
   const password = requiredString(body, "password");
   const displayName = typeof body.displayName === "string" ? body.displayName : undefined;
   const consent = body.consent === true;
@@ -192,7 +195,7 @@ authRoutes.post("/signup", async (c) => {
 
 authRoutes.post("/login", async (c) => {
   const body = await readJsonObject(c);
-  const email = requiredString(body, "email");
+  const email = normalizeEmail(requiredString(body, "email"));
   const password = requiredString(body, "password");
   const rememberMe = body.rememberMe === true;
 
@@ -245,7 +248,7 @@ authRoutes.get("/me", async (c) => {
 });
 
 authRoutes.post("/forgot-password", async (c) => {
-  const email = requiredString(await readJsonObject(c), "email");
+  const email = normalizeEmail(requiredString(await readJsonObject(c), "email"));
 
   const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
 

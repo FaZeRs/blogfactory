@@ -38,7 +38,7 @@ import {
   updateGlobalSettings,
   updateSiteSettings,
 } from "../services/user-settings.js";
-import { SUBSCRIPTION_MODELS } from "../engine/adapters/subscription.js";
+import { SUBSCRIPTION_MODELS, disallowedSubscriptionRoles } from "../engine/adapters/subscription.js";
 import { userSubscriptions } from "../services/engine-llm.js";
 
 export const settingsRoutes = new Hono();
@@ -476,6 +476,8 @@ settingsRoutes.put("/engine", async (c) => {
   const siteId = asOptionalText(body.siteId ?? body.site_id) || await getActiveSiteId(userId);
   if (!siteId) return c.json({ error: "Select a site before changing engine settings" }, 400);
   const engineSettings = parseEngineSettings(body.settings ?? body);
+  const notAllowed = disallowedSubscriptionRoles(engineSettings.models ?? {}, await userSubscriptions(userId));
+  if (notAllowed.length) return c.json({ error: `Subscription models are not enabled for this account (${notAllowed.join(", ")})` }, 400);
   try {
     await updateSiteSettings(userId, siteId, { engineSettings });
   } catch (err) {

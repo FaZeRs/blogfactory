@@ -35,7 +35,7 @@ export const users = pgTable("users", {
   resetTokenExpiresAt: timestamp("reset_token_expires_at", { withTimezone: true }),
   verifyToken: text("verify_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [uniqueIndex("users_email_lower_idx").on(sql`lower(${t.email})`)]);
 
 // ── feeds ──
 export const feeds = pgTable("feeds", {

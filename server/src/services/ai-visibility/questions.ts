@@ -11,7 +11,7 @@ import { effectiveSeedTopics, getIdeaSettings } from "../ideas/settings.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { mentions } from "./detect.js";
 import { getVisibilitySettings, MAX_QUESTIONS } from "./settings.js";
-import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
+import { INTERACTIVE_TIMEOUT_MS, billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -73,7 +73,7 @@ async function loadSuggestDeps(userId: string, engineSettings: unknown): Promise
   if (!endpoint) throw new Error("OpenRouter is not configured");
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.brief;
   model = await resolveEngineModel(endpoint, model);
-  return { llm: await userEngineLlm(userId, endpoint), model };
+  return { llm: await userEngineLlm(userId, endpoint, { timeoutMs: INTERACTIVE_TIMEOUT_MS }), model };
 }
 
 const replySchema = z.object({ questions: z.array(z.string()) });
@@ -82,7 +82,7 @@ const replySchema = z.object({ questions: z.array(z.string()) });
 export class SuggestBlockedError extends Error {}
 
 /** One model call over Search Console questions, idea audience questions and seed topics. Up to 20, already validated. */
-export async function suggestQuestions(userId: string, siteId: string, deps?: SuggestDeps): Promise<string[]> {
+export async function suggestQuestions(userId: string, siteId: string, deps?: SuggestDeps, signal?: AbortSignal): Promise<string[]> {
   const site = await getSiteForUser(userId, siteId);
   if (!site) throw new Error("Site not found");
   const guard = await checkAccountGuardrails(userId);
@@ -104,6 +104,7 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
       role: "brief",
       model: d.model,
       maxTokens: 1500,
+      signal,
       schema: replySchema,
       system: "You write the questions real customers type into an AI assistant such as ChatGPT or Perplexity when they look for a product, service or answer. Never name the brand, company or its domain.",
       user: [

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { parseJson, type EngineLlm, type EngineLlmRequest, type EngineLlmResult } from "./llm.js";
+import { RateLimitError } from "../types.js";
 
 /**
  * Subscription models through the vendors' own CLIs (spec 2026-11-06-subscription-models). A role's model id
@@ -42,6 +43,14 @@ export function subscriptionsFor(env: Record<string, string | undefined>, email:
   const users = list(env.ENGINE_SUBSCRIPTION_USERS);
   if (!email || !users.includes(email.trim().toLowerCase())) return [];
   return SUBSCRIPTION_PROVIDERS.filter((p) => list(env.ENGINE_SUBSCRIPTIONS).includes(p));
+}
+
+/** The roles whose model names a subscription this account may not use; empty when every model is allowed. */
+export function disallowedSubscriptionRoles(models: Record<string, string | undefined>, allowed: readonly SubscriptionProvider[]): string[] {
+  return Object.entries(models).flatMap(([role, id]) => {
+    const provider = id ? parseModelId(id).provider : null;
+    return provider && !allowed.includes(provider) ? [role] : [];
+  });
 }
 
 export class SubscriptionError extends Error {
@@ -136,6 +145,8 @@ export type SubscriptionDeps = {
 };
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+/** How long a run waits after a subscription usage limit when no fallback is set. */
+export const LIMIT_WAIT_MS = 30 * 60_000;
 
 const LIMIT_KEYS = new Set(["minLength", "maxLength", "minItems", "maxItems", "pattern", "format", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]);
 /** `inProperties`: `v` maps property names to schemas, so its keys are names, never limit keywords. */
@@ -237,6 +248,8 @@ export function withSubscriptions(base: EngineLlm, deps: SubscriptionDeps): Engi
           console.warn("[engine] subscription call failed; using the fallback", { provider: parsed.provider, kind: error instanceof SubscriptionError ? error.kind : (error as Error)?.name });
           return base.json({ ...req, model: parsed.fallback });
         }
+        // A usage limit with no fallback waits like a provider 429: the run reschedules without spending an attempt.
+        if (error instanceof SubscriptionError && error.kind === "limit") throw new RateLimitError(error.message, LIMIT_WAIT_MS);
         throw error;
       }
     },

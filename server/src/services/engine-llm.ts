@@ -13,8 +13,11 @@ export async function userSubscriptions(userId: string, env: Record<string, stri
 }
 
 /** The engine's LLM client for one user: OpenRouter or the instance gateway, plus their allowed subscription CLIs. */
-export async function userEngineLlm(userId: string, endpoint: EngineEndpoint): Promise<EngineLlm> {
-  return withSubscriptions(createEngineLlm(endpoint), { env: process.env, allowed: await userSubscriptions(userId) });
+/** Subscription calls made inside a web request: a person is waiting, so they stop well before the engine's 10 minutes. */
+export const INTERACTIVE_TIMEOUT_MS = 3 * 60_000;
+
+export async function userEngineLlm(userId: string, endpoint: EngineEndpoint, opts: { timeoutMs?: number } = {}): Promise<EngineLlm> {
+  return withSubscriptions(createEngineLlm(endpoint), { env: process.env, allowed: await userSubscriptions(userId), timeoutMs: opts.timeoutMs });
 }
 
 /** The model a logged cost belongs to: a subscription call costs $0, so any spend on a subscription id is its fallback's. */

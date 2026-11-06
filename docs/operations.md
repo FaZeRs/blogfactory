@@ -34,7 +34,7 @@ ENGINE_CODEX_HOME=/var/lib/blogfactory/codex  # a login directory used only by B
 2. Log Codex in once with `CODEX_HOME=$ENGINE_CODEX_HOME codex login`.
 3. Choose the models in **Control → Article Settings → Engine**. Subscription options show a SUB badge and are stored as `claude-code:<model>|<openrouter fallback>` or `codex:<model>|<fallback>`. The fallback is used when the subscription is rate-limited, logged out, missing or times out.
 
-Subscription calls are logged at $0, so budgets and guardrails count only paid calls. Both CLIs run with no tools, no MCP servers, no hooks and no user config, in an empty working directory, because prompts carry web text. With a ChatGPT login, Codex accepts only some models (`gpt-6-sol`, `gpt-6-luna`).
+Saving engine settings, and starting a run, both reject a subscription model the account may not use. Without a fallback, a usage limit pauses the run for 30 minutes instead of failing it. Interactive calls (revise with comments, question suggestions) stop after 3 minutes. Subscription calls are logged at $0, so budgets and guardrails count only paid calls. Both CLIs run with no tools, no MCP servers, no hooks and no user config, in an empty working directory, because prompts carry web text. With a ChatGPT login, Codex accepts only some models (`gpt-6-sol`, `gpt-6-luna`).
 
 ## AI answer visibility cost
 

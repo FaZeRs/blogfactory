@@ -104,3 +104,23 @@ test("the spawner keeps multi-byte text whole and never starts a call whose sign
   expect((await nodeSpawner("sleep", ["5"], { ...opts, signal: AbortSignal.abort() })).code).toBeNull();
   expect(Date.now() - started).toBeLessThan(1000);
 });
+
+test("roles naming a subscription the account may not use are reported", async () => {
+  const { disallowedSubscriptionRoles } = await import("./subscription.js");
+  const models = { brief: "claude-code:claude-opus-5-5|anthropic/claude-opus-5.5", draft: "codex:gpt-6-sol", revise: "anthropic/claude-sonnet-5.5" };
+  expect(disallowedSubscriptionRoles(models, ["claude-code"])).toEqual(["draft"]);
+  expect(disallowedSubscriptionRoles(models, ["claude-code", "codex"])).toEqual([]);
+  expect(disallowedSubscriptionRoles(models, [])).toEqual(["brief", "draft"]);
+});
+
+test("a usage limit with no fallback waits like a 429; with a fallback it switches", async () => {
+  const { RateLimitError } = await import("../types.js");
+  const { LIMIT_WAIT_MS } = await import("./subscription.js");
+  const limit: Spawner = async () => ({ code: 0, stdout: JSON.stringify({ subtype: "success", is_error: true, result: "Claude AI usage limit reached" }), stderr: "", timedOut: false, notFound: false });
+  const llm = withSubscriptions(base([]), { env: {}, allowed: ["claude-code"], spawner: limit });
+  const err = await llm.json({ ...req, model: "claude-code:opus" }).catch((e) => e);
+  expect(err).toBeInstanceOf(RateLimitError);
+  expect(err.retryAfterMs).toBe(LIMIT_WAIT_MS);
+  const missing: Spawner = async () => ({ code: null, stdout: "", stderr: "", timedOut: false, notFound: true });
+  expect(await withSubscriptions(base([]), { env: {}, allowed: ["claude-code"], spawner: missing }).json({ ...req, model: "claude-code:opus" }).catch((e) => e)).not.toBeInstanceOf(RateLimitError);
+});

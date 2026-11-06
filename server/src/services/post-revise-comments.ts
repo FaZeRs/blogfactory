@@ -17,7 +17,7 @@ import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
 import { PostVersionConflictError, updatePostWithRevision } from "./post-revisions.js";
 import { getEffectiveSettings } from "./user-settings.js";
 import { buildVoiceContentInstructions } from "./voice-content.js";
-import { billedModel, resolveEngineModel, userEngineLlm } from "./engine-llm.js";
+import { INTERACTIVE_TIMEOUT_MS, billedModel, resolveEngineModel, userEngineLlm } from "./engine-llm.js";
 
 export const COMMENTS_MIN = 10;
 export const COMMENTS_MAX = 4000;
@@ -31,7 +31,7 @@ async function loadDeps(userId: string, engineSettings: unknown): Promise<Revise
   if (!endpoint) throw new ApiError(503, "service_unavailable", "Add an OpenRouter key in Integrations to revise with AI.");
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.revise;
   model = await resolveEngineModel(endpoint, model);
-  return { llm: await userEngineLlm(userId, endpoint), model };
+  return { llm: await userEngineLlm(userId, endpoint, { timeoutMs: INTERACTIVE_TIMEOUT_MS }), model };
 }
 
 /** The run that wrote this post (`article_runs.post_id`, set at delivery) gives the verified evidence; hand-made posts have none. */
@@ -47,7 +47,7 @@ async function runEvidence(userId: string, siteId: string | null, postId: string
 }
 
 /** One model call rewrites the post from the owner's comments; it saves as a new revision under the same lock as an edit. */
-export async function reviseWithComments(input: { userId: string; postId: string; comments: string; expectedUpdatedAt: Date; deps?: ReviseDeps }) {
+export async function reviseWithComments(input: { userId: string; postId: string; comments: string; expectedUpdatedAt: Date; deps?: ReviseDeps; signal?: AbortSignal }) {
   const { userId, postId, expectedUpdatedAt } = input;
   const [post] = await db.select().from(posts).where(and(eq(posts.id, postId), eq(posts.userId, userId))).limit(1);
   if (!post) throw new ApiError(404, "not_found", "Post not found");
@@ -74,7 +74,7 @@ export async function reviseWithComments(input: { userId: string; postId: string
   let costUsd = 0;
   let ok = false;
   try {
-    const r = await deps.llm.json({ role: "revise", model: deps.model, system: prompt.system, user: prompt.user, schema: ReplySchema, maxTokens: 12_000 });
+    const r = await deps.llm.json({ role: "revise", model: deps.model, system: prompt.system, user: prompt.user, schema: ReplySchema, maxTokens: 12_000, signal: input.signal });
     costUsd = r.costUsd;
     const markdown = cleanGeneratedPostContent(normalizeDraftMarkdown(sanitizeText(r.value.markdown))).trimEnd();
     const result = await updatePostWithRevision({
