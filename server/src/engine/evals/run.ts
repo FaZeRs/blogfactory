@@ -18,16 +18,23 @@ import { buildWriterSystemPrompt } from "../../services/generation-contracts.js"
 import { EVAL_THRESHOLDS, RUBRIC_DIMENSIONS, decideRules, type RubricDimension, type VariantSummary } from "./decide.js";
 import { frozenEvidence, type EvalBrief } from "./schema.js";
 
-/** A mode, optionally with one model for every role: `normal@deepseek/deepseek-v4-flash`. */
-export type EvalMode = "fast" | EngineMode | `${"fast" | EngineMode}@${string}`;
+/**
+ * A mode, optionally with one model for every role and `#noreview` to skip the review stage:
+ * `normal@deepseek/deepseek-v4-flash#noreview`.
+ */
+export type EvalMode = "fast" | EngineMode | `${"fast" | EngineMode}${"@" | "#"}${string}`;
 
-export function parseEvalMode(mode: string): { base: "fast" | EngineMode; model?: string } {
-  const at = mode.indexOf("@");
-  const base = at < 0 ? mode : mode.slice(0, at);
-  if (base !== "fast" && base !== "normal" && base !== "deep") throw new Error(`Unknown mode "${mode}" (fast, normal or deep, optionally @<model id>)`);
-  const model = at < 0 ? undefined : mode.slice(at + 1).trim();
+export function parseEvalMode(mode: string): { base: "fast" | EngineMode; model?: string; review: boolean } {
+  const hash = mode.indexOf("#");
+  const flag = hash < 0 ? "" : mode.slice(hash + 1);
+  if (flag && flag !== "noreview") throw new Error(`Unknown flag "#${flag}" in mode "${mode}" (only #noreview)`);
+  const spec = hash < 0 ? mode : mode.slice(0, hash);
+  const at = spec.indexOf("@");
+  const base = at < 0 ? spec : spec.slice(0, at);
+  if (base !== "fast" && base !== "normal" && base !== "deep") throw new Error(`Unknown mode "${mode}" (fast, normal or deep, optionally @<model id> and #noreview)`);
+  const model = at < 0 ? undefined : spec.slice(at + 1).trim();
   if (at >= 0 && !model) throw new Error(`Mode "${mode}" names no model after @`);
-  return { base, model };
+  return { base, model, review: flag !== "noreview" };
 }
 export type Verdict = "win" | "loss" | "tie";
 
@@ -112,7 +119,7 @@ async function gate(parts: { title: string; description: string; raw: string; ma
 const uniqueGates = (blockers: { gate: string }[]) => [...new Set(blockers.map((b) => b.gate))];
 
 /** Brief, draft, gates, review and revise from the frozen evidence: the stages' own `run`, no database. */
-export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string): Promise<Generated> {
+export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string, review = true): Promise<Generated> {
   const now = deps.now ?? (() => new Date());
   // Stages read models from the run's settings, as a site's engine settings would set them.
   const runSettingsValue = model ? { models: Object.fromEntries(MODEL_ROLES.map((role) => [role, model])) } : {};
@@ -159,7 +166,7 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   for (;;) {
     const markdown = renderCitations(draft.markdown, frozen.evidence, frozen.sources, settings.citationStyle, brief.locale);
     let blockers = await gate({ title: draft.title, description: draft.description, raw: draft.markdown, markdown }, frozen);
-    if (blockers.length === 0 && settings.preset.review.length) {
+    if (blockers.length === 0 && review && settings.preset.review.length) {
       // The paid review checks read only a draft the code gates passed, as in the engine.
       const { outcome } = await reviewDraft({ ...draftInput, draft, previousBlockers: previousReview, reviseCount: revisions }, ctx(revisions));
       if (outcome.next.type !== "advance" || outcome.next.to === "deliver") {
@@ -280,13 +287,13 @@ async function draftFor(brief: EvalBrief, mode: EvalMode, deps: EvalDeps, judge:
   try {
     let costUsd = 0;
     let g: Generated;
-    const { base, model } = parseEvalMode(mode);
+    const { base, model, review } = parseEvalMode(mode);
     if (base === "fast") {
       const fast = await generateArticleForEval(brief, model ?? fastModel, deps);
       costUsd = fast.costUsd;
       g = fast;
     } else {
-      g = await generateEngineArticle(brief, base, gen.llm, deps, model);
+      g = await generateEngineArticle(brief, base, gen.llm, deps, model, review);
       costUsd = gen.meter.costUsd;
     }
     const rubric = await judgeRubric(judge, deps.judgeModel, brief, g, deps.now?.());

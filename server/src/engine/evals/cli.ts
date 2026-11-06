@@ -24,7 +24,8 @@ Evaluates the generation modes on frozen briefs (no research, no network for evi
 articles with a rubric and pairwise against the first --mode (the baseline). Default modes: fast normal.
 
   --mode <m>            fast | normal | deep, optionally @<model id> to run every role on that model
-                        (e.g. normal@deepseek/deepseek-v4-flash); repeatable; the first one is the baseline
+                        (e.g. normal@deepseek/deepseek-v4-flash), and #noreview to skip the review stage;
+                        repeatable; the first one is the baseline
   --briefs <glob>       brief files to use (default: every file in src/engine/evals/briefs)
   --judge-model <id>    model that scores and compares (default: ${MODE_PRESETS.deep.models.draft})
   --out <path>          report file (default: server/.eval/<timestamp>.json)

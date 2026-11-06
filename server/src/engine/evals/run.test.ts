@@ -91,8 +91,10 @@ test("recorded briefs get an ASCII id one past the highest number, and keep only
 });
 
 test("a mode can name one model for every role", () => {
-  expect(parseEvalMode("normal")).toEqual({ base: "normal", model: undefined });
-  expect(parseEvalMode("normal@nvidia/nemotron-3.5-super-vl:free")).toEqual({ base: "normal", model: "nvidia/nemotron-3.5-super-vl:free" });
+  expect(parseEvalMode("normal")).toEqual({ base: "normal", model: undefined, review: true });
+  expect(parseEvalMode("normal@nvidia/nemotron-3.5-super-vl:free")).toEqual({ base: "normal", model: "nvidia/nemotron-3.5-super-vl:free", review: true });
+  expect(parseEvalMode("deep@x/y#noreview")).toEqual({ base: "deep", model: "x/y", review: false });
+  expect(() => parseEvalMode("normal#fast")).toThrow(/Unknown flag/);
   expect(() => parseEvalMode("quick")).toThrow(/Unknown mode/);
   expect(() => parseEvalMode("deep@")).toThrow(/no model/);
 });
