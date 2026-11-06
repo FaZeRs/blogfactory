@@ -56,6 +56,7 @@ export function EngineSettingsCard({ siteId }: { siteId: string | null | undefin
               value={draft.models?.[role] ?? ""}
               onValueChange={(id) => setDraft((d) => ({ ...d, models: { ...d.models, [role]: id } }))}
               triggerClassName="h-11"
+              extraModels={data?.subscriptionModels}
             />
           </div>
         ))}

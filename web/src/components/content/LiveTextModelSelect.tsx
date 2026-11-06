@@ -19,6 +19,7 @@ const PREFERRED_TEXT_MODEL_IDS = [
 ];
 
 function priceBadge(model: LiveTextModel) {
+  if (model.provider === "subscription") return { text: "SUB", className: "text-byword-blue" };
   if (model.pricing === "free") return { text: "FREE", className: "text-primary" };
   if (model.pricing === "low") return { text: "$", className: "text-status-success" };
   if (model.pricing === "medium") return { text: "$$", className: "text-status-warning" };
@@ -58,12 +59,22 @@ export function LiveTextModelSelect({
   value,
   onValueChange,
   triggerClassName,
+  extraModels = [],
 }: {
   value: string;
   onValueChange: (value: string) => void;
   triggerClassName?: string;
+  /** Options listed first, such as subscription models; they are never shown as unavailable. */
+  extraModels?: { id: string; name: string }[];
 }) {
-  const { data: textModels = [] } = useTextModels();
+  const { data: liveModels = [] } = useTextModels();
+  const textModels = useMemo<LiveTextModel[]>(() => [
+    ...extraModels.map((m): LiveTextModel => ({
+      id: m.id, name: m.name, provider: "subscription", pricing: "free", costInfo: "billed to your subscription", description: m.name,
+      isFree: true, limits: null, rawPricing: { prompt: 0, completion: 0, request: 0 }, contextLength: null,
+    })),
+    ...liveModels,
+  ], [extraModels, liveModels]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const unavailable = isUnavailableModel(value, textModels);

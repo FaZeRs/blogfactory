@@ -38,6 +38,8 @@ import {
   updateGlobalSettings,
   updateSiteSettings,
 } from "../services/user-settings.js";
+import { SUBSCRIPTION_MODELS } from "../engine/adapters/subscription.js";
+import { userSubscriptions } from "../services/engine-llm.js";
 
 export const settingsRoutes = new Hono();
 const API_KEY_PROVIDERS = new Set(["openrouter", "google", "openai", "pexels", "pixabay"]);
@@ -458,7 +460,7 @@ settingsRoutes.get("/engine", async (c) => {
   const userId = getUserId(c);
   const siteId = c.req.query("siteId") || c.req.query("site_id") || await getActiveSiteId(userId);
   const settings = await getEffectiveSettings(userId, siteId).catch(() => null);
-  return c.json(engineSettingsResponse(settings?.engineSettings, process.env, Boolean(await getOpenRouterKey(userId))));
+  return c.json({ ...engineSettingsResponse(settings?.engineSettings, process.env, Boolean(await getOpenRouterKey(userId))), subscriptionModels: (await userSubscriptions(userId)).flatMap((p) => SUBSCRIPTION_MODELS[p]) });
 });
 
 settingsRoutes.put("/engine", async (c) => {
@@ -473,7 +475,7 @@ settingsRoutes.put("/engine", async (c) => {
     if (err instanceof Error && err.message === "Site not found") return c.json({ error: "Site not found" }, 404);
     throw err;
   }
-  return c.json(engineSettingsResponse(engineSettings, process.env, Boolean(await getOpenRouterKey(userId))));
+  return c.json({ ...engineSettingsResponse(engineSettings, process.env, Boolean(await getOpenRouterKey(userId))), subscriptionModels: (await userSubscriptions(userId)).flatMap((p) => SUBSCRIPTION_MODELS[p]) });
 });
 
 settingsRoutes.get("/ideas", async (c) => {

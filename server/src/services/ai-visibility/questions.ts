@@ -3,15 +3,15 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/index.js";
 import { generationLogs, ideas } from "../../db/schema.js";
-import { createEngineLlm, engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
+import { engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
 import { parseEngineSettings, resolveRunSettings } from "../../engine/modes.js";
 import { checkAccountGuardrails } from "../account-guardrails.js";
 import { getOpenRouterKey } from "../api-keys.js";
 import { effectiveSeedTopics, getIdeaSettings } from "../ideas/settings.js";
-import { resolveOpenRouterTextModel } from "../openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { mentions } from "./detect.js";
 import { getVisibilitySettings, MAX_QUESTIONS } from "./settings.js";
+import { resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -72,8 +72,8 @@ async function loadSuggestDeps(userId: string, engineSettings: unknown): Promise
   const endpoint = engineAiEndpoint(process.env, await getOpenRouterKey(userId));
   if (!endpoint) throw new Error("OpenRouter is not configured");
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.brief;
-  if (endpoint.gateway === "openrouter") model = await resolveOpenRouterTextModel(endpoint.apiKey, model);
-  return { llm: createEngineLlm(endpoint), model };
+  model = await resolveEngineModel(endpoint, model);
+  return { llm: await userEngineLlm(userId, endpoint), model };
 }
 
 const replySchema = z.object({ questions: z.array(z.string()) });

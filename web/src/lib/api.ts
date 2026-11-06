@@ -218,6 +218,8 @@ export interface EngineSettingsResponse {
   settings: EngineSettings;
   availability: EngineAvailability;
   estimates: { normal: number; deep: number };
+  /** Subscription models (Claude Code, Codex) this instance enables for the account; empty when none. */
+  subscriptionModels?: { id: string; name: string }[];
 }
 
 export interface EngineStageRun {

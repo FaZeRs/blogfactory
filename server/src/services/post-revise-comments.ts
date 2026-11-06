@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { articleEvidence, articleRuns, generationLogs, posts } from "../db/schema.js";
-import { createEngineLlm, engineAiEndpoint, type EngineLlm } from "../engine/adapters/llm.js";
+import { engineAiEndpoint, type EngineLlm } from "../engine/adapters/llm.js";
 import { ENGINE_CONFIG } from "../engine/config.js";
 import { parseEngineSettings, resolveRunSettings } from "../engine/modes.js";
 import { DATA_RULE, fenceData, preparePrompt } from "../engine/prompts/load.js";
@@ -13,11 +13,11 @@ import { ApiError } from "../http/error-contract.js";
 import { checkAccountGuardrails } from "./account-guardrails.js";
 import { getOpenRouterKey } from "./api-keys.js";
 import { finishOperationEvent, startOperationEvent } from "./operation-events.js";
-import { resolveOpenRouterTextModel } from "./openrouter-models.js";
 import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
 import { PostVersionConflictError, updatePostWithRevision } from "./post-revisions.js";
 import { getEffectiveSettings } from "./user-settings.js";
 import { buildVoiceContentInstructions } from "./voice-content.js";
+import { resolveEngineModel, userEngineLlm } from "./engine-llm.js";
 
 export const COMMENTS_MIN = 10;
 export const COMMENTS_MAX = 4000;
@@ -30,8 +30,8 @@ async function loadDeps(userId: string, engineSettings: unknown): Promise<Revise
   const endpoint = engineAiEndpoint(process.env, await getOpenRouterKey(userId));
   if (!endpoint) throw new ApiError(503, "service_unavailable", "Add an OpenRouter key in Integrations to revise with AI.");
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.revise;
-  if (endpoint.gateway === "openrouter") model = await resolveOpenRouterTextModel(endpoint.apiKey, model);
-  return { llm: createEngineLlm(endpoint), model };
+  model = await resolveEngineModel(endpoint, model);
+  return { llm: await userEngineLlm(userId, endpoint), model };
 }
 
 /** The run that wrote this post (`article_runs.post_id`, set at delivery) gives the verified evidence; hand-made posts have none. */

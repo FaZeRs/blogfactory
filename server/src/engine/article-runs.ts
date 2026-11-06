@@ -5,7 +5,6 @@ import { articleEvidence, articleGateResults, articleRuns, articleSources, artic
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { finishOperationEvent, safeOperationMetadata, startOperationEvent } from "../services/operation-events.js";
-import { resolveOpenRouterTextModel } from "../services/openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../services/user-settings.js";
 import { engineAiEndpoint } from "./adapters/llm.js";
 import { estimateRunUsd, parseEngineSettings, resolveRunSettings } from "./modes.js";
@@ -17,6 +16,7 @@ import type { ArticleRunRow } from "./runtime/stage.js";
 import { claimIdsByEvidence, stageDetails } from "./run-view.js";
 import { STAGES } from "./stages/index.js";
 import { StageInputError, type EngineMode, type ModelRole, type StageKey } from "./types.js";
+import { resolveEngineModel } from "../services/engine-llm.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -89,7 +89,7 @@ export async function startArticleRun(input: {
   const models = { ...resolved.models };
   if (endpoint.gateway === "openrouter") {
     for (const role of Object.keys(models) as ModelRole[]) {
-      models[role] = await resolveOpenRouterTextModel(endpoint.apiKey, models[role]);
+      models[role] = await resolveEngineModel(endpoint, models[role]);
     }
   }
   const guidance = {
