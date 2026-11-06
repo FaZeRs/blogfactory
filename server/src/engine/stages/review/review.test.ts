@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { loadPrompt } from "../../prompts/load.js";
 import type { BriefOutput } from "../brief/schema.js";
 import { fakeCtx } from "../test-helpers.js";
-import { classify, matchesPlan, normalizeForMatch, reviewDraft, type ReviewInput } from "./index.js";
+import { classify, matchesPlan, normalizeForMatch, reviewDraft, type ReviewInput, factcheckBlocks } from "./index.js";
 
 const brief: BriefOutput = {
   angle: "A calm plan for small teams that want solar without surprises",
@@ -25,7 +25,7 @@ const input: ReviewInput = {
   previousBlockers: null,
   reviseCount: 0,
 };
-const factReply = (...kinds: string[]) => ({ issues: kinds.map((kind) => ({ kind, excerpt: "Roofs are always safe.", fix: "Cite or remove." })) });
+const factReply = (...kinds: string[]) => ({ issues: kinds.map((kind) => ({ kind, excerpt: "Roofs are always safe.", claimId: "c1", fix: "Cite or remove." })) });
 
 test("normalizeForMatch ignores case, whitespace, curly quotes, dashes and markers", () => {
   expect(normalizeForMatch(raw)).toContain('the battery "pays off" only with evening use - mostly.');
@@ -49,12 +49,16 @@ test("classify caps issues per check at 8 and 6", () => {
   expect(classify("reader", many(20, "padding"), raw, brief).found).toHaveLength(6);
 });
 
-test("fact-check severity: unsupported, contradiction and uncited_fact block; overstated warns", () => {
+test("fact-check severity: contradictions, cited unsupported claims and unsourced numbers block; the rest are notes", () => {
   const sev = (kind: string) => classify("factcheck", factReply(kind).issues, raw, brief).found[0]?.blocker;
   expect(sev("unsupported")).toBe(true);
   expect(sev("contradiction")).toBe(true);
-  expect(sev("uncited_fact")).toBe(true);
   expect(sev("overstated")).toBe(false);
+  expect(factcheckBlocks({ kind: "uncited_fact", excerpt: "You might save 10-15 minutes per order." })).toBe(true);
+  expect(factcheckBlocks({ kind: "uncited_fact", excerpt: "Most tools offer a free trial." })).toBe(false);
+  expect(factcheckBlocks({ kind: "unsupported", excerpt: "Most tools offer a free trial." })).toBe(false);
+  expect(factcheckBlocks({ kind: "unsupported", excerpt: "Teams save hours{{c:c2}}." })).toBe(true);
+  expect(factcheckBlocks({ kind: "unsupported", excerpt: "Teams save hours.", claimId: "c2" })).toBe(true);
 });
 
 test("reader severity: missing_step and unanswered_question block only when they match the plan", () => {

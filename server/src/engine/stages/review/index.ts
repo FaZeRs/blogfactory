@@ -30,7 +30,6 @@ const MESSAGES: Record<Kind, string> = {
   padding: "Padding adds nothing for the reader",
   jargon: "Technical term is not explained",
 };
-const FACTCHECK_BLOCKERS = new Set(["unsupported", "contradiction", "uncited_fact"]);
 
 /** Whitespace, quote and dash variants, case and citation markers must not hide a real quote. */
 export const normalizeForMatch = (text: string) =>
@@ -57,10 +56,24 @@ export function matchesPlan(issueText: string, planned: string[]): boolean {
 
 const plannedItems = (brief: BriefOutput) => [...brief.outline.map((s) => `${s.heading} ${s.purpose}`), ...brief.faq.map((f) => f.question)];
 
+/**
+ * Only checkable fact problems block: a contradiction, a cited sentence its source does not support, and an unsourced
+ * number (invented statistics are the worst). An uncited general statement is a note for the reviewer: a few frozen
+ * sources cannot back every sentence of a long article, and blocking on them makes each revise round find new ones.
+ */
+export function factcheckBlocks(issue: { kind: Kind; excerpt: string; claimId?: string }): boolean {
+  if (issue.kind === "contradiction") return true;
+  const cited = !!issue.claimId || issue.excerpt.includes("{{c:");
+  const number = /\d/.test(issue.excerpt.replace(/\{\{c:[^}]*\}\}/g, ""));
+  if (issue.kind === "unsupported") return cited || number;
+  if (issue.kind === "uncited_fact") return number;
+  return false;
+}
+
 /** Drops excerpts that are not in the draft, then maps each issue to a blocker or a warning. Pure. */
 export function classify(
   gate: "factcheck" | "reader",
-  issues: { kind: Kind; excerpt: string; fix: string }[],
+  issues: { kind: Kind; excerpt: string; fix: string; claimId?: string }[],
   raw: string,
   brief: BriefOutput,
 ): { found: Found[]; dropped: number } {
@@ -75,7 +88,7 @@ export function classify(
       continue;
     }
     const blocker = gate === "factcheck"
-      ? FACTCHECK_BLOCKERS.has(issue.kind)
+      ? factcheckBlocks(issue)
       : (issue.kind === "missing_step" || issue.kind === "unanswered_question") && matchesPlan(`${issue.excerpt} ${issue.fix}`, planned);
     found.push({ gate, kind: issue.kind, excerpt: truncate(issue.excerpt.trim(), EXCERPT_MAX), fix: issue.fix.trim(), blocker });
   }
