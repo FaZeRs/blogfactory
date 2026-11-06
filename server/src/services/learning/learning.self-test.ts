@@ -18,6 +18,16 @@ const { wordDiff } = await import("./signals.js");
   assert.equal(big.hunkCount, 1, "a very large text falls back to paragraphs and still diffs");
 }
 
+// ── evidence excerpt (no database) ──
+{
+  const { excerptOf } = await import("./distill.js");
+  const comment = { kind: "comment" as const, payload: { text: "1. \"paņem rindas\" → \"apstrādā rindas\"\n2. \"Jūsu komanda\" → \"jūsu komanda\"" } };
+  assert.equal(excerptOf(comment, "Write jūs and jūs with a lowercase initial"), "2. \"Jūsu komanda\" → \"jūsu komanda\"", "the matching comment line, inflections folded");
+  assert.equal(excerptOf(comment, "Unrelated rule"), "1. \"paņem rindas\" → \"apstrādā rindas\"", "the first line when nothing matches");
+  const edit = { kind: "edit" as const, payload: { hunks: [{ before: "utilize", after: "use", context: "" }, { before: "delve", after: "look", context: "" }] } };
+  assert.equal(excerptOf(edit, "Never write delve"), "delve -> look", "the matching edit hunk");
+}
+
 if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
   console.log("learning self-test (database part) skipped (set POSTGRES_INTEGRATION_ALLOW_WRITES=1 with a test DATABASE_URL)");
 } else {

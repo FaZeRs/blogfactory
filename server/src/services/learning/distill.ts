@@ -8,7 +8,7 @@ import { DATA_RULE, fenceData, preparePrompt } from "../../engine/prompts/load.j
 import { sanitizeText } from "../../engine/util.js";
 import { getOpenRouterKey } from "../api-keys.js";
 import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
-import { similarity } from "../ideas/novelty.js";
+import { similarity, tokens } from "../ideas/novelty.js";
 import { finishOperationEvent, startOperationEvent } from "../operation-events.js";
 import { getEffectiveSettings } from "../user-settings.js";
 import { LOCALE_RE } from "../localization/settings.js";
@@ -52,9 +52,23 @@ function signalLine(id: string, s: Signal) {
   return `${id} | ${s.kind} | ${scope} | ${clip(what, 900)}`;
 }
 
-function excerptOf(s: Signal) {
+// Words match on a shared prefix of 3 to 5 letters, so inflected forms (jūs, jūsu; rinda, rindas) still match.
+const near = (a: string, b: string) => { const n = Math.min(a.length, b.length, 5); return n >= 3 && a.slice(0, n) === b.slice(0, n); };
+
+/** The part of the signal (a comment line or an edit hunk) that shares the most words with the rule; the first part on a tie. */
+export function excerptOf(s: Pick<Signal, "kind" | "payload">, rule: string) {
   const p = s.payload as { text?: string; hunks?: { before: string; after: string }[] };
-  return s.kind === "comment" ? clip(p.text ?? "") : clip((p.hunks ?? []).slice(0, 2).map((h) => `${h.before} -> ${h.after}`).join("; "));
+  const parts = s.kind === "comment"
+    ? (p.text ?? "").split(/\n+/).map((l) => l.trim()).filter(Boolean)
+    : (p.hunks ?? []).map((h) => `${h.before} -> ${h.after}`);
+  const want = [...new Set(tokens(rule))];
+  let best = parts[0] ?? "";
+  let score = 0;
+  for (const part of parts) {
+    const n = [...new Set(tokens(part))].filter((t) => want.some((w) => near(t, w))).length;
+    if (n > score) { best = part; score = n; }
+  }
+  return clip(best);
 }
 
 /**
@@ -104,7 +118,7 @@ export async function distillSite(input: { userId: string; siteId: string; deps?
       if (rows.length >= room) break;
       const text = p.rule.replace(/\s+/g, " ").trim();
       const evidence = [...new Set(p.evidence)].flatMap((id) => (ids.has(id) ? [ids.get(id)!] : []));
-      const evidenceJson = evidence.map((s) => ({ signalId: s.id, kind: s.kind, locale: s.locale, excerpt: excerptOf(s) }));
+      const evidenceJson = evidence.map((s) => ({ signalId: s.id, kind: s.kind, locale: s.locale, excerpt: excerptOf(s, `${text} ${p.rationale}`) }));
       if (p.op === "retire") {
         const target = approved.find((a) => a.id === p.targetRuleId);
         // A retire proposal for something that is not an approved rule, or already proposed, is dropped.
