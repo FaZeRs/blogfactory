@@ -12,7 +12,7 @@ import { MIN_FAQ_ANSWER_LENGTH } from "../../markdown/faq.js";
 import { NO_RULES, styleRulesText } from "../../../services/learning/rules.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
 import { PLAN, BriefOutputSchema, fitDescription, type BriefOutput } from "../brief/schema.js";
-import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, writerVoice, type PromptEvidence } from "../shared.js";
+import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, writerVoice, type PromptEvidence, refreshCurrentText, NO_CURRENT } from "../shared.js";
 import { DraftSchema, type DraftOutput } from "./schema.js";
 
 export type DraftInput = {
@@ -28,6 +28,8 @@ export type DraftInput = {
   profile?: ComponentProfile;
   /** The owner's approved learned rules for English drafts, as a prompt block (`styleRulesText`); missing means none. */
   styleRules?: string;
+  /** For a refresh run, the post being updated (`refreshCurrentText`); missing for a new article. */
+  current?: string;
 };
 
 /** The exact call-to-action tag the brief chose, or "" for the markdown profile and a "none" service. */
@@ -51,12 +53,13 @@ const briefForPrompt = ({ keywordData: _k, ...brief }: BriefOutput) => JSON.stri
 /** What the writer stages (draft, revise) read: the brief, verified evidence and the sources to cite. */
 export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput> {
   if (!MODE_PRESETS[run.mode as EngineMode]) throw new StageInputError(`Unsupported mode ${run.mode}`);
-  const [stored, evidence, sources, settings, styleRules] = await Promise.all([
+  const [stored, evidence, sources, settings, styleRules, current] = await Promise.all([
     latestStageOutput<unknown>(run, "brief"),
     loadEvidence(run),
     loadSources(run),
     getEffectiveSettings(run.userId, run.siteId),
     styleRulesText(run.userId, run.siteId, "draft"),
+    refreshCurrentText(run),
   ]);
   const brief = BriefOutputSchema.parse(stored);
   const urlOf = new Map(sources.map((s) => [s.id, s.finalUrl]));
@@ -71,6 +74,7 @@ export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput>
     citationStyle: runSettings(run).citationStyle,
     profile: componentProfile(run),
     styleRules,
+    ...(current ? { current } : {}),
   };
 }
 
@@ -102,6 +106,7 @@ export const draftStage: Stage<DraftInput, DraftOutput> = {
       locale: input.locale,
       voice: input.voice || "No custom voice rules.",
       styleRules: input.styleRules ?? NO_RULES,
+      current: input.current ? fenceData("current-article", input.current) : NO_CURRENT,
       planMinWords: PLAN.limits.min,
       planMaxWords: PLAN.limits.max,
       minWords: g.minWords,

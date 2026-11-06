@@ -9,7 +9,7 @@ import { StageInputError, type EngineMode } from "../../types.js";
 import { sanitizeText, truncate } from "../../util.js";
 import { NO_RULES, styleRulesText } from "../../../services/learning/rules.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
-import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, writerVoice, type LinkCandidate, type PromptEvidence } from "../shared.js";
+import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, writerVoice, type LinkCandidate, type PromptEvidence, refreshCurrentText, NO_CURRENT } from "../shared.js";
 import type { ResearchOutput, SerpAnalysis } from "../research/schema.js";
 import { BriefModelSchema, PLAN, fitLengthPlan, planTarget, repairBrief, validateBrief, type Brief, type BriefOutput } from "./schema.js";
 
@@ -28,6 +28,8 @@ export type BriefInput = {
   profile?: ComponentProfile;
   /** The owner's approved learned rules for English drafts, as a prompt block (`styleRulesText`); missing means none. */
   styleRules?: string;
+  /** For a refresh run, the post being updated (`refreshCurrentText`); missing for a new article. */
+  current?: string;
   /** What the ranking pages cover and miss, and the questions people ask; absent when the competitor step found nothing. */
   serp?: SerpAnalysis | null;
   questions?: string[];
@@ -78,7 +80,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
   async input({ run }) {
     const r = MODE_PRESETS[run.mode as EngineMode]?.research;
     if (!r) throw new StageInputError(`Unsupported mode ${run.mode}`);
-    const [evidence, sources, settings, research, styleRules] = await Promise.all([loadEvidence(run), loadSources(run), getEffectiveSettings(run.userId, run.siteId), latestStageOutput<ResearchOutput>(run, "research"), styleRulesText(run.userId, run.siteId, "draft")]);
+    const [evidence, sources, settings, research, styleRules, current] = await Promise.all([loadEvidence(run), loadSources(run), getEffectiveSettings(run.userId, run.siteId), latestStageOutput<ResearchOutput>(run, "research"), styleRulesText(run.userId, run.siteId, "draft"), refreshCurrentText(run)]);
     const urlOf = new Map(sources.map((s) => [s.id, s.finalUrl]));
     const verified = evidence.filter((e) => e.verified);
     if (verified.length === 0) throw new StageInputError("no verified evidence; research did not finish");
@@ -92,6 +94,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       guidance: editorGuidance(run.settings),
       profile: componentProfile(run),
       styleRules,
+      ...(current ? { current } : {}),
       serp: research.serpAnalysis ?? null,
       questions: research.questions ?? [],
       keywordData: r.useKeywordData,
@@ -113,6 +116,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       components: briefComponents(lindevo),
       voice: input.voice || "No custom voice rules.",
       styleRules: input.styleRules ?? NO_RULES,
+      current: input.current ? fenceData("current-article", input.current) : NO_CURRENT,
       openingWords: PLAN.openingWords,
       faqWordsEach: PLAN.faqWordsEach,
       planMinWords: PLAN.limits.min,
