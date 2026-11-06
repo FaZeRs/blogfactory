@@ -208,6 +208,10 @@ assert.equal(lindevoArticleArgs(privateImageArticle, "operations").content, "![C
 if (savedPublicUrl === undefined) delete process.env.S3_PUBLIC_URL;
 else process.env.S3_PUBLIC_URL = savedPublicUrl;
 assert.equal("thumbnail" in lindevoArticleArgs({ title: "T", markdown: "", excerpt: "", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [] } as never, "operations"), false);
+const lvArticle = { title: "T", markdown: "x", excerpt: "E", metaDescription: "D", slug: "p", tags: [], coverAltText: "", inlineImages: [{ url: "https://cdn.example/chart.webp", altText: "Chart" }] };
+const lvArgs = lindevoArticleArgs({ ...lvArticle, lv: { title: "Nosaukums", slug: "nosaukums", description: "Apraksts", content: "![Diagramma](https://cdn.example/chart.webp)", imageAlt: "A".repeat(200) } } as never, "operations", undefined, new Map([["https://cdn.example/chart.webp", "https://store.example/chart-1.webp"]]));
+assert.deepEqual(lvArgs.lv, { title: "Nosaukums", slug: "nosaukums", description: "Apraksts", content: "![Diagramma](https://store.example/chart-1.webp)", imageAlt: "A".repeat(125) });
+assert.equal("lv" in lindevoArticleArgs(lvArticle as never, "operations"), false);
 process.env.API_KEY_ENCRYPTION_SECRET = "old-publishing-secret";
 const staleGhostCredentials = encryptSecret(JSON.stringify({ url: "https://old.example", adminApiKey: `${"a".repeat(24)}:${"b".repeat(64)}` }));
 process.env.API_KEY_ENCRYPTION_SECRET = "publishing-self-test-secret";

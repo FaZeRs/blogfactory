@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 import { connect } from "framer-api";
 import { and, eq, desc, lt, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { imageAssets, postPublications, posts, siteIntegrations, sites, userSettings } from "../db/schema.js";
+import { imageAssets, postPublications, postTranslations, posts, siteIntegrations, sites, userSettings } from "../db/schema.js";
 import { decryptSecret, encryptSecret, encryptedCredentialStatus, testedConnectionReady } from "./api-keys.js";
 import { normalizeImagePlacement, reflowInlineImages, type ImagePlacement, type PlacementImage } from "./image-placement.js";
 import { stripUnclosedBoldMarkers } from "./post-cleanup.js";
@@ -128,7 +128,11 @@ interface ArticlePayload {
   authorId: string | null;
   inlineImages: PlacementImage[];
   appendedCta?: BrandCta | null;
+  /** The Latvian translation Lindevo stores on the same article; set only when it is ready or edited and current. */
+  lv?: LindevoTranslation;
 }
+
+export interface LindevoTranslation { title: string; slug: string; description: string; content: string; imageAlt: string }
 
 interface PublishingImageAsset {
   storagePath: string;
@@ -441,6 +445,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
     .where(and(eq(imageAssets.userId, userId), eq(imageAssets.postId, postId)));
   const brandCtas = await publishingBrandCtas(userId, integration.siteId);
   let article = buildArticlePayload(post, canonicalSeo, publishOptions, normalizeImagePlacement("auto"), assetRows, brandCtas, ortakAlanProfile);
+  if (provider === "lindevo") article.lv = await currentLindevoTranslation(userId, postId, integration.siteId, revision?.id);
   let validation = { errors: [] as string[], warnings: [] as string[] };
   const idempotencyKey = publishingIdempotencyKey({
     userId,
@@ -2208,7 +2213,38 @@ export function lindevoArticleArgs(article: ArticlePayload, category: string, th
     tags: article.tags,
     ...(thumbnail ? { thumbnail, imageAlt: truncateAtWord(article.coverAltText, 125) } : {}),
     ...(publishAt ? { publishAt: publishAt.toISOString() } : {}),
+    ...(article.lv ? { lv: { ...article.lv, content: replaceImageUrls(article.lv.content, inlineImages), imageAlt: truncateAtWord(article.lv.imageAlt, 125) } } : {}),
   };
+}
+
+/** A translation travels with the article only when it is ready or edited and made from the post's current revision. */
+async function currentLindevoTranslation(userId: string, postId: string, siteId: string, revisionId: string | undefined): Promise<LindevoTranslation | undefined> {
+  if (!revisionId) return undefined;
+  const [row] = await db.select().from(postTranslations).where(and(
+    eq(postTranslations.userId, userId), eq(postTranslations.siteId, siteId), eq(postTranslations.postId, postId), eq(postTranslations.locale, "lv"),
+  )).limit(1);
+  if (!row || (row.status !== "ready" && row.status !== "edited") || row.sourceRevisionId !== revisionId) return undefined;
+  return { title: row.title, slug: row.slug, description: row.description, content: row.content, imageAlt: row.imageAlt };
+}
+
+const LV_SLUG_RETRIES = 6;
+const SLUG_CONFLICT_RE = /slug[^]*(exist|taken|conflict|duplicate|in use)|(exist|taken|conflict|duplicate|in use)[^]*slug/i;
+
+/** Sends the article; a slug conflict while a translation rides along retries its slug as -2 to -6, then reports the first error. */
+async function sendLindevoArticle(credentials: LindevoCredentials, name: "create_article" | "update_article", args: ReturnType<typeof lindevoArticleArgs> & { id?: string }) {
+  try {
+    return await lindevoCall(credentials, name, args);
+  } catch (first) {
+    if (!args.lv || !SLUG_CONFLICT_RE.test(first instanceof Error ? first.message : "")) throw first;
+    for (let n = 2; n <= LV_SLUG_RETRIES; n++) {
+      try {
+        return await lindevoCall(credentials, name, { ...args, lv: { ...args.lv, slug: `${args.lv.slug.slice(0, 96)}-${n}` } });
+      } catch (error) {
+        if (!SLUG_CONFLICT_RE.test(error instanceof Error ? error.message : "")) throw error;
+      }
+    }
+    throw first;
+  }
 }
 
 async function lindevoImageBase64(pathOrUrl: string) {
@@ -2257,8 +2293,8 @@ async function publishLindevo(credentials: LindevoCredentials, article: ArticleP
   }
   const args = lindevoArticleArgs(article, credentials.category, thumbnail, uploaded, publishAt);
   const data = existing && previousId
-    ? await lindevoCall(credentials, "update_article", { id: previousId, ...args })
-    : await lindevoCall(credentials, "create_article", args);
+    ? await sendLindevoArticle(credentials, "update_article", { id: previousId, ...args })
+    : await sendLindevoArticle(credentials, "create_article", args);
   const id = typeof data.id === "string" ? data.id : null;
   return {
     status: "draft",
