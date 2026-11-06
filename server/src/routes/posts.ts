@@ -29,8 +29,10 @@ import {
 import { getReviewPacket, savedPublishingMetadata } from "../services/control-plane.js";
 import { scoreRevisions } from "../services/post-scorecard.js";
 import { getEffectiveSettings } from "../services/user-settings.js";
+import { createPostReviseRoutes } from "./post-revise.js";
 
 export const postsRoutes = new Hono();
+postsRoutes.route("/", createPostReviseRoutes());
 
 postsRoutes.get("/", async (c) => {
   const userId = getUserId(c);
