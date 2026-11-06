@@ -9,6 +9,7 @@ import { overlapGate } from "./overlap.js";
 import { similarityGate } from "./similarity.js";
 import { structureGate } from "./structure.js";
 import { type EvidenceItem, type GateInput, type SourceItem, gateBlockers } from "./types.js";
+import { STYLE_PHRASES, styleGate } from "./style.js";
 import { voiceGate } from "./voice.js";
 
 const cfg = ENGINE_CONFIG.gates;
@@ -58,7 +59,7 @@ const messages = (r: { issues: { message: string }[] }) => r.issues.map((i) => i
 test("a clean article passes every code gate, in a fixed order", async () => {
   const results = await runCodeGates(input, { checkLink: ok, config: ENGINE_CONFIG });
   expect(results.map((r) => r.gate)).toEqual([
-    "structure", "meta", "faq", "voice", "voice-warnings", "citations", "links", "links-warnings", "overlap", "similarity",
+    "structure", "meta", "faq", "voice", "voice-warnings", "style", "style-warnings", "citations", "links", "links-warnings", "overlap", "similarity",
   ]);
   expect(gateBlockers(results)).toEqual([]);
   expect(results.find((r) => r.gate === "meta")?.metrics?.words).toBeGreaterThan(cfg.minWords);
@@ -149,4 +150,29 @@ test("similarity gate blocks a near-copy of an existing post and passes a new on
   const r = similarityGate({ ...input, existingPosts: [{ content: base, id: "p1", title: "x" }], markdown: fresh }, cfg);
   expect(r.passed).toBe(true);
   expect(r.metrics?.maxSimilarity).toBeLessThan(cfg.similarityMax);
+});
+
+test("style: 3 phrase hits or too many em dashes block; 1-2 hits only suggest; code and URLs are ignored", () => {
+  const filler = Array.from({ length: 200 }, (_, i) => `Plain sentence number ${i} about topic${i}.`).join(" ");
+  expect(STYLE_PHRASES.length).toBeGreaterThanOrEqual(25);
+  const [clean, cleanWarn] = styleGate(filler);
+  expect(clean?.passed && cleanWarn?.passed).toBe(true);
+
+  const [one, oneWarn] = styleGate(`${filler} Let us Delve into the details. It is worth noting that it works.`);
+  expect(one?.passed).toBe(true);
+  expect(oneWarn?.issues).toHaveLength(2);
+  expect(oneWarn?.issues[0]?.excerpt?.length).toBeLessThanOrEqual(160);
+
+  const three = styleGate(`${filler} We delve into it. Seamlessly done. This is a game changer for teams.`);
+  expect(three[0]?.passed).toBe(false);
+  expect(three[0]?.issues).toHaveLength(3);
+  expect(three[1]?.passed).toBe(true);
+  expect(gateBlockers(three)[0]?.gate).toBe("style");
+
+  const dashed = `${filler} ${"A short clause \u2014 then another. ".repeat(15)}`;
+  expect(styleGate(dashed)[0]?.passed).toBe(false);
+  expect(styleGate(`${filler} One clause \u2014 one dash.`)[0]?.passed).toBe(true);
+
+  const ignored = `${filler}\n\n\`\`\`\ndelve seamlessly tapestry\n\`\`\`\n\nSee [the page](https://x.example/delve-seamlessly-tapestry).`;
+  expect(styleGate(ignored).every((r) => r.passed)).toBe(true);
 });

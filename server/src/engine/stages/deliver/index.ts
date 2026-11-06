@@ -38,7 +38,7 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
   key: "deliver",
   promptVersion: "deliver@2026-11-05.1",
   async input({ run }) {
-    const [draft, gates] = await Promise.all([latestDraft(run), findStageOutput<GatesOutput>(run, "gates")]);
+    const [draft, gates] = await Promise.all([latestDraft(run), findStageOutput<GatesOutput>(run, "gates", "review")]);
     return { draft, escalated: gates?.output.escalated ?? false, reason: gates?.output.reason ?? null };
   },
   async run(input, ctx) {

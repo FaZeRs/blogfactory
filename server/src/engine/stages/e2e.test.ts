@@ -4,7 +4,7 @@ import { dbTestsEnabled } from "./test-db.js";
 const enabled = dbTestsEnabled("engine e2e test");
 const t = await (enabled ? import("./test-db.js") : Promise.resolve(null));
 const { db } = enabled ? await import("../../db/index.js") : { db: null as never };
-const { articleSources, articleStageRuns, posts } = enabled ? await import("../../db/schema.js") : ({} as never);
+const { articleGateResults, articleSources, articleStageRuns, posts } = enabled ? await import("../../db/schema.js") : ({} as never);
 const { eq } = await import("drizzle-orm");
 
 describe.skipIf(!enabled)("engine end to end (fakes only)", () => {
@@ -66,6 +66,49 @@ describe.skipIf(!enabled)("engine end to end (fakes only)", () => {
     const end = await t!.drive(run.id, deps);
     expect(end.state).toBe("escalated");
     expect(end.stateReason).toStartWith("Gates still failing");
+    const post = await postOf(end.postId);
+    expect(post.editorialState).toBe("in_review");
+    expect((post.publishingMetadata as { engine: { escalated: boolean } }).engine.escalated).toBe(true);
+  });
+
+  const issue = (kind: string, excerpt: string) => ({ issues: [{ kind, excerpt, fix: "Say only what the evidence supports." }] });
+  const gateRows = async (runId: string) => (await db.select().from(articleGateResults).where(eq(articleGateResults.runId, runId))) as { gate: string; attempt: number; passed: boolean }[];
+
+  test("gates pass, review finds nothing: gates, review, deliver, with a fact-check row and no revise", async () => {
+    const { run } = await t!.fixture("normal");
+    const { deps } = t!.makeDeps({ drafts: [t!.GOOD_ARTICLE], revisions: [] });
+    const end = await t!.drive(run.id, deps);
+    expect(end.state).toBe("done");
+    expect((await stages(run.id)).filter((x) => ["gates", "review", "revise"].includes(x))).toEqual(["gates", "review"]);
+    expect((await gateRows(run.id)).filter((g) => ["factcheck", "reader"].includes(g.gate)).map((g) => [g.gate, g.passed])).toEqual([["factcheck", true]]);
+  });
+
+  test("a review blocker goes review, revise, gates, review, then delivers clean", async () => {
+    const { run } = await t!.fixture("deep");
+    const fixed = t!.GOOD_ARTICLE.replace("Teams that track their bills find savings early", "Teams that track their bills often find savings early");
+    const { deps } = t!.makeDeps({
+      drafts: [t!.GOOD_ARTICLE],
+      revisions: [fixed],
+      factchecks: [issue("unsupported", "Teams that track their bills find savings early {{c:c1}}.")],
+    });
+    const end = await t!.drive(run.id, deps);
+    expect(end.state).toBe("done");
+    expect(end.reviseCount).toBe(1);
+    const rows = await db.select().from(articleStageRuns).where(eq(articleStageRuns.runId, run.id));
+    const order = rows.sort((a: { startedAt: Date }, b: { startedAt: Date }) => +a.startedAt - +b.startedAt).map((r: { stage: string }) => r.stage);
+    expect(order.slice(order.indexOf("gates"))).toEqual(["gates", "review", "revise", "gates", "review", "deliver"]);
+    const post = await postOf(end.postId);
+    expect(post.content).toContain("often find savings early");
+    expect((post.publishingMetadata as { engine: { escalated: boolean } }).engine.escalated).toBe(false);
+  });
+
+  test("a review that keeps failing delivers the draft and escalates the run", async () => {
+    const { run } = await t!.fixture("normal");
+    const again = issue("contradiction", "Review the bills every month.");
+    const { deps } = t!.makeDeps({ drafts: [t!.GOOD_ARTICLE], revisions: [t!.GOOD_ARTICLE.replace("Section number 3", "Section number three")], factchecks: [again, again] });
+    const end = await t!.drive(run.id, deps);
+    expect(end.state).toBe("escalated");
+    expect(end.stateReason).toStartWith("Review still failing");
     const post = await postOf(end.postId);
     expect(post.editorialState).toBe("in_review");
     expect((post.publishingMetadata as { engine: { escalated: boolean } }).engine.escalated).toBe(true);

@@ -17,6 +17,7 @@ const ROLES = [
   ["brief", "Brief"],
   ["draft", "Draft"],
   ["revise", "Revise"],
+  ["review", "Review"],
 ] as const;
 
 export function EngineSettingsCard({ siteId }: { siteId: string | null | undefined }) {

@@ -30,7 +30,8 @@ export function stageDetails(stage: StageKey, stored: unknown): Obj | null {
     case "revise":
       return pick(out, ["title", "words"]);
     case "gates":
-      return pick(out, ["passed", "escalated", "reason", "blockers", "blockerCount", "warningCount"]);
+    case "review":
+      return pick(out, ["passed", "escalated", "reason", "blockers", "blockerCount", "warningCount", "dropped"]);
     case "deliver":
       return pick(out, ["postId", "created", "escalated"]);
     default:

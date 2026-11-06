@@ -18,6 +18,12 @@ describe("stageDetails", () => {
     expect(d?.faq).toEqual(["Q?"]);
   });
 
+  test("review reports the gates shape plus the dropped count", () => {
+    const d = stageDetails("review", { output: { passed: false, blockerCount: 1, warningCount: 0, blockers: [], dropped: 2, escalated: false, reason: null, extra: 1 } });
+    expect(d).toMatchObject({ blockerCount: 1, dropped: 2 });
+    expect(d).not.toHaveProperty("extra");
+  });
+
   test("returns null for empty or unknown output", () => {
     expect(stageDetails("research", null)).toBeNull();
     expect(stageDetails("gates", { output: {} })).toBeNull();

@@ -18,4 +18,10 @@ assert.deepEqual(parseEngineSettings({ models: { draft: " a/b ", bogus: "z", bri
   { models: { draft: "a/b" }, budgetUsd: 3, citationStyle: "inline" });
 assert.deepEqual(parseEngineSettings(null), {});
 
+assert.deepEqual(normal.review, ["factcheck"]);
+assert.deepEqual(deep.review, ["factcheck", "reader"]);
+assert.equal(normal.models.review, normal.models.draft, "review defaults to the writer model");
+assert.equal(resolveRunSettings("deep", { models: { review: "x/cheap" } }).models.review, "x/cheap");
+assert.deepEqual(parseEngineSettings({ models: { review: " a/b " } }), { models: { review: "a/b" } });
+
 console.log("modes self-test passed");

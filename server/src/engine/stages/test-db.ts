@@ -119,7 +119,8 @@ const SERP_ANALYSIS = {
   informationGain: [{ point: "Battery sizing follows evening use, not roof size", claimIds: ["c3", "c99"] }],
 };
 
-export type Script = { drafts: string[]; revisions: string[] };
+/** `factchecks` and `readers` are the review replies in order; once spent, a check finds nothing. */
+export type Script = { drafts: string[]; revisions: string[]; factchecks?: unknown[]; readers?: unknown[] };
 
 export function makeDeps(script: Script) {
   const base = createFakeLlm({
@@ -129,9 +130,15 @@ export function makeDeps(script: Script) {
     revise: script.revisions.map(draftReply),
   });
   // Claim extraction is matched to its page, because pages are read in parallel.
+  const reviews = { factcheck: [...(script.factchecks ?? [])], reader: [...(script.readers ?? [])] };
   const llm: typeof base = {
     ...base,
     json: (req) => {
+      if (req.role === "review") {
+        // The two checks run in parallel, so each is told apart by its prompt.
+        const which = req.system.includes("fact-checker") ? "factcheck" : "reader";
+        return createFakeLlm({ review: [reviews[which].shift() ?? { issues: [] }] }).json(req);
+      }
       if (req.role === "research_claims" && req.user.includes("## Ranking pages")) {
         return createFakeLlm({ research_claims: [SERP_ANALYSIS] }).json(req);
       }

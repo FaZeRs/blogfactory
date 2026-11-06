@@ -6,6 +6,7 @@ export type StageKey =
   | "brief"
   | "draft"
   | "gates"
+  | "review"
   | "revise"
   | "deliver";
 
@@ -14,7 +15,8 @@ export type ModelRole =
   | "research_claims"
   | "brief"
   | "draft"
-  | "revise";
+  | "revise"
+  | "review";
 
 export type Transition =
   | { type: "advance"; to: StageKey }

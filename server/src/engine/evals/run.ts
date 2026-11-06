@@ -9,6 +9,7 @@ import { DATA_RULE, fenceData, preparePrompt } from "../prompts/load.js";
 import type { ArticleRunRow, StageContext } from "../runtime/stage.js";
 import { briefStage, type BriefInput } from "../stages/brief/index.js";
 import { draftStage, type DraftInput } from "../stages/draft/index.js";
+import { reviewDraft } from "../stages/review/index.js";
 import { reviseStage } from "../stages/revise/index.js";
 import { evidenceText, normalizeDraftMarkdown } from "../stages/shared.js";
 import { RateLimitError, type EngineMode, type ModelRole } from "../types.js";
@@ -110,7 +111,7 @@ async function gate(parts: { title: string; description: string; raw: string; ma
 
 const uniqueGates = (blockers: { gate: string }[]) => [...new Set(blockers.map((b) => b.gate))];
 
-/** Brief, draft, gates and revise from the frozen evidence: the stages' own `run`, no database. */
+/** Brief, draft, gates, review and revise from the frozen evidence: the stages' own `run`, no database. */
 export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, llm: EngineLlm, deps: Pick<EvalDeps, "now" | "signal"> = {}, model?: string): Promise<Generated> {
   const now = deps.now ?? (() => new Date());
   // Stages read models from the run's settings, as a site's engine settings would set them.
@@ -154,13 +155,24 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   let draft = (await draftStage.run(draftInput, ctx(0))).output;
   let revisions = 0;
   let previous: number | null = null;
+  let previousReview: number | null = null;
   for (;;) {
     const markdown = renderCitations(draft.markdown, frozen.evidence, frozen.sources, settings.citationStyle, brief.locale);
-    const blockers = await gate({ title: draft.title, description: draft.description, raw: draft.markdown, markdown }, frozen);
-    // Same stop rules as the gates stage: revise loops are spent, or the last revision did not shrink the list.
-    const stalled = previous !== null && blockers.length >= previous;
-    if (blockers.length === 0 || revisions >= settings.preset.maxRevise || stalled) {
-      return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(blockers) };
+    let blockers = await gate({ title: draft.title, description: draft.description, raw: draft.markdown, markdown }, frozen);
+    if (blockers.length === 0 && settings.preset.review.length) {
+      // The paid review checks read only a draft the code gates passed, as in the engine.
+      const { outcome } = await reviewDraft({ ...draftInput, draft, previousBlockers: previousReview, reviseCount: revisions }, ctx(revisions));
+      if (outcome.next.type !== "advance" || outcome.next.to === "deliver") {
+        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(outcome.output.escalated ? outcome.output.blockers : []) };
+      }
+      blockers = outcome.output.blockers;
+      previousReview = blockers.length;
+    } else {
+      // Same stop rules as the gates stage: revise loops are spent, or the last revision did not shrink the list.
+      const stalled = previous !== null && blockers.length >= previous;
+      if (blockers.length === 0 || revisions >= settings.preset.maxRevise || stalled) {
+        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(blockers) };
+      }
     }
     previous = blockers.length;
     draft = (await reviseStage.run({ ...draftInput, draft, blockers }, ctx(revisions))).output;

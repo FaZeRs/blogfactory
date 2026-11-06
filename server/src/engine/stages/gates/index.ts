@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import { db } from "../../../db/index.js";
 import { articleGateResults, posts, sites } from "../../../db/schema.js";
 import { safeFetch } from "../../../services/safe-fetch.js";
@@ -12,6 +12,7 @@ import { truncate } from "../../util.js";
 import type { DraftOutput } from "../draft/schema.js";
 import type { BriefOutput } from "../brief/schema.js";
 import { findStageOutput, latestDraft, latestStageOutput, renderArticle, runSettings } from "../shared.js";
+import { REVIEW_GATES } from "../review/schema.js";
 import type { GatesOutput } from "./schema.js";
 
 export type GatesInput = { draft: DraftOutput; previousBlockers: number | null; reviseCount: number };
@@ -51,7 +52,7 @@ export const gatesStage: Stage<GatesInput, GatesOutput> = {
   key: "gates",
   promptVersion: "gates@2026-11-05.1",
   async input({ run }) {
-    const [draft, previous] = await Promise.all([latestDraft(run), findStageOutput<GatesOutput>(run, "gates")]);
+    const [draft, previous] = await Promise.all([latestDraft(run), findStageOutput<GatesOutput>(run, "gates", "review")]);
     return { draft, previousBlockers: previous?.output.blockerCount ?? null, reviseCount: run.reviseCount };
   },
   async run(input, ctx) {
@@ -83,7 +84,7 @@ export const gatesStage: Stage<GatesInput, GatesOutput> = {
 
     // A retried attempt replaces its own rows; the attempt number is unique per run and stage.
     await db.transaction(async (tx) => {
-      const where = and(eq(articleGateResults.runId, run.id), eq(articleGateResults.userId, run.userId), eq(articleGateResults.attempt, ctx.attempt));
+      const where = and(eq(articleGateResults.runId, run.id), eq(articleGateResults.userId, run.userId), eq(articleGateResults.attempt, ctx.attempt), notInArray(articleGateResults.gate, [...REVIEW_GATES]));
       await tx.delete(articleGateResults).where(where);
       await tx.insert(articleGateResults).values(results.map((r) => ({
         runId: run.id, userId: run.userId, attempt: ctx.attempt, gate: r.gate, passed: r.passed, severity: r.severity, issues: r.issues, metrics: r.metrics ?? {},
@@ -94,9 +95,11 @@ export const gatesStage: Stage<GatesInput, GatesOutput> = {
     const warningCount = results.filter((r) => !r.passed && r.severity === "warning").reduce((n, r) => n + r.issues.length, 0);
     const base = { blockerCount: blockers.length, warningCount, blockers };
     if (blockers.length === 0) {
-      return { next: { type: "advance", to: "deliver" }, output: { ...base, passed: true, escalated: false, reason: null } };
+      // Only a draft with no code blockers reaches the paid review checks.
+      const to = runSettings(run).preset.review.length ? "review" : "deliver";
+      return { next: { type: "advance", to }, output: { ...base, passed: true, escalated: false, reason: null } };
     }
-    // Stop when the last revision did not shrink the blocker list, or the mode's revise loops are spent.
+    // Stop when the last revision did not shrink the blocker list it was given (from the gates or the review), or the mode's revise loops are spent.
     const stalled = input.previousBlockers !== null && blockers.length >= input.previousBlockers;
     if (input.reviseCount < runSettings(run).preset.maxRevise && !stalled) {
       return { next: { type: "advance", to: "revise" }, output: { ...base, passed: false, escalated: false, reason: null } };

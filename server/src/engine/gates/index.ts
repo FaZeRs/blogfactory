@@ -7,11 +7,12 @@ import { faqGate, metaGate } from "./meta.js";
 import { overlapGate } from "./overlap.js";
 import { similarityGate } from "./similarity.js";
 import { structureGate } from "./structure.js";
+import { styleGate } from "./style.js";
 import type { GateInput, GateResult } from "./types.js";
 import { voiceGate } from "./voice.js";
 
 /**
- * The code gates, in this fixed order: structure, components (Lindevo profile only), meta, faq, voice, voice-warnings, citations, links,
+ * The code gates, in this fixed order: structure, components (Lindevo profile only), meta, faq, voice, voice-warnings, style, style-warnings, citations, links,
  * links-warnings, overlap, similarity.
  */
 export async function runCodeGates(
@@ -32,6 +33,7 @@ export async function runCodeGates(
       `${input.title}\n${input.description}\n${toPlainText(input.markdown)}`,
       deps.config.voice
     ),
+    ...styleGate(input.markdown),
     citationsGate(input),
     ...(await linksGate(input, deps)),
     overlapGate(input, cfg),
