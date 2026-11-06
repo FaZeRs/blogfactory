@@ -14,6 +14,7 @@ export type BackgroundWorkerConfig = {
 // Feed ticks stay on the fixed six-hour cadence; retention and Search Console work is daily.
 export const FEEDS_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const AI_VISIBILITY_INTERVAL_MS = 60 * 60 * 1000;
 
 export type PeriodicTask = {
   name: string;
@@ -158,6 +159,12 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
       }),
     },
     {
+      // Hourly, so every site due today runs even when more than one batch is due; done weeks cost one query per site.
+      name: "ai-visibility",
+      intervalMs: AI_VISIBILITY_INTERVAL_MS,
+      run: () => drainVisibility(),
+    },
+    {
       name: "daily",
       intervalMs: DAILY_INTERVAL_MS,
       run: async () => {
@@ -166,7 +173,6 @@ async function loadPeriodicTasks(env: Record<string, string | undefined>): Promi
           daily("search-console", () => drainSearchConsoleSync(config.searchConsole.limit)),
           daily("operation-events", () => purgeExpiredOperationEvents()),
           daily("idea-weights", () => drainWeightLearning()),
-          daily("ai-visibility", () => drainVisibility()),
         ]);
         if (results.some((result) => result.status === "rejected")) throw new Error("Daily drain failed");
       },

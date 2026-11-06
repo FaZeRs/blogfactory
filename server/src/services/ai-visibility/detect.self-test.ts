@@ -4,6 +4,7 @@ import { askEngine, resolveRedirect, EmptyAnswerError, EngineError, QuotaError, 
 import { questionHash, validateQuestions } from "./questions.js";
 import { normalizeVisibilitySettings } from "./settings.js";
 import { isoWeek } from "./run.js";
+import { previousIsoWeek } from "./summary.js";
 
 // normalizeUrl / hostOf
 assert.equal(normalizeUrl("https://User:pw@Lindevo.com/blog/post/?utm_source=x&gclid=1&page=2#top"), "https://lindevo.com/blog/post/?page=2".replace("post/?", "post?"));
@@ -124,5 +125,7 @@ assert.equal((await resolveRedirect({ url: g, title: "lindevo.com" }, head("http
 assert.equal((await resolveRedirect({ url: g, title: "lindevo.com" }, head(null, true))).url, "https://lindevo.com/");
 assert.equal((await resolveRedirect({ url: g, title: "Some page" }, head("javascript:alert(1)"))).url, g);
 assert.equal((await resolveRedirect({ url: "https://a.example/x" }, head(null, true))).url, "https://a.example/x");
+
+assert.deepEqual(["2026-W45", "2026-W01", "2021-W01", "2027-W01"].map(previousIsoWeek), ["2026-W44", "2025-W52", "2020-W53", "2026-W53"]);
 
 console.log("ai-visibility detect/engines/questions self-test passed");

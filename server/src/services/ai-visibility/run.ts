@@ -10,7 +10,9 @@ import { classify } from "./detect.js";
 import { askEngine, EngineError, QuotaError, RateLimitError, type AskArgs, type EngineAnswer } from "./engines.js";
 import { questionHash } from "./questions.js";
 import { engineLabel, normalizeVisibilitySettings } from "./settings.js";
-import { monthCost } from "./summary.js";
+import { isoWeek, monthCost } from "./summary.js";
+
+export { isoWeek };
 
 export const PAUSE_MS = 2_000;
 export const MAX_RATE_WAIT_MS = 90_000;
@@ -18,15 +20,6 @@ export const STALE_RUN_MS = 30 * 60_000;
 const ANSWER_CAP = 4_000;
 const ESTIMATE_USD: Record<string, number> = { openai: 0.04, perplexity: 0.015, google: 0.08 } // measured 2026-11; Gemini runs 2–6 paid searches per answer;
 
-/** ISO 8601 week, "YYYY-Www", from the UTC date. */
-export function isoWeek(date: Date): string {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day); // the week's Thursday decides its year
-  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
-  const n = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(n).padStart(2, "0")}`;
-}
 
 export const estimateUsd = (engine: string) => ESTIMATE_USD[engine.split("/")[0] ?? ""] ?? 0.05;
 
@@ -104,7 +97,11 @@ export async function runVisibility(userId: string, siteId: string, opts: RunOpt
   try {
     for (const pair of pending) {
       if (stopped.has(pair.engine)) continue;
-      if (!first) await sleep(PAUSE_MS);
+      if (!first) {
+        // Each call is logged spend, so a run that starts under the limits can cross them; the rest stays pending.
+        if ((await checkAccountGuardrails(userId, new Date())).blocked) break;
+        await sleep(PAUSE_MS);
+      }
       first = false;
       const label = engineLabel(pair.engine);
       let row: Partial<typeof aiAnswerChecks.$inferInsert>;

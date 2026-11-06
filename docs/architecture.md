@@ -154,7 +154,7 @@ The routes are under `/api/ideas`, with settings at `/api/settings/ideas`. The w
 - **Summary** (`summary.ts`): the share of answered questions cited, per engine and over 12 weeks, the top cited domains, and gaps (a competitor cited, the site not).
 - **Ideas:** gaps that hold for two weeks become `ai_gap` discovery signals, and the panel's **Add as idea** creates a manual idea.
 
-The worker's daily task runs `drainVisibility` for enabled sites once their weekday arrives. The routes are under `/api/ai-visibility`; the web panel is on Search Growth, with one number on Overview. The MCP tool `get_ai_visibility` (`content:read`) returns the summary without answer text and never starts a run.
+The worker's hourly `ai-visibility` task runs `drainVisibility` (at most 5 sites per pass) for enabled sites once their weekday arrives. A run rechecks the account guardrails before every paid call, and the monthly cap is read from the spend log. The routes are under `/api/ai-visibility`; the web panel is on Search Growth, with one number on Overview. The MCP tool `get_ai_visibility` (`content:read`) returns the summary without answer text and never starts a run.
 
 ## Hosting and routing
 

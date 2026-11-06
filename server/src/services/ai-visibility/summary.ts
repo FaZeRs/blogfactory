@@ -1,13 +1,34 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { aiAnswerChecks } from "../../db/schema.js";
+import { aiAnswerChecks, generationLogs } from "../../db/schema.js";
 
 const monthStart = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-/** This UTC month's spend on a site's checks, failed calls included. */
+/** ISO 8601 week, "YYYY-Www", from the UTC date. */
+export function isoWeek(date: Date): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day); // the week's Thursday decides its year
+  const yearStart = Date.UTC(d.getUTCFullYear(), 0, 1);
+  const n = Math.ceil(((d.getTime() - yearStart) / 86_400_000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(n).padStart(2, "0")}`;
+}
+
+/** The ISO week before `week` ("2026-W01" gives "2025-W52"). */
+export function previousIsoWeek(week: string): string {
+  const [year, n] = week.split("-W").map(Number) as [number, number];
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const monday = Date.UTC(year, 0, 4 - ((jan4.getUTCDay() || 7) - 1) + 7 * (n - 1));
+  return isoWeek(new Date(monday - 7 * 86_400_000));
+}
+
+/**
+ * This UTC month's spend on a site's checks, failed calls included. Read from the spend log, where each call keeps its own
+ * timestamp; a check row's cost sums its retries under the last try's date.
+ */
 export async function monthCost(userId: string, siteId: string, now = new Date()): Promise<number> {
-  const [row] = await db.select({ total: sql<number>`COALESCE(SUM(${aiAnswerChecks.costUsd}), 0)::float8` }).from(aiAnswerChecks)
-    .where(and(eq(aiAnswerChecks.userId, userId), eq(aiAnswerChecks.siteId, siteId), gte(aiAnswerChecks.askedAt, monthStart(now))));
+  const [row] = await db.select({ total: sql<number>`COALESCE(SUM(${generationLogs.cost}), 0)::float8` }).from(generationLogs)
+    .where(and(eq(generationLogs.userId, userId), sql`${generationLogs.responseData}->'aiVisibility'->>'siteId' = ${siteId}`, gte(generationLogs.createdAt, monthStart(now))));
   return Number(row?.total ?? 0);
 }
 
@@ -76,7 +97,8 @@ export async function visibilitySummary(userId: string, siteId: string, now = ne
   }
 
   const gaps = gapsOf(latestRows);
-  const previousGaps = weeks[1] ? gapsOf(byWeek.get(weeks[1]) ?? []) : new Map();
+  // Only the calendar week before counts; a skipped week breaks the run.
+  const previousGaps = week && weeks[1] === previousIsoWeek(week) ? gapsOf(byWeek.get(weeks[1]) ?? []) : new Map();
   const gapList = [...gaps].map(([hash, g]) => ({
     question: g.question,
     competitorHosts: ranked(g.comp).slice(0, 10),

@@ -181,9 +181,28 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
       { question: C, competitorHosts: [], otherHosts: ["y.test"], twoWeeks: false },
     ]);
     assert.equal(sum.checks.length, 7);
+    assert.equal(sum.costThisMonth, 0, "monthly spend comes from the spend log, not check rows");
     assert.ok(sum.checks.every((r) => !("userId" in r)));
     assert.ok(sum.costThisMonth >= 0);
     assert.deepEqual(await visibilitySummary(other.id, s3.id).then((x) => [x.week, x.checks.length, x.latest.share]), [null, 0, 0], "another user sees nothing");
+
+    // a skipped week breaks "two weeks running": W47 follows W45, not W46
+    await put("2026-W47", B, "e/1", { otherHosts: ["rival.test"], competitorHosts: ["rival.test"] });
+    const skipped = await visibilitySummary(user.id, s3.id, new Date("2026-11-20T00:00:00Z"));
+    assert.deepEqual(skipped.gaps.map((g) => [g.question, g.twoWeeks]), [[B, false]]);
+
+    // the account guardrails are rechecked before every paid call: 2 requests a day stops a 4-call run after 2
+    const { updateGlobalSettings } = await import("../user-settings.js");
+    const [lim] = await db.insert(users).values({ email: `vis-${randomUUID()}@example.test`, passwordHash: "x" }).returning();
+    try {
+      const [limSite] = await db.insert(sites).values({ userId: lim.id, name: "Lim", domain: "lim.example.test" }).returning();
+      await saveVisibilitySettings(lim.id, limSite.id, { enabled: true, questions: questions.slice(0, 2), engines, monthlyCapUsd: 5 });
+      await updateGlobalSettings(lim.id, { dailyRequestLimit: 2 });
+      const limited = await runVisibility(lim.id, limSite.id, { ask, sleep, apiKey: "k" });
+      assert.deepEqual([limited.status, (limited as any).asked], ["done", 2]);
+    } finally {
+      await db.delete(users).where(eq(users.id, lim.id));
+    }
 
     // drain: weekday gate and pending check
     const [d1] = await db.insert(sites).values({ userId: user.id, name: "Dr", domain: "dr.example.test" }).returning();
