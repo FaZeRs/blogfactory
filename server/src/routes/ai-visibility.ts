@@ -60,7 +60,13 @@ export function createAiVisibilityRoutes() {
   routes.post("/suggest", async (c) => {
     const { userId, siteId } = await ownedSite(c, requiredString(await readJsonObject(c), "siteId"));
     if (!(await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
-    return c.json({ questions: await suggestQuestions(userId, siteId) });
+    try {
+      return c.json({ questions: await suggestQuestions(userId, siteId) });
+    } catch (error) {
+      // The LLM adapter reports the status only; 402 is OpenRouter's out-of-credits answer.
+      if (error instanceof Error && /HTTP 402/.test(error.message)) throw new ApiError(400, "validation_error", "OpenRouter is out of credits. Top up the key in OpenRouter, then try again.");
+      throw error;
+    }
   });
 
   routes.post("/run", async (c) => {
