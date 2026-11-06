@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { articleEvidence, articleGateResults, articleRuns, articleSources, articleStageRuns, campaignItems, jobs, siteIntegrations } from "../db/schema.js";
+import { articleEvidence, articleGateResults, articleRuns, articleSources, articleStageRuns, campaignItems, jobs, posts, siteIntegrations } from "../db/schema.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { finishOperationEvent, safeOperationMetadata, startOperationEvent } from "../services/operation-events.js";
@@ -71,6 +71,8 @@ export async function startArticleRun(input: {
   guidance?: { angle?: string | null; instructions?: string | null } | null;
   /** Queue one AI cover when the draft is delivered. */
   cover?: boolean;
+  /** Re-draft this existing post: deliver writes a new revision of it instead of creating a post. */
+  refreshPostId?: string | null;
 }): Promise<{ jobId: string; runId: string; estimateUsd: number }> {
   if (!persistentBackgroundExecution()) throw new EngineUnavailableError("worker_required");
   if (!(await getSiteForUser(input.userId, input.siteId))) throw new Error("Site not found");
@@ -84,6 +86,12 @@ export async function startArticleRun(input: {
   const openRouterKey = await getOpenRouterKey(input.userId);
   const endpoint = engineAiEndpoint(process.env, openRouterKey);
   if (!endpoint) throw new EngineUnavailableError("ai_key_missing");
+
+  if (input.refreshPostId) {
+    const [post] = await db.select({ id: posts.id }).from(posts)
+      .where(and(eq(posts.id, input.refreshPostId), eq(posts.userId, input.userId), eq(posts.siteId, input.siteId))).limit(1);
+    if (!post) throw new StageInputError("The post to refresh was not found");
+  }
 
   const settings = await getEffectiveSettings(input.userId, input.siteId);
   const resolved = resolveRunSettings(input.mode, parseEngineSettings(settings.engineSettings));
@@ -104,6 +112,7 @@ export async function startArticleRun(input: {
     models, budgetUsd: resolved.budgetUsd, citationStyle: resolved.citationStyle,
     ...(guidance.angle || guidance.instructions ? { guidance } : {}),
     ...(input.cover ? { cover: true } : {}),
+    ...(input.refreshPostId ? { refreshPostId: input.refreshPostId } : {}),
   };
 
   return db.transaction(async (tx) => {

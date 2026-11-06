@@ -1,7 +1,7 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gt, notInArray, sql } from "drizzle-orm";
 import { db } from "../../../db/index.js";
 import { articleGateResults, articleRuns, jobs, postRevisions, postTranslations, posts, sites } from "../../../db/schema.js";
-import { currentPostRevision, setPostEditorialState } from "../../../services/post-revisions.js";
+import { currentPostRevision, setPostEditorialState, updatePostWithRevision } from "../../../services/post-revisions.js";
 import { enqueueSeoMetadata, kickSeoMetadataWorker } from "../../../services/seo-metadata.js";
 import { coverPromptDraft, queueCoverRequests } from "../../../services/cover-tools.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
@@ -43,6 +43,36 @@ export const modelDisplayName = (id: string) => {
   return (name.split("/").pop() ?? name).split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 };
 
+export const EDITED_WHILE_REFRESHING = "The post was edited while it was being refreshed. The refresh is saved as a new revision; the earlier edits are in the revision history.";
+
+/** Writes the run's draft as a new revision of the post being refreshed. The post keeps its slug, its publications and its translations (which go stale). */
+async function refreshPost(run: ArticleRunRow, target: typeof posts.$inferSelect, input: DeliverInput, ctx: { deps: { now(): Date } }) {
+  const engine = ((target.publishingMetadata as { engine?: Record<string, unknown> } | null)?.engine ?? {});
+  // A retry after a crash finds the revision it already wrote.
+  if (engine.refreshRunId === run.id) return { post: target, note: null, written: false };
+  // Edits made by a person or an agent since the run started (not background metadata, image or refresh writes).
+  const [edited] = await db.select({ id: postRevisions.id }).from(postRevisions).where(and(
+    eq(postRevisions.userId, run.userId), eq(postRevisions.postId, target.id), gt(postRevisions.createdAt, run.createdAt),
+    notInArray(postRevisions.source, ["initial", "system", "image", "publish_metadata", "refresh"]),
+  )).limit(1);
+  const { markdown: rendered, evidence } = await renderArticle(run, input.draft.markdown);
+  const markdown = componentProfile(run) === "lindevo" ? appendProvenance(rendered, await provenanceFor(run, input.draft.citedClaimIds, evidence, ctx.deps.now())) : rendered;
+  const { post } = await updatePostWithRevision({
+    userId: run.userId, postId: target.id, expectedUpdatedAt: target.updatedAt, source: "refresh",
+    changes: {
+      title: input.draft.title, content: markdown.trimEnd(), summary: input.draft.description,
+      publishingMetadata: { ...(target.publishingMetadata as object | null), engine: { ...engine, refreshRunId: run.id } },
+    },
+  });
+  // The URL and its ranking history are kept: a regenerated slug must not replace the published one.
+  const seo = post.seoMetadata as { slug?: unknown; provenance?: Record<string, unknown> } | null;
+  if (seo && typeof seo.slug === "string" && seo.slug) {
+    await db.update(posts).set({ seoMetadata: { ...seo, provenance: { ...seo.provenance, slug: "manual" } } })
+      .where(and(eq(posts.id, post.id), eq(posts.userId, run.userId)));
+  }
+  return { post, note: edited ? EDITED_WHILE_REFRESHING : null, written: true };
+}
+
 export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
   key: "deliver",
   promptVersion: "deliver@2026-11-05.1",
@@ -61,8 +91,19 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
       sql`${posts.publishingMetadata}->'engine'->>'runId' = ${run.id}`,
     )).limit(1);
 
+    // A refresh run re-drafts a post that already exists; a post that is gone fails the run rather than creating a second one.
+    const refreshId = (run.settings as { refreshPostId?: string } | null)?.refreshPostId;
+    let note: string | null = null;
+    let refreshWritten = false;
     let post = existing;
-    if (!post) {
+    if (refreshId) {
+      const [target] = await db.select().from(posts).where(and(eq(posts.id, refreshId), eq(posts.userId, run.userId), eq(posts.siteId, run.siteId))).limit(1);
+      if (!target) throw new StageInputError("The post to refresh no longer exists");
+      const refreshed = await refreshPost(run, target, input, ctx);
+      post = refreshed.post;
+      note = refreshed.note;
+      refreshWritten = refreshed.written;
+    } else if (!post) {
       const { markdown: rendered, evidence } = await renderArticle(run, input.draft.markdown);
       const markdown = componentProfile(run) === "lindevo" ? appendProvenance(rendered, await provenanceFor(run, input.draft.citedClaimIds, evidence, ctx.deps.now())) : rendered;
       [post] = await db.insert(posts).values({
@@ -81,9 +122,11 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
       }).returning();
     }
 
-    // The insert trigger wrote revision 1; the post enters review on that revision.
+    // The insert trigger wrote revision 1; the post enters review on that revision. A refresh goes back to review on its new revision.
     const revision = await currentPostRevision(run.userId, post.id);
-    if (post.editorialState === "draft" && revision?.revisionNumber === 1) {
+    if (refreshWritten) {
+      await setPostEditorialState({ userId: run.userId, postId: post.id, state: "in_review", expectedRevisionId: revision!.id });
+    } else if (!refreshId && post.editorialState === "draft" && revision?.revisionNumber === 1) {
       await setPostEditorialState({ userId: run.userId, postId: post.id, state: "in_review", expectedRevisionId: revision.id });
     }
     await db.update(articleRuns).set({ postId: post.id }).where(and(eq(articleRuns.id, run.id), eq(articleRuns.userId, run.userId)));
@@ -92,7 +135,8 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
     }
     // The translations were made from the draft as delivered, which is revision 1. On a retry after someone edited the
     // post, the current revision is newer, and pinning to it would hide that the translations are now stale.
-    const firstRevision = revision?.revisionNumber === 1 ? revision : (await db.select({ id: postRevisions.id }).from(postRevisions)
+    // (A refresh pins new translations to its own revision; the existing ones keep theirs and so are stale.)
+    const firstRevision = refreshId ? revision : revision?.revisionNumber === 1 ? revision : (await db.select({ id: postRevisions.id }).from(postRevisions)
       .where(and(eq(postRevisions.userId, run.userId), eq(postRevisions.postId, post.id), eq(postRevisions.revisionNumber, 1))).limit(1))[0];
     // A retry keeps rows that exist (a person may have edited them).
     try {
@@ -120,7 +164,7 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
     }
 
     // Only a newly created post without a cover gets one; a retry or a human-chosen cover is left alone.
-    if (!existing && !post.coverImageUrl && (run.settings as { cover?: boolean } | null)?.cover) {
+    if (!existing && !refreshId && !post.coverImageUrl && (run.settings as { cover?: boolean } | null)?.cover) {
       try {
         const settings = await getEffectiveSettings(run.userId, run.siteId);
         if (settings.imageModel) {
@@ -134,7 +178,7 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
       }
     }
 
-    const output = { postId: post.id, created: !existing, escalated: input.escalated };
+    const output = { postId: post.id, created: !existing && !refreshId, escalated: input.escalated, ...(refreshId ? { refreshed: true, note } : {}) };
     return { output, next: input.escalated ? { type: "escalate", reason: input.reason ?? "Gates still failing" } : { type: "done" } };
   },
 };

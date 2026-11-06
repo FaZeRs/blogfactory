@@ -77,8 +77,9 @@ export async function mirrorJob(tx: Tx, run: ArticleRunRow, now: Date) {
 async function mirrorIdea(tx: Tx, run: ArticleRunRow, now: Date) {
   const where = and(eq(ideas.jobId, run.jobId!), eq(ideas.userId, run.userId), eq(ideas.status, "in_progress"));
   if (run.state !== "failed" && run.postId) {
-    const [idea] = await tx.update(ideas).set({ status: "drafted", postId: run.postId, error: null, updatedAt: now }).where(where).returning({ scheduledFor: ideas.scheduledFor });
-    if (idea?.scheduledFor && idea.scheduledFor > now) {
+    const [idea] = await tx.update(ideas).set({ status: "drafted", postId: run.postId, error: null, updatedAt: now }).where(where).returning({ scheduledFor: ideas.scheduledFor, refreshPostId: ideas.refreshPostId });
+    // A refreshed post is already published; its date is not the idea's slot.
+    if (idea?.scheduledFor && idea.scheduledFor > now && !idea.refreshPostId) {
       await tx.update(posts).set({ publishAt: idea.scheduledFor }).where(and(eq(posts.id, run.postId), eq(posts.userId, run.userId)));
     }
   } else {

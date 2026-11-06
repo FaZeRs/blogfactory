@@ -4,7 +4,7 @@ import { postRevisions, posts } from "../db/schema.js";
 
 export const EDITORIAL_STATES = ["draft", "in_review", "approved", "changes_requested"] as const;
 export type EditorialState = typeof EDITORIAL_STATES[number];
-export type PostRevisionSource = "save" | "mcp" | "restore" | "publish_metadata" | "image" | "system";
+export type PostRevisionSource = "save" | "mcp" | "restore" | "publish_metadata" | "image" | "system" | "refresh";
 
 export interface PostRevisionSnapshot {
   title: string;

@@ -85,6 +85,10 @@ export function IdeaCard({ idea }: { idea: Idea }) {
         </div>
         <h3 className="type-panel-title">{idea.title}</h3>
         {idea.angle && <p className="type-body mt-1">{idea.angle}</p>}
+        {idea.origin === "refresh" && <p className="mt-1 text-xs text-muted-foreground">
+          {idea.refreshReason}{idea.refreshReason && idea.refreshPostId ? " · " : ""}
+          {idea.refreshPostId && <Link className="underline" to={`/library/posts/${idea.refreshPostId}/edit`}>Open the post</Link>}
+        </p>}
       </div>
       <div className="shrink-0 text-right" aria-label={`Score ${idea.score ?? "not scored"}`}>
         <div className="text-2xl font-semibold tabular-nums">{idea.score == null ? "-" : Math.round(idea.score)}</div>

@@ -754,6 +754,9 @@ export const ideas = pgTable("ideas", {
   scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
   jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
   postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+  /** The existing post a refresh idea re-drafts; null for a new article. */
+  refreshPostId: uuid("refresh_post_id").references(() => posts.id, { onDelete: "set null" }),
+  refreshReason: text("refresh_reason"),
   rejectedReason: text("rejected_reason"),
   error: text("error"),
   failedRuns: integer("failed_runs").default(0).notNull(),

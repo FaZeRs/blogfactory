@@ -35,7 +35,7 @@ export const serializeIdea = (r: IdeaRow) => ({
   id: r.id, siteId: r.siteId, status: r.status, title: r.title, angle: r.angle, primaryKeyword: r.primaryKeyword,
   alternateKeywords: r.alternateKeywords, searchIntent: r.searchIntent, audienceQuestion: r.audienceQuestion,
   brief: r.brief, score: r.score, scoreBreakdown: r.scoreBreakdown, origin: r.origin, discoveryId: r.discoveryId, mode: r.mode,
-  scheduledFor: r.scheduledFor, jobId: r.jobId, postId: r.postId, rejectedReason: r.rejectedReason, error: r.error, failedRuns: r.failedRuns,
+  scheduledFor: r.scheduledFor, jobId: r.jobId, postId: r.postId, refreshPostId: r.refreshPostId, refreshReason: r.refreshReason, rejectedReason: r.rejectedReason, error: r.error, failedRuns: r.failedRuns,
   createdAt: r.createdAt, updatedAt: r.updatedAt,
 });
 
