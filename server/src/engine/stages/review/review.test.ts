@@ -76,7 +76,8 @@ test("mode gating: normal runs the fact-check only, deep also the reader; both u
   const deep = fakeCtx({ mode: "deep", llm: { review: [{ issues: [] }, { issues: [] }] } });
   await reviewDraft(input, deep.ctx);
   expect(deep.llm.calls.map((c) => c.role)).toEqual(["review", "review"]);
-  expect(deep.llm.calls[1]?.user).toContain("solar for small teams");
+  // The two checks run in parallel, so the call order varies.
+  expect(deep.llm.calls.some((c) => c.user.includes("solar for small teams"))).toBe(true);
 });
 
 test("no blockers delivers; the output carries the dropped count and the warning", async () => {
