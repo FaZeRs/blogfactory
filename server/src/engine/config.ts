@@ -20,8 +20,11 @@ export interface EngineConfig {
     /** Lexical similarity to an existing post (shingle Jaccard). */
     similarityMax: number;
   };
-  /** `bannedPhrases` block the voice gate; `warnPhrases` warn, and match their inflections. */
-  voice: { bannedPhrases: readonly string[]; warnPhrases: readonly string[] };
+  /**
+   * `bannedPhrases` block the voice gate anywhere in the text; `bannedWords` block as whole words; `warnPhrases` warn,
+   * and match their inflections. The gates stage adds the site's own voice rules to these.
+   */
+  voice: { bannedPhrases: readonly string[]; bannedWords?: readonly string[]; warnPhrases: readonly string[] };
 }
 
 export const ENGINE_CONFIG: EngineConfig = {

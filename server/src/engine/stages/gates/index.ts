@@ -6,6 +6,8 @@ import { componentProfile } from "../../profile.js";
 import { ENGINE_CONFIG } from "../../config.js";
 import { gateBlockers, type GateInput } from "../../gates/types.js";
 import { runCodeGates } from "../../gates/index.js";
+import { withSiteVoice } from "../../gates/voice.js";
+import { getEffectiveSettings } from "../../../services/user-settings.js";
 import type { Stage } from "../../runtime/stage.js";
 import { StageInputError } from "../../types.js";
 import { truncate } from "../../util.js";
@@ -80,7 +82,9 @@ export const gatesStage: Stage<GatesInput, GatesOutput> = {
       siteUrl: siteUrlOf(site.domain),
       existingPosts,
     };
-    const results = await runCodeGates(gateInput, { config: ENGINE_CONFIG, checkLink, signal: ctx.signal });
+    const { contentRules } = await getEffectiveSettings(run.userId, run.siteId);
+    const config = { ...ENGINE_CONFIG, voice: withSiteVoice(ENGINE_CONFIG.voice, contentRules) };
+    const results = await runCodeGates(gateInput, { config, checkLink, signal: ctx.signal });
 
     // A retried attempt replaces its own rows; the attempt number is unique per run and stage.
     await db.transaction(async (tx) => {

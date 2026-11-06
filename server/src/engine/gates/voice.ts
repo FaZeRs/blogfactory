@@ -42,6 +42,12 @@ export function voiceRules(voice: EngineConfig["voice"]): VoiceRule[] {
       re: new RegExp(escapeRe(p.normalize("NFC")), "i"),
       severity: "blocker" as const,
     })),
+    ...(voice.bannedWords ?? []).map((w) => ({
+      id: "banned-word",
+      message: `uses the banned word ("${w}")`,
+      re: new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(w.normalize("NFC"))}(?![\\p{L}\\p{N}])`, "iu"),
+      severity: "blocker" as const,
+    })),
     ...FIXED_VOICE_RULES,
     ...voice.warnPhrases.map((p) => ({
       id: "avoid-phrase",
@@ -75,4 +81,16 @@ export function voiceGate(
     gateResult("voice", hits("blocker")),
     gateResult("voice-warnings", hits("warning"), "warning"),
   ];
+}
+
+const ruleList = (v: unknown) =>
+  Array.isArray(v) ? v.flatMap((x) => (typeof x === "string" && x.trim() ? [x.trim().slice(0, 120)] : [])).slice(0, 50) : [];
+
+/** The engine's voice rules plus a site's own banned words and phrases (`user_settings.content_rules`). */
+export function withSiteVoice(voice: EngineConfig["voice"], contentRules: unknown): EngineConfig["voice"] {
+  const r = contentRules && typeof contentRules === "object" ? contentRules as Record<string, unknown> : {};
+  const phrases = ruleList(r.bannedPhrases ?? r.banned_phrases);
+  const words = ruleList(r.bannedWords ?? r.banned_words);
+  if (!phrases.length && !words.length) return voice;
+  return { ...voice, bannedPhrases: [...voice.bannedPhrases, ...phrases], bannedWords: [...(voice.bannedWords ?? []), ...words] };
 }

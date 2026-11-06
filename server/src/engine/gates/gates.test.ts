@@ -176,3 +176,13 @@ test("style: 3 phrase hits or too many em dashes block; 1-2 hits only suggest; c
   const ignored = `${filler}\n\n\`\`\`\ndelve seamlessly tapestry\n\`\`\`\n\nSee [the page](https://x.example/delve-seamlessly-tapestry).`;
   expect(styleGate(ignored).every((r) => r.passed)).toBe(true);
 });
+
+test("a site's banned phrases block anywhere, banned words only as whole words", async () => {
+  const { voiceGate, withSiteVoice } = await import("./voice.js");
+  const voice = withSiteVoice(ENGINE_CONFIG.voice, { bannedPhrases: ["booking engine"], bannedWords: ["seamless", "tu"] });
+  const issues = (text: string) => voiceGate(text, voice).find((r) => r.gate === "voice")!.issues.map((i) => i.excerpt);
+  expect(issues("A Booking Engine for hotels.")).toEqual(["Booking Engine"]);
+  expect(issues("A seamless setup.")).toEqual(["seamless"]);
+  expect(issues("Seamlessly done on Tuesday, tune it.")).toEqual([]);
+  expect(withSiteVoice(ENGINE_CONFIG.voice, {})).toBe(ENGINE_CONFIG.voice);
+});
