@@ -43,9 +43,9 @@ test("classify drops excerpts that are not in the draft and counts them", () => 
   expect(dropped).toBe(2);
 });
 
-test("classify caps issues per check at 12 and 6", () => {
+test("classify caps issues per check at 8 and 6", () => {
   const many = (n: number, kind: string) => Array.from({ length: n }, () => ({ kind, excerpt: "Roofs are always safe.", fix: "f" }));
-  expect(classify("factcheck", many(20, "overstated"), raw, brief).found).toHaveLength(12);
+  expect(classify("factcheck", many(20, "overstated"), raw, brief).found).toHaveLength(8);
   expect(classify("reader", many(20, "padding"), raw, brief).found).toHaveLength(6);
 });
 
@@ -105,7 +105,7 @@ test("a review that did not shrink the previous blocker list stops and escalates
 
 test("spent revise loops escalate too; a shrinking list still revises", async () => {
   const spent = fakeCtx({ llm: { review: [factReply("unsupported")] } });
-  expect((await reviewDraft({ ...input, reviseCount: 1 }, spent.ctx)).outcome.next).toEqual({ type: "advance", to: "deliver" });
+  expect((await reviewDraft({ ...input, reviseCount: 2 }, spent.ctx)).outcome.next).toEqual({ type: "advance", to: "deliver" });
   const shrinking = fakeCtx({ mode: "deep", llm: { review: [factReply("unsupported"), { issues: [] }] } });
   expect((await reviewDraft({ ...input, reviseCount: 1, previousBlockers: 3 }, shrinking.ctx)).outcome.next).toEqual({ type: "advance", to: "revise" });
 });

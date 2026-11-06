@@ -39,7 +39,8 @@ function models(writer: string): Record<ModelRole, string> {
 export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
   normal: {
     stages: STAGES,
-    maxRevise: 1,
+    // Two loops: a fact-check fix often needs a second pass to restore the length the removed claims took.
+    maxRevise: 2,
     review: ["factcheck"],
     research: { maxQueries: 3, maxPages: 6, maxClaimsPerPage: 5, maxCompetitors: 4, minVerifiedClaims: 3, useKeywordData: false },
     models: models("anthropic/claude-sonnet-5.5"),

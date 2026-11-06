@@ -77,6 +77,7 @@ export type EvalDraft = {
   passed: boolean;
   rubric: Record<RubricDimension, number>;
   costUsd: number;
+  findings?: Finding[];
   /** Set when generation threw: the slot is scored as a failure, not skipped. */
   error?: string;
 };
@@ -105,7 +106,9 @@ function metered(llm: EngineLlm) {
   return { llm: wrapped, meter };
 }
 
-type Generated = { title: string; description: string; markdown: string; failedGates: string[] };
+/** `findings`: every blocker list the loop met, by revise round, so a report shows what each check flagged. */
+type Finding = { round: number; gate: string; message: string; excerpt?: string };
+type Generated = { title: string; description: string; markdown: string; failedGates: string[]; findings?: Finding[] };
 
 /** The same code gates the engine runs, with link checks stubbed: an eval never touches the network. */
 async function gate(parts: { title: string; description: string; raw: string; markdown: string }, frozen: ReturnType<typeof frozenEvidence>, evidence = frozen.evidence) {
@@ -163,22 +166,27 @@ export async function generateEngineArticle(brief: EvalBrief, mode: EngineMode, 
   let revisions = 0;
   let previous: number | null = null;
   let previousReview: number | null = null;
+  const findings: Finding[] = [];
+  const note = (list: { gate: string; message: string; excerpt?: string }[]) =>
+    findings.push(...list.map((b) => ({ round: revisions, gate: b.gate, message: b.message, ...(b.excerpt ? { excerpt: b.excerpt } : {}) })));
   for (;;) {
     const markdown = renderCitations(draft.markdown, frozen.evidence, frozen.sources, settings.citationStyle, brief.locale);
     let blockers = await gate({ title: draft.title, description: draft.description, raw: draft.markdown, markdown }, frozen);
     if (blockers.length === 0 && review && settings.preset.review.length) {
       // The paid review checks read only a draft the code gates passed, as in the engine.
       const { outcome } = await reviewDraft({ ...draftInput, draft, previousBlockers: previousReview, reviseCount: revisions }, ctx(revisions));
+      note(outcome.output.blockers);
       if (outcome.next.type !== "advance" || outcome.next.to === "deliver") {
-        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(outcome.output.escalated ? outcome.output.blockers : []) };
+        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(outcome.output.escalated ? outcome.output.blockers : []), findings };
       }
       blockers = outcome.output.blockers;
       previousReview = blockers.length;
     } else {
+      note(blockers);
       // Same stop rules as the gates stage: revise loops are spent, or the last revision did not shrink the list.
       const stalled = previous !== null && blockers.length >= previous;
       if (blockers.length === 0 || revisions >= settings.preset.maxRevise || stalled) {
-        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(blockers) };
+        return { title: draft.title, description: draft.description, markdown, failedGates: uniqueGates(blockers), findings };
       }
     }
     previous = blockers.length;
@@ -297,7 +305,7 @@ async function draftFor(brief: EvalBrief, mode: EvalMode, deps: EvalDeps, judge:
       costUsd = gen.meter.costUsd;
     }
     const rubric = await judgeRubric(judge, deps.judgeModel, brief, g, deps.now?.());
-    return { briefId: brief.id, mode, title: g.title, description: g.description, markdown: g.markdown, failedGates: g.failedGates, passed: g.failedGates.length === 0, rubric, costUsd };
+    return { briefId: brief.id, mode, title: g.title, description: g.description, markdown: g.markdown, failedGates: g.failedGates, passed: g.failedGates.length === 0, rubric, costUsd, ...(g.findings?.length ? { findings: g.findings } : {}) };
   } catch (e) {
     if (e instanceof RateLimitError) throw e;
     const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);

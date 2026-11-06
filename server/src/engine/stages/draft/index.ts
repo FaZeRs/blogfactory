@@ -11,7 +11,7 @@ import { sanitizeText, wordCount } from "../../util.js";
 import { MIN_FAQ_ANSWER_LENGTH } from "../../markdown/faq.js";
 import { buildVoiceContentInstructions } from "../../../services/voice-content.js";
 import { getEffectiveSettings } from "../../../services/user-settings.js";
-import { PLAN, BriefOutputSchema, type BriefOutput } from "../brief/schema.js";
+import { PLAN, BriefOutputSchema, fitDescription, type BriefOutput } from "../brief/schema.js";
 import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, normalizeDraftMarkdown, runSettings, type PromptEvidence } from "../shared.js";
 import { DraftSchema, type DraftOutput } from "./schema.js";
 
@@ -77,7 +77,8 @@ export function toDraftOutput(input: DraftInput, locale: string, parts: { title:
   const { markdown, unresolved } = renderCitationsDetailed(raw, evidence, input.sources.map((s) => ({ ...s, markdown: "" })), input.citationStyle, locale);
   return {
     title: sanitizeText(parts.title),
-    description: sanitizeText(parts.description),
+    // Revisions overrun the limit by a few characters; a cut at a word boundary beats another paid round.
+    description: fitDescription(sanitizeText(parts.description)),
     markdown: raw,
     citedClaimIds: extractMarkerIds(raw),
     unresolvedMarkers: unresolved,

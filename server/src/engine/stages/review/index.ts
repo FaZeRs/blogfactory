@@ -18,7 +18,7 @@ type Found = { gate: (typeof REVIEW_GATES)[number]; kind: Kind; excerpt: string;
 
 const EXCERPT_MAX = 200;
 const REASON_MAX = 280;
-const MAX_ISSUES = { factcheck: 12, reader: 6 };
+const MAX_ISSUES = { factcheck: 8, reader: 6 };
 const MESSAGES: Record<Kind, string> = {
   unsupported: "Claim is not supported by the evidence",
   contradiction: "Statement contradicts the evidence",
