@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Languages, Loader2, Save } from "lucide-react";
+import { Languages, Loader2, MessageSquareText, Save } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { BywordCard } from "@/components/layout/BywordSurface";
@@ -8,6 +8,7 @@ import { MarkdownEditor } from "@/components/posts/MarkdownEditor";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -95,6 +96,7 @@ function TranslationView({ postId, locale, name, translation, onChanged }: { pos
               {save.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}Save
             </Button>
           )}
+          {hasText && <ReviseTranslationDialog postId={postId} locale={locale} name={name} disabled={running || dirty} onStarted={onChanged} />}
           <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending || running || dirty}>
             {(run.isPending || running) && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             {running ? "Translating" : hasText ? "Update translation" : "Translate"}
@@ -127,5 +129,44 @@ function TranslationView({ postId, locale, name, translation, onChanged }: { pos
         </fieldset>
       )}
     </BywordCard>
+  );
+}
+
+const COMMENTS_MIN = 10;
+const COMMENTS_MAX = 4000;
+
+/** A native reviewer's corrections, applied by the model to the existing translation in the background. */
+function ReviseTranslationDialog({ postId, locale, name, disabled, onStarted }: { postId: string; locale: string; name: string; disabled: boolean; onStarted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [comments, setComments] = useState("");
+  const length = comments.trim().length;
+  const revise = useMutation({
+    mutationFn: () => api.post(`/posts/${postId}/translations/${locale}/revise`, { comments: comments.trim() }),
+    onSuccess: () => { toast.success(`Revising the ${name} translation`); setOpen(false); setComments(""); onStarted(); },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Could not start the revision"),
+  });
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!revise.isPending) setOpen(next); }}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={disabled}><MessageSquareText className="mr-1.5 h-4 w-4" />Revise with comments</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Revise the {name} translation</DialogTitle>
+          <DialogDescription>List the corrections, for example “X” → “Y”, or a rule to apply everywhere. Everything else stays as it is, and later updates keep this wording.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="tr-comments">Corrections</Label>
+          <Textarea id="tr-comments" rows={10} value={comments} onChange={(e) => setComments(e.target.value)} maxLength={COMMENTS_MAX} />
+          <p className="text-xs text-muted-foreground">{length} / {COMMENTS_MAX}</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={revise.isPending}>Cancel</Button>
+          <Button onClick={() => revise.mutate()} disabled={revise.isPending || length < COMMENTS_MIN}>
+            {revise.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}Revise
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

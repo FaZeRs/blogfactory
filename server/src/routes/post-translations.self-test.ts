@@ -69,8 +69,14 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.equal((await req("POST", `${path}/lv/run`)).status, 400, "locale not enabled for the site");
     delete process.env.ENGINE_AI_BASE_URL;
 
-    // a new revision of the English makes the translation stale
+    // a metadata-only revision (SEO, publishing) leaves the translation current
     await db.update(postTranslations).set({ status: "ready" }).where(eq(postTranslations.id, row.id));
+    const before = (await db.select().from(posts).where(eq(posts.id, post.id)))[0]!;
+    await updatePostWithRevision({ userId: owner.id, postId: post.id, expectedUpdatedAt: before.updatedAt, source: "save", changes: { publishingMetadata: { tags: ["n8n"] } } as never });
+    assert.notEqual((await currentPostRevision(owner.id, post.id))!.id, revision.id, "the metadata change made a new revision");
+    assert.equal((await list())[0].stale, false);
+
+    // a new revision of the English text makes the translation stale
     const fresh = (await db.select().from(posts).where(eq(posts.id, post.id)))[0]!;
     await updatePostWithRevision({ userId: owner.id, postId: post.id, expectedUpdatedAt: fresh.updatedAt, source: "save", changes: { content: "Changed body.\n" } });
     assert.equal((await list())[0].stale, true);

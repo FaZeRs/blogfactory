@@ -108,24 +108,27 @@ async function changesSince(claim: TranslationClaim, content: string): Promise<s
  * edit of the English marks it stale. If the run throws, the row goes back to what it was (or is removed when there was none)
  * and the error is rethrown. `deps` is for tests.
  */
-export async function runTranslation(claim: TranslationClaim, opts: { signal?: AbortSignal; deps?: LocalizeDeps } = {}): Promise<LocalizeResult> {
+export async function runTranslation(claim: TranslationClaim, opts: { signal?: AbortSignal; deps?: LocalizeDeps; requests?: string } = {}): Promise<LocalizeResult> {
   const { userId, siteId, post, locale, prior } = claim;
   const where = and(eq(postTranslations.postId, post.id), eq(postTranslations.locale, locale.locale), eq(postTranslations.userId, userId));
   try {
     const deps = opts.deps ?? await loadDeps(userId, siteId, post, opts.signal);
     const source = await sourceOf(claim);
     const hasBase = !!prior && prior.content.trim() !== "";
+    if (opts.requests && !hasBase) throw new ApiError(400, "validation_error", "There is no translation to revise yet. Translate the post first.");
     const result = await localizeArticle({
       userId, siteId, locale, source, postId: post.id, deps,
       ...(hasBase ? {
         base: { title: prior.title, slug: prior.slug, description: prior.description, content: prior.content, imageAlt: prior.imageAlt, edited: prior.status === "edited" },
         changes: await changesSince(claim, source.markdown),
+        ...(opts.requests ? { requests: opts.requests } : {}),
       } : {}),
     });
     const t = result.translation;
     await db.update(postTranslations).set({
       title: t.title, slug: t.slug, description: t.description, content: t.content, imageAlt: t.imageAlt, keyword: t.keyword,
-      status: result.status, findings: result.findings, sourceRevisionId: claim.revisionId,
+      // A translation revised to the owner's corrections is theirs: later updates keep its wording.
+      status: opts.requests && result.status === "ready" ? "edited" : result.status, findings: result.findings, sourceRevisionId: claim.revisionId,
       costUsd: (prior?.costUsd ?? 0) + result.costUsd, updatedAt: new Date(),
     }).where(where);
     return result;

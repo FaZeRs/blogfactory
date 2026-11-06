@@ -130,6 +130,8 @@ export async function localizeArticle(args: {
   changes?: string;
   /** The post being translated; its own slug is not offered as a link target. */
   postId?: string;
+  /** A person's corrections to `base`: the first pass edits it to apply them and changes nothing else. */
+  requests?: string;
   deps: LocalizeDeps;
 }): Promise<LocalizeResult> {
   const { userId, siteId, source, base, deps } = args;
@@ -250,7 +252,10 @@ export async function localizeArticle(args: {
       gateBlockers(c.results.filter((r) => r.gate === gate && !r.passed).map((r) => ({ ...r, severity: "blocker" as const })));
     const naturalness = (c: Checked) => failedOf(c, NATURALNESS_GATE).filter((b) => polishable(b.excerpt));
 
-    const first = await translate(FIRST_ATTEMPT, null);
+    const requested = base && args.requests?.trim()
+      ? `The site owner's corrections to the existing translation. Apply every one exactly, keep everything else as it is, and apply a general rule (for example a term or a form of address) everywhere it occurs:\n${args.requests.trim()}`
+      : null;
+    const first = await translate(requested ?? FIRST_ATTEMPT, null);
     let { checked, tr } = await patchRound(first, await check(first));
     let revisionFailed = false;
     while (
@@ -288,7 +293,7 @@ export async function localizeArticle(args: {
       ...(result ? {} : { errorCode: "localize_failed" }),
       metadata: {
         locale: locale.locale,
-        mode: base ? "update" : "new",
+        mode: base && args.requests?.trim() ? "requests" : base ? "update" : "new",
         status: result?.status ?? "failed",
         revisions,
         patched: patchedTotal,

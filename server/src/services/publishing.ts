@@ -24,6 +24,7 @@ import {
   validateOrtakAlanMetadata,
   type OrtakAlanPublishingMetadata,
 } from "./ortak-alan-publishing.js";
+import { staleSourceRevisions } from "./localization/stale.js";
 
 export type IntegrationProvider = "wordpress" | "ghost" | "wix" | "framer" | "lindevo";
 export type PublishMode = "draft" | "publish";
@@ -445,7 +446,7 @@ export async function publishPost(userId: string, postId: string, integrationId:
     .where(and(eq(imageAssets.userId, userId), eq(imageAssets.postId, postId)));
   const brandCtas = await publishingBrandCtas(userId, integration.siteId);
   let article = buildArticlePayload(post, canonicalSeo, publishOptions, normalizeImagePlacement("auto"), assetRows, brandCtas, ortakAlanProfile);
-  if (provider === "lindevo") article.lv = await currentLindevoTranslation(userId, postId, integration.siteId, revision?.id);
+  if (provider === "lindevo") article.lv = await currentLindevoTranslation(userId, postId, integration.siteId, revision);
   let validation = { errors: [] as string[], warnings: [] as string[] };
   const idempotencyKey = publishingIdempotencyKey({
     userId,
@@ -2218,12 +2219,13 @@ export function lindevoArticleArgs(article: ArticlePayload, category: string, th
 }
 
 /** A translation travels with the article only when it is ready or edited and made from the post's current revision. */
-async function currentLindevoTranslation(userId: string, postId: string, siteId: string, revisionId: string | undefined): Promise<LindevoTranslation | undefined> {
-  if (!revisionId) return undefined;
+async function currentLindevoTranslation(userId: string, postId: string, siteId: string, revision: { id: string; snapshot: unknown } | null | undefined): Promise<LindevoTranslation | undefined> {
+  if (!revision) return undefined;
   const [row] = await db.select().from(postTranslations).where(and(
     eq(postTranslations.userId, userId), eq(postTranslations.siteId, siteId), eq(postTranslations.postId, postId), eq(postTranslations.locale, "lv"),
   )).limit(1);
-  if (!row || (row.status !== "ready" && row.status !== "edited") || row.sourceRevisionId !== revisionId) return undefined;
+  if (!row || (row.status !== "ready" && row.status !== "edited")) return undefined;
+  if ((await staleSourceRevisions(userId, [row.sourceRevisionId], revision)).has(row.sourceRevisionId)) return undefined;
   return { title: row.title, slug: row.slug, description: row.description, content: row.content, imageAlt: row.imageAlt };
 }
 
