@@ -66,7 +66,7 @@ export const reviseStage: Stage<ReviseInput, DraftOutput> = {
       system: prompt.system,
       user: prompt.user,
       schema: DraftSchema,
-      maxTokens: 12_000,
+      maxTokens: 20_000,
       signal: ctx.signal,
     });
     // The runtime raises revise_count when this stage advances; the title stays the brief's.

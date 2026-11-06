@@ -11,7 +11,7 @@ import { buildVoiceContentInstructions } from "../../../services/voice-content.j
 import { getEffectiveSettings } from "../../../services/user-settings.js";
 import { evidenceText, latestStageOutput, linksText, loadEvidence, loadSources, modelFor, type LinkCandidate, type PromptEvidence } from "../shared.js";
 import type { ResearchOutput, SerpAnalysis } from "../research/schema.js";
-import { BriefModelSchema, PLAN, fitLengthPlan, planTarget, validateBrief, type Brief, type BriefOutput } from "./schema.js";
+import { BriefModelSchema, PLAN, fitLengthPlan, planTarget, repairBrief, validateBrief, type Brief, type BriefOutput } from "./schema.js";
 
 export type BriefInput = {
   topic: string;
@@ -139,11 +139,11 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
         system: prompt.system,
         user: prompt.user + feedback,
         schema: BriefModelSchema,
-        maxTokens: 6000,
+        maxTokens: 16_000,
         signal: ctx.signal,
       });
       usage.push({ model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costUsd: r.costUsd });
-      const brief: Brief = fitLengthPlan(r.value, target);
+      const brief: Brief = repairBrief(fitLengthPlan(r.value, target));
       issues = validateBrief(brief, check).map(sanitizeText);
       if (issues.length === 0) {
         // Long topics rarely have search data; the chosen keyword usually does. Recorded for the reviewer, not the prompt.

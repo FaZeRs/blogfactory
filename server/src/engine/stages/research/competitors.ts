@@ -98,7 +98,7 @@ export async function analyzeSerp(
       system: prompt.system,
       user: prompt.user,
       schema: SerpAnalysisModelSchema,
-      maxTokens: 1500,
+      maxTokens: 6000,
       signal: ctx.signal,
     });
     spent.push({ model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costUsd: r.costUsd });

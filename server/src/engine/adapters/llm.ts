@@ -133,6 +133,11 @@ export function createEngineLlm(
           try {
             parsed = parseJson(text);
           } catch {
+            // A reasoning model can spend the whole token cap thinking and return nothing; retrying the same cap won't help.
+            if (body?.choices?.[0]?.finish_reason === "length") {
+              failure = `reply was cut off at the ${req.maxTokens}-token limit`;
+              break;
+            }
             failure = "reply was not valid JSON";
             messages.push({ role: "assistant", content: text }, {
               role: "user",

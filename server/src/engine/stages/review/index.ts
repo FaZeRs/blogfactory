@@ -93,7 +93,7 @@ export async function reviewDraft(input: ReviewInput, ctx: StageContext): Promis
   const article = fenceData("article", raw);
   const call = async (name: "factcheck" | "reader", schema: z.ZodType<{ issues: { kind: string; excerpt: string; fix: string }[] }>, vars: Record<string, string>) => {
     const prompt = await preparePrompt(`review-${name}`, { dataRule: DATA_RULE, draft: article, ...vars });
-    return ctx.deps.llm.json({ role: "review", model: modelFor(run, "review"), system: prompt.system, user: prompt.user, schema, maxTokens: 3_000, signal: ctx.signal });
+    return ctx.deps.llm.json({ role: "review", model: modelFor(run, "review"), system: prompt.system, user: prompt.user, schema, maxTokens: 12_000, signal: ctx.signal });
   };
   const b = input.brief;
   const plan = [

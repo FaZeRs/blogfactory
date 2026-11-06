@@ -114,7 +114,7 @@ export const draftStage: Stage<DraftInput, DraftOutput> = {
       system: prompt.system,
       user: prompt.user,
       schema: DraftSchema,
-      maxTokens: 12_000,
+      maxTokens: 20_000,
       signal: ctx.signal,
     });
     // The brief already validated the title it chose, so the model's own title is ignored.
