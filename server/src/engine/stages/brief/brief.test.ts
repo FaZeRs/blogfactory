@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { fakeCtx } from "../test-helpers.js";
 import { briefStage, linkCandidates, serpText, type BriefInput } from "./index.js";
-import { PLAN, fitLengthPlan, planTarget, repairBrief, validateBrief, type Brief } from "./schema.js";
+import { BriefModelSchema, PLAN, fitLengthPlan, planTarget, repairBrief, validateBrief, type Brief } from "./schema.js";
 
 const input: BriefInput = {
   topic: "solar panels",
@@ -110,4 +110,9 @@ test("repairBrief fixes near misses in titles and the description; a fixed brief
   expect(validateBrief(fixed, check)).toEqual([]);
   expect(repairBrief(good({ chosenTitle: long })).chosenTitle).toBe(good().titleOptions[0]);
   expect(repairBrief(good())).toEqual(good());
+  // Five options plus a missing chosen title stays within the schema's five.
+  const five = ["Option one here", "Option two here", "Option three here", "Option four here", "Option five here"];
+  const capped = repairBrief(good({ titleOptions: five, chosenTitle: "Solar panels, simply" }));
+  expect(capped.titleOptions).toEqual(["Solar panels, simply", ...five.slice(0, 4)]);
+  expect(BriefModelSchema.safeParse(capped).success).toBe(true);
 });

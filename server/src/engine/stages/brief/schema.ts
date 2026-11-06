@@ -15,6 +15,7 @@ export const PLAN = {
   /** Lindevo's `key-takeaways` accepts 3-5 list items. */
   lindevoTakeaways: { min: 3, max: 5 },
   links: { min: 0, max: 4 },
+  titleOptions: { min: 3, max: 5 },
 } as const;
 
 const OutlineSectionSchema = z.object({
@@ -27,7 +28,7 @@ const OutlineSectionSchema = z.object({
 export const BriefModelSchema = z.object({
   angle: z.string().min(20).max(400),
   primaryKeyword: z.string().min(3).max(80),
-  titleOptions: z.array(z.string().min(5).max(120)).min(3).max(5),
+  titleOptions: z.array(z.string().min(5).max(120)).min(PLAN.titleOptions.min).max(PLAN.titleOptions.max),
   chosenTitle: z.string().min(5).max(120),
   description: z.string().min(20).max(300),
   outline: z.array(OutlineSectionSchema).min(2).max(14),
@@ -69,12 +70,6 @@ export function fitLengthPlan(b: Brief, target?: number | null): Brief {
   return { ...b, outline: b.outline.map((s) => ({ ...s, words: Math.max(1, round(s.words * scale)) })) };
 }
 
-/** What code checks and the model cannot be trusted with. The messages join the repair feedback. */
-/**
- * Code fixes for near misses a cheap model makes, so a whole brief call is not spent on a few characters: title options
- * over the limit are dropped, a valid chosen title missing from the options is added, a chosen title over the limit is
- * replaced by the first valid option, and a description just over the limit is cut at a word boundary.
- */
 /** A description over the limit, cut at a word boundary (never below 70% of the limit). */
 export function fitDescription(text: string): string {
   if (text.length <= g.descriptionMax) return text;
@@ -82,15 +77,23 @@ export function fitDescription(text: string): string {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), Math.floor(g.descriptionMax * 0.7))).replace(/[\s,;:—–-]+$/, "");
 }
 
+/**
+ * Code fixes for near misses a cheap model makes, so a whole brief call is not spent on a few characters: title options
+ * over the limit are dropped, a valid chosen title missing from the options is added, a chosen title over the limit is
+ * replaced by the first valid option, and a description just over the limit is cut at a word boundary.
+ */
 export function repairBrief(b: Brief): Brief {
   const fits = (t: string) => t.length <= g.titleMax;
   const options = b.titleOptions.filter(fits);
   const chosenTitle = fits(b.chosenTitle) ? b.chosenTitle : options[0] ?? b.chosenTitle;
   if (fits(chosenTitle) && !options.includes(chosenTitle)) options.unshift(chosenTitle);
+  // The stored brief is re-parsed by the schema downstream, so the added title must not push the list past its max.
+  options.splice(PLAN.titleOptions.max);
   const description = b.description.length <= g.descriptionMax + 40 ? fitDescription(b.description) : b.description;
-  return { ...b, chosenTitle, titleOptions: options.length >= b.titleOptions.length || options.length >= 3 ? options : b.titleOptions, description };
+  return { ...b, chosenTitle, titleOptions: options.length >= b.titleOptions.length || options.length >= PLAN.titleOptions.min ? options : b.titleOptions, description };
 }
 
+/** What code checks and the model cannot be trusted with. The messages join the repair feedback. */
 export function validateBrief(b: Brief, ctx: { verifiedIds: Set<string>; links: Set<string>; minClaims: number; profile?: ComponentProfile }): string[] {
   const issues: string[] = [];
   const range = (name: string, n: number, r: { min: number; max: number }) => {

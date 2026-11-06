@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { feeds, generationLogs, ideaDiscoveries, ideas, posts } from "../../db/schema.js";
 import { createDataForSeoClient } from "../../engine/adapters/dataforseo.js";
-import { createEngineLlm, engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
+import { engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
 import { createSearchClient } from "../../engine/adapters/search.js";
 import type { DataForSeoClient, KeywordOverview } from "../../engine/adapters/types.js";
 import { parseEngineSettings, resolveRunSettings } from "../../engine/modes.js";
@@ -13,7 +13,6 @@ import { getOpenRouterKey } from "../api-keys.js";
 import { checkAccountGuardrails } from "../account-guardrails.js";
 import { fetchRssArticles } from "../generation-sources.js";
 import { finishOperationEvent, startOperationEvent } from "../operation-events.js";
-import { resolveOpenRouterTextModel } from "../openrouter-models.js";
 import { safeFetch } from "../safe-fetch.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { generateCandidates, type Candidate, type SiteContext } from "./candidates.js";
@@ -23,6 +22,7 @@ import { runAutopilot } from "./schedule.js";
 import { combineScore, demandFactor, feasibilityFactor, trendFactor, type Factors } from "./score.js";
 import { effectiveSeedTopics, getIdeaSettings, type IdeaSettings } from "./settings.js";
 import { collectSignals, signalAgeDays, type CollectorDeps, type Signal } from "./signals.js";
+import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
 export type DiscoveryDeps = {
   llm: EngineLlm;
@@ -179,9 +179,9 @@ export async function loadDiscoveryDeps(userId: string, engineSettings: unknown)
     recordSpend: async (usd) => { spent += usd; await dataForSeoSpend.recordSpend(usd); },
   });
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.brief;
-  if (endpoint.gateway === "openrouter") model = await resolveOpenRouterTextModel(endpoint.apiKey, model);
+  model = await resolveEngineModel(endpoint, model);
   return {
-    llm: createEngineLlm(endpoint),
+    llm: await userEngineLlm(userId, endpoint),
     model,
     dataForSeo,
     dataForSeoSpent: () => spent,
@@ -340,8 +340,9 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
 /** Logged so the account's monthly and daily guardrails count idea spend: a discovery's, or a manual idea's rating call. */
 export async function logIdeaSpend(input: { userId: string; model: string | null; costUsd: number; ok: boolean; discoveryId?: string }) {
   if (!(input.costUsd > 0)) return;
+  const model = input.model && billedModel(input.model);
   await db.insert(generationLogs).values({
-    userId: input.userId, usageType: "text", modelId: input.model, provider: input.model?.split("/")[0] ?? null,
+    userId: input.userId, usageType: "text", modelId: model, provider: model?.split("/")[0] ?? null,
     status: input.ok ? "success" : "failed", cost: input.costUsd, sessionId: input.discoveryId ?? null,
     responseData: { ideas: input.discoveryId ? { discoveryId: input.discoveryId } : { manual: true } },
   }).catch(() => console.error("[ideas] Could not log idea spend"));

@@ -53,7 +53,7 @@ export function createAiVisibilityRoutes() {
     const { userId, siteId } = await ownedSite(c, requiredString(await readJsonObject(c), "siteId"));
     if (!(await getOpenRouterKey(userId))) throw new ApiError(400, "validation_error", "Add an OpenRouter API key first");
     try {
-      return c.json({ questions: await suggestQuestions(userId, siteId) });
+      return c.json({ questions: await suggestQuestions(userId, siteId, undefined, c.req.raw.signal) });
     } catch (error) {
       if (error instanceof SuggestBlockedError) throw new ApiError(400, "validation_error", error.message);
       // The LLM adapter reports the status only; 402 is OpenRouter's out-of-credits answer.

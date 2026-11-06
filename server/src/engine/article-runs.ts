@@ -5,7 +5,6 @@ import { articleEvidence, articleGateResults, articleRuns, articleSources, artic
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
 import { finishOperationEvent, safeOperationMetadata, startOperationEvent } from "../services/operation-events.js";
-import { resolveOpenRouterTextModel } from "../services/openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../services/user-settings.js";
 import { engineAiEndpoint } from "./adapters/llm.js";
 import { estimateRunUsd, parseEngineSettings, resolveRunSettings } from "./modes.js";
@@ -17,6 +16,8 @@ import type { ArticleRunRow } from "./runtime/stage.js";
 import { claimIdsByEvidence, stageDetails } from "./run-view.js";
 import { STAGES } from "./stages/index.js";
 import { StageInputError, type EngineMode, type ModelRole, type StageKey } from "./types.js";
+import { resolveEngineModel, userSubscriptions } from "../services/engine-llm.js";
+import { disallowedSubscriptionRoles } from "./adapters/subscription.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -87,10 +88,11 @@ export async function startArticleRun(input: {
   const settings = await getEffectiveSettings(input.userId, input.siteId);
   const resolved = resolveRunSettings(input.mode, parseEngineSettings(settings.engineSettings));
   const models = { ...resolved.models };
-  if (endpoint.gateway === "openrouter") {
-    for (const role of Object.keys(models) as ModelRole[]) {
-      models[role] = await resolveOpenRouterTextModel(endpoint.apiKey, models[role]);
-    }
+  // Fail at the start, not after a stage's retries: subscriptions are for the accounts the instance lists.
+  const notAllowed = disallowedSubscriptionRoles(models, await userSubscriptions(input.userId));
+  if (notAllowed.length) throw new StageInputError(`Subscription models are not enabled for this account (${notAllowed.join(", ")}). Choose an OpenRouter model for these steps.`);
+  for (const role of Object.keys(models) as ModelRole[]) {
+    models[role] = await resolveEngineModel(endpoint, models[role]);
   }
   const guidance = {
     angle: input.guidance?.angle?.trim().slice(0, 500) || undefined,

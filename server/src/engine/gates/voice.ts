@@ -83,8 +83,9 @@ export function voiceGate(
   ];
 }
 
+// Same caps as the writer prompt (services/voice-content.ts), so the gate never enforces a rule the writer was not given.
 const ruleList = (v: unknown) =>
-  Array.isArray(v) ? v.flatMap((x) => (typeof x === "string" && x.trim() ? [x.trim().slice(0, 120)] : [])).slice(0, 50) : [];
+  Array.isArray(v) ? v.flatMap((x) => (typeof x === "string" && x.trim() ? [x.trim().slice(0, 120)] : [])).slice(0, 20) : [];
 
 /** The engine's voice rules plus a site's own banned words and phrases (`user_settings.content_rules`). */
 export function withSiteVoice(voice: EngineConfig["voice"], contentRules: unknown): EngineConfig["voice"] {

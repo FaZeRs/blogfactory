@@ -22,6 +22,7 @@ BlogFactory is an agent control plane for multi-site content operations. MCP cli
 - The highest agent authority is CMS **draft** creation after explicit approval.
 - Never add live publish, delete, bulk mutation, credential access, arbitrary provider access, or admin MCP tools without a separate product and security decision.
 - Reuse BlogFactory's existing generation, Search Console, publishing, tenant authorization, and credentials. Do not create a second service or provider flow.
+- Subscription models (Claude Code, Codex CLIs; `docs/superpowers/specs/2026-11-06-subscription-models-design.md`) are the one approved exception: an instance-level option for the owner's own account only (`ENGINE_SUBSCRIPTIONS` plus the `ENGINE_SUBSCRIPTION_USERS` allow-list). Never offer them to other accounts, never use them to serve other customers on BlogFactory Cloud, and keep the CLIs tool-less and isolated.
 - Every database query and mutation must remain user- and site-scoped.
 - Optimistic locking and publishing idempotency are product guarantees, not optional implementation details.
 

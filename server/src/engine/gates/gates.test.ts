@@ -175,6 +175,8 @@ test("style: 3 phrase hits or too many em dashes block; 1-2 hits only suggest; c
 
   const ignored = `${filler}\n\n\`\`\`\ndelve seamlessly tapestry\n\`\`\`\n\nSee [the page](https://x.example/delve-seamlessly-tapestry).`;
   expect(styleGate(ignored).every((r) => r.passed)).toBe(true);
+  // A hit in the very first sentence keeps its first character.
+  expect(styleGate(`Delve into this. ${filler}`)[1]?.issues[0]?.excerpt).toStartWith("Delve into this.");
 });
 
 test("a site's banned phrases block anywhere, banned words only as whole words", async () => {
@@ -203,4 +205,8 @@ test("style blocks dense prose: an average over 22 words a sentence names the lo
   expect(issues(walls).map((i) => i.message)[0]).toMatch(/paragraphs average 56 words/);
   expect(issues(Array.from({ length: 16 }, () => `${mid} ${mid}`).join("\n\n"))).toEqual([]);
   expect(proseSentences("## Heading\n\n- a list item that is long enough\n\n<key-takeaways>\n\nOne real sentence here[¹](https://x.example).{{c:c1}} Another one follows.")).toEqual(["One real sentence here.", "Another one follows."]);
+  // Code is not prose, even where a blank line splits a fence; a sentence may open with a number.
+  const { proseParagraphs } = await import("./style.js");
+  expect(proseParagraphs("Intro sentence with five words.\n\n```js\nconst total = price * count + tax;\n\nconst shown = total.toFixed(2) + unit;\n```\n")).toEqual(["Intro sentence with five words."]);
+  expect(proseSentences("The first one is here. 10 more words come next.")).toEqual(["The first one is here.", "10 more words come next."]);
 });

@@ -18,6 +18,24 @@ For an existing database that predates the migration ledger, first confirm its s
 
 Never run PostgreSQL integration tests against the shared production database. Use a disposable database.
 
+## Subscription models (Claude Code, Codex)
+
+A self-hosted or owner instance can run engine roles on a Claude or ChatGPT subscription instead of per-token OpenRouter calls. It's off by default, and it's limited to the accounts you list, because a subscription belongs to one person: don't spend it on other users' runs.
+
+```bash
+ENGINE_SUBSCRIPTIONS=claude-code,codex        # which CLIs to allow
+ENGINE_SUBSCRIPTION_USERS=owner@example.com   # accounts that may use them
+ENGINE_CLAUDE_BIN=/path/to/claude             # the real binary, not a wrapper script (a mise shim stalls)
+CLAUDE_CODE_OAUTH_TOKEN=...                   # optional: from `claude setup-token`; else the host's `claude` login
+ENGINE_CODEX_HOME=/var/lib/blogfactory/codex  # a login directory used only by BlogFactory
+```
+
+1. Install both CLIs on the API and worker hosts.
+2. Log Codex in once with `CODEX_HOME=$ENGINE_CODEX_HOME codex login`.
+3. Choose the models in **Control → Article Settings → Engine**. Subscription options show a SUB badge and are stored as `claude-code:<model>|<openrouter fallback>` or `codex:<model>|<fallback>`. The fallback is used when the subscription is rate-limited, logged out, missing or times out.
+
+Saving engine settings, and starting a run, both reject a subscription model the account may not use. Without a fallback, a usage limit pauses the run for 30 minutes instead of failing it. Interactive calls (revise with comments, question suggestions) stop after 3 minutes. Subscription calls are logged at $0, so budgets and guardrails count only paid calls. Both CLIs run with no tools, no MCP servers, no hooks and no user config, in an empty working directory, because prompts carry web text. With a ChatGPT login, Codex accepts only some models (`gpt-6-sol`, `gpt-6-luna`).
+
 ## AI answer visibility cost
 
 A weekly check costs about $0.04 per question on OpenAI, $0.015 on Perplexity and $0.05-0.13 on Google. Gemini runs 2-6 paid web searches per answer. Measured in November 2026: 21 questions on the three default engines is about $2.50 a week. Each site has a monthly cap (default $15), and a run whose estimate would pass the cap is skipped, with the reason shown on **Run now**. The spend is in `generation_logs`, so account guardrails and Usage include it.

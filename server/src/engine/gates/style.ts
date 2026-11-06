@@ -1,3 +1,4 @@
+import { maskCode } from "../markdown/mask-code.js";
 import { toPlainText } from "../markdown/plain-text.js";
 import { wordCount } from "../util.js";
 import { type GateIssue, type GateResult, gateResult } from "./types.js";
@@ -23,16 +24,18 @@ const LONG_SENTENCE_ISSUES = 5;
 const MAX_MEAN_PARAGRAPH_WORDS = 45;
 const MIN_PARAGRAPHS_MEASURED = 15;
 
-/** The prose paragraphs as plain text: headings, lists, tables, quotes and component tags are left out. */
+/** The prose paragraphs as plain text: code, headings, lists, tables, quotes and component tags are left out. */
 export function proseParagraphs(markdown: string): string[] {
-  return markdown.split(/\n\s*\n/).map((b) => b.trim())
+  // Code is blanked first: a fence with blank lines inside would otherwise split into "paragraphs" of code.
+  return maskCode(markdown).split(/\n\s*\n/).map((b) => b.trim())
     .filter((b) => b && !/^(#|[-*+] |\d+[.)] |<|>|\||```)/.test(b))
     .map((p) => p.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\{\{c:[^}]*\}\}/g, "").replace(/[\u00b9\u00b2\u00b3\u2070-\u2079]+/g, "").replace(/\s+/g, " "))
     .filter((p) => p.split(" ").length > 3);
 }
 
 export function proseSentences(markdown: string): string[] {
-  return proseParagraphs(markdown).flatMap((p) => p.split(/(?<=[.!?])\s+(?=[A-Z\u00c0-\u024f"'(])/u))
+  // A sentence may also open with a number or bold text.
+  return proseParagraphs(markdown).flatMap((p) => p.split(/(?<=[.!?])\s+(?=[\p{Lu}\d\u00c0-\u024f"'(*])/u))
     .map((x) => x.trim()).filter((x) => x.split(" ").length > 2);
 }
 
@@ -44,7 +47,8 @@ const RULES = STYLE_PHRASES.map((phrase) => ({
 
 /** The sentence around a match, cut to the excerpt limit. */
 function sentenceAround(text: string, index: number, length: number): string {
-  const start = Math.max(text.lastIndexOf(". ", index) + 2, text.lastIndexOf("\n", index) + 1, 0);
+  const dot = text.lastIndexOf(". ", index);
+  const start = Math.max(dot < 0 ? 0 : dot + 2, text.lastIndexOf("\n", index) + 1);
   const endAt = [text.indexOf(". ", index + length), text.indexOf("\n", index + length)].filter((n) => n >= 0);
   const end = endAt.length ? Math.min(...endAt) + 1 : text.length;
   const s = text.slice(start, end).trim();

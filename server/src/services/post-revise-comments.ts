@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { articleEvidence, articleRuns, generationLogs, posts } from "../db/schema.js";
-import { createEngineLlm, engineAiEndpoint, type EngineLlm } from "../engine/adapters/llm.js";
+import { engineAiEndpoint, type EngineLlm } from "../engine/adapters/llm.js";
 import { ENGINE_CONFIG } from "../engine/config.js";
 import { parseEngineSettings, resolveRunSettings } from "../engine/modes.js";
 import { DATA_RULE, fenceData, preparePrompt } from "../engine/prompts/load.js";
@@ -13,11 +13,11 @@ import { ApiError } from "../http/error-contract.js";
 import { checkAccountGuardrails } from "./account-guardrails.js";
 import { getOpenRouterKey } from "./api-keys.js";
 import { finishOperationEvent, startOperationEvent } from "./operation-events.js";
-import { resolveOpenRouterTextModel } from "./openrouter-models.js";
 import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
 import { PostVersionConflictError, updatePostWithRevision } from "./post-revisions.js";
 import { getEffectiveSettings } from "./user-settings.js";
 import { buildVoiceContentInstructions } from "./voice-content.js";
+import { INTERACTIVE_TIMEOUT_MS, billedModel, resolveEngineModel, userEngineLlm } from "./engine-llm.js";
 
 export const COMMENTS_MIN = 10;
 export const COMMENTS_MAX = 4000;
@@ -30,13 +30,16 @@ async function loadDeps(userId: string, engineSettings: unknown): Promise<Revise
   const endpoint = engineAiEndpoint(process.env, await getOpenRouterKey(userId));
   if (!endpoint) throw new ApiError(503, "service_unavailable", "Add an OpenRouter key in Integrations to revise with AI.");
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.revise;
-  if (endpoint.gateway === "openrouter") model = await resolveOpenRouterTextModel(endpoint.apiKey, model);
-  return { llm: createEngineLlm(endpoint), model };
+  model = await resolveEngineModel(endpoint, model);
+  return { llm: await userEngineLlm(userId, endpoint, { timeoutMs: INTERACTIVE_TIMEOUT_MS }), model };
 }
 
 /** The run that wrote this post (`article_runs.post_id`, set at delivery) gives the verified evidence; hand-made posts have none. */
-async function runEvidence(userId: string, postId: string) {
-  const [run] = await db.select({ id: articleRuns.id }).from(articleRuns).where(and(eq(articleRuns.postId, postId), eq(articleRuns.userId, userId))).limit(1);
+async function runEvidence(userId: string, siteId: string | null, postId: string) {
+  // A run always has a site, so a post without one has no run.
+  if (!siteId) return "";
+  const [run] = await db.select({ id: articleRuns.id }).from(articleRuns)
+    .where(and(eq(articleRuns.postId, postId), eq(articleRuns.userId, userId), eq(articleRuns.siteId, siteId))).limit(1);
   if (!run) return "";
   const rows = await db.select({ claim: articleEvidence.claim, quote: articleEvidence.quote }).from(articleEvidence)
     .where(and(eq(articleEvidence.runId, run.id), eq(articleEvidence.userId, userId), eq(articleEvidence.verified, true))).limit(60);
@@ -44,7 +47,7 @@ async function runEvidence(userId: string, postId: string) {
 }
 
 /** One model call rewrites the post from the owner's comments; it saves as a new revision under the same lock as an edit. */
-export async function reviseWithComments(input: { userId: string; postId: string; comments: string; expectedUpdatedAt: Date; deps?: ReviseDeps }) {
+export async function reviseWithComments(input: { userId: string; postId: string; comments: string; expectedUpdatedAt: Date; deps?: ReviseDeps; signal?: AbortSignal }) {
   const { userId, postId, expectedUpdatedAt } = input;
   const [post] = await db.select().from(posts).where(and(eq(posts.id, postId), eq(posts.userId, userId))).limit(1);
   if (!post) throw new ApiError(404, "not_found", "Post not found");
@@ -63,7 +66,7 @@ export async function reviseWithComments(input: { userId: string; postId: string
     comments: fenceData("comments", sanitizeText(input.comments)),
     meta: fenceData("meta", `Title: ${post.title}\nDescription: ${post.summary ?? ""}`),
     draft: fenceData("article", post.content),
-    evidence: fenceData("evidence", (await runEvidence(userId, postId)) || "None: this article has no verified evidence list."),
+    evidence: fenceData("evidence", (await runEvidence(userId, post.siteId, postId)) || "None: this article has no verified evidence list."),
   });
 
   const started = Date.now();
@@ -71,7 +74,7 @@ export async function reviseWithComments(input: { userId: string; postId: string
   let costUsd = 0;
   let ok = false;
   try {
-    const r = await deps.llm.json({ role: "revise", model: deps.model, system: prompt.system, user: prompt.user, schema: ReplySchema, maxTokens: 12_000 });
+    const r = await deps.llm.json({ role: "revise", model: deps.model, system: prompt.system, user: prompt.user, schema: ReplySchema, maxTokens: 12_000, signal: input.signal });
     costUsd = r.costUsd;
     const markdown = cleanGeneratedPostContent(normalizeDraftMarkdown(sanitizeText(r.value.markdown))).trimEnd();
     const result = await updatePostWithRevision({
@@ -90,8 +93,9 @@ export async function reviseWithComments(input: { userId: string; postId: string
   } finally {
     await finishOperationEvent({ id: eventId, status: ok ? "succeeded" : "failed", durationMs: Date.now() - started, metadata: { cost_usd: costUsd, comments_length: input.comments.length } }).catch(() => {});
     if (costUsd > 0) {
+      const model = billedModel(deps.model);
       await db.insert(generationLogs).values({
-        userId, postId, usageType: "text", modelId: deps.model, provider: deps.model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
+        userId, postId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
         responseData: { reviseWithComments: true },
       }).catch(() => console.error("[revise-comments] Could not log spend"));
     }

@@ -138,6 +138,8 @@ The backend decides eligibility and claims work. Schedulers must stay thin; do n
 - **Prompt context:** the brief, draft and revise prompts get the site's voice rules plus its brand profile (company, audience, value propositions, CTAs and the most relevant knowledge chunks) through `writerVoice`.
 - **Draft repair:** `normalizeDraftMarkdown` repairs drafts that cheap models flatten (line breaks returned as spaces) or write as HTML.
 
+**Subscription models:** `engine/adapters/subscription.ts` wraps the LLM client. Model ids `claude-code:<model>` and `codex:<model>` run on the owner's subscription through the headless CLIs, with every tool, plugin, hook and user config off. An optional `|<model>` names an OpenRouter fallback. `services/engine-llm.ts` applies the instance allow-list (`ENGINE_SUBSCRIPTIONS`, `ENGINE_SUBSCRIPTION_USERS`) to every engine caller.
+
 **Revise with comments:** `POST /api/posts/:id/revise-with-comments` rewrites a post from the owner's comments, with the run's evidence when there is one, and saves a new revision under the same optimistic lock. It adds no MCP tool.
 
 **Evals:** `npm run eval:engine -- --mode normal@<model>` runs every role on one model, and `#noreview` skips the review stage, so cheap or free OpenRouter models and the quality loop can be compared on the golden briefs. Reports record every finding by revise round.

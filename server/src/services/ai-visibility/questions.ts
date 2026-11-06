@@ -3,15 +3,15 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db/index.js";
 import { generationLogs, ideas } from "../../db/schema.js";
-import { createEngineLlm, engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
+import { engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
 import { parseEngineSettings, resolveRunSettings } from "../../engine/modes.js";
 import { checkAccountGuardrails } from "../account-guardrails.js";
 import { getOpenRouterKey } from "../api-keys.js";
 import { effectiveSeedTopics, getIdeaSettings } from "../ideas/settings.js";
-import { resolveOpenRouterTextModel } from "../openrouter-models.js";
 import { getEffectiveSettings, getSiteForUser } from "../user-settings.js";
 import { mentions } from "./detect.js";
 import { getVisibilitySettings, MAX_QUESTIONS } from "./settings.js";
+import { INTERACTIVE_TIMEOUT_MS, billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
@@ -72,8 +72,8 @@ async function loadSuggestDeps(userId: string, engineSettings: unknown): Promise
   const endpoint = engineAiEndpoint(process.env, await getOpenRouterKey(userId));
   if (!endpoint) throw new Error("OpenRouter is not configured");
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.brief;
-  if (endpoint.gateway === "openrouter") model = await resolveOpenRouterTextModel(endpoint.apiKey, model);
-  return { llm: createEngineLlm(endpoint), model };
+  model = await resolveEngineModel(endpoint, model);
+  return { llm: await userEngineLlm(userId, endpoint, { timeoutMs: INTERACTIVE_TIMEOUT_MS }), model };
 }
 
 const replySchema = z.object({ questions: z.array(z.string()) });
@@ -82,7 +82,7 @@ const replySchema = z.object({ questions: z.array(z.string()) });
 export class SuggestBlockedError extends Error {}
 
 /** One model call over Search Console questions, idea audience questions and seed topics. Up to 20, already validated. */
-export async function suggestQuestions(userId: string, siteId: string, deps?: SuggestDeps): Promise<string[]> {
+export async function suggestQuestions(userId: string, siteId: string, deps?: SuggestDeps, signal?: AbortSignal): Promise<string[]> {
   const site = await getSiteForUser(userId, siteId);
   if (!site) throw new Error("Site not found");
   const guard = await checkAccountGuardrails(userId);
@@ -104,6 +104,7 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
       role: "brief",
       model: d.model,
       maxTokens: 1500,
+      signal,
       schema: replySchema,
       system: "You write the questions real customers type into an AI assistant such as ChatGPT or Perplexity when they look for a product, service or answer. Never name the brand, company or its domain.",
       user: [
@@ -125,8 +126,9 @@ export async function suggestQuestions(userId: string, siteId: string, deps?: Su
     throw error;
   } finally {
     if (costUsd > 0) {
+      const model = billedModel(d.model);
       await db.insert(generationLogs).values({
-        userId, usageType: "text", modelId: d.model, provider: d.model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
+        userId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
         responseData: { aiVisibility: { siteId, suggest: true } },
       }).catch(() => console.error("[ai-visibility] Could not log suggestion spend"));
     }

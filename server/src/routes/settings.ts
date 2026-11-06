@@ -38,6 +38,8 @@ import {
   updateGlobalSettings,
   updateSiteSettings,
 } from "../services/user-settings.js";
+import { SUBSCRIPTION_MODELS, disallowedSubscriptionRoles } from "../engine/adapters/subscription.js";
+import { userSubscriptions } from "../services/engine-llm.js";
 
 export const settingsRoutes = new Hono();
 const API_KEY_PROVIDERS = new Set(["openrouter", "google", "openai", "pexels", "pixabay"]);
@@ -454,11 +456,18 @@ function buildSettingsUpdate(body: Record<string, unknown>): SettingsUpdate {
   return update;
 }
 
+async function engineResponse(userId: string, raw: unknown) {
+  return {
+    ...engineSettingsResponse(raw, process.env, Boolean(await getOpenRouterKey(userId))),
+    subscriptionModels: (await userSubscriptions(userId)).flatMap((p) => SUBSCRIPTION_MODELS[p]),
+  };
+}
+
 settingsRoutes.get("/engine", async (c) => {
   const userId = getUserId(c);
   const siteId = c.req.query("siteId") || c.req.query("site_id") || await getActiveSiteId(userId);
   const settings = await getEffectiveSettings(userId, siteId).catch(() => null);
-  return c.json(engineSettingsResponse(settings?.engineSettings, process.env, Boolean(await getOpenRouterKey(userId))));
+  return c.json(await engineResponse(userId, settings?.engineSettings));
 });
 
 settingsRoutes.put("/engine", async (c) => {
@@ -467,13 +476,15 @@ settingsRoutes.put("/engine", async (c) => {
   const siteId = asOptionalText(body.siteId ?? body.site_id) || await getActiveSiteId(userId);
   if (!siteId) return c.json({ error: "Select a site before changing engine settings" }, 400);
   const engineSettings = parseEngineSettings(body.settings ?? body);
+  const notAllowed = disallowedSubscriptionRoles(engineSettings.models ?? {}, await userSubscriptions(userId));
+  if (notAllowed.length) return c.json({ error: `Subscription models are not enabled for this account (${notAllowed.join(", ")})` }, 400);
   try {
     await updateSiteSettings(userId, siteId, { engineSettings });
   } catch (err) {
     if (err instanceof Error && err.message === "Site not found") return c.json({ error: "Site not found" }, 404);
     throw err;
   }
-  return c.json(engineSettingsResponse(engineSettings, process.env, Boolean(await getOpenRouterKey(userId))));
+  return c.json(await engineResponse(userId, engineSettings));
 });
 
 settingsRoutes.get("/ideas", async (c) => {

@@ -26,7 +26,7 @@ const STEPS: Record<string, { title: string; about: string }> = {
   revise: { title: "Revise", about: "Fixes the problems the quality checks found." },
   deliver: { title: "Deliver", about: "Saves the draft to your Review Queue." },
 };
-const ORDER = ["research", "brief", "draft", "gates", "deliver"];
+const ORDER = ["research", "brief", "draft", "gates", "review", "deliver"];
 
 const GATES: Record<string, string> = {
   citations: "Claims cite verified sources",
@@ -65,7 +65,8 @@ function summary(stage: EngineStageRun, d: Details): string {
       if (d.passed) return "All checks passed";
       return `${num(d.blockerCount) ?? 0} problem${num(d.blockerCount) === 1 ? "" : "s"} found${d.escalated ? " · needs your review" : " · sent to revise"}`;
     case "review":
-      if (d.passed) return "Fact-check and reader review passed";
+      // Normal mode runs only the fact-check, so the summary does not name the reader review.
+      if (d.passed) return "Review passed";
       return `${num(d.blockerCount) ?? 0} problem${num(d.blockerCount) === 1 ? "" : "s"} found${d.escalated ? " · needs your review" : " · sent to revise"}`;
     case "deliver":
       return d.escalated ? "Saved to Review Queue with open problems" : "Saved to Review Queue";
