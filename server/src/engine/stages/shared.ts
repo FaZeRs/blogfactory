@@ -91,8 +91,30 @@ export function unflattenMarkdown(text: string): string {
   return text.replace(/ {2,}(?=\S)/g, "\n\n");
 }
 
+/**
+ * Some models answer a Markdown request with HTML blocks. With 3 or more paragraph or heading tags the basic tags are
+ * converted; capitalised component tags (Lindevo's) and anything else are left alone.
+ */
+export function htmlBlocksToMarkdown(text: string): string {
+  if ((text.match(/<(?:p|h[1-6])\b[^>]*>/g) ?? []).length < 3) return text;
+  const inline = (t: string) => t.trim()
+    .replace(/<br\s*\/?>/g, "\n")
+    .replace(/<(strong|b)>([\s\S]*?)<\/\1>/g, "**$2**")
+    .replace(/<(em|i)>([\s\S]*?)<\/\1>/g, "*$2*")
+    .replace(/<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g, "[$2]($1)");
+  const items = (list: string, marker: (i: number) => string) =>
+    [...list.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/g)].map((m, i) => `${marker(i)} ${inline(m[1]!)}`).join("\n");
+  return text
+    .replace(/<ol\b[^>]*>([\s\S]*?)<\/ol>/g, (_, list: string) => `\n\n${items(list, (i) => `${i + 1}.`)}\n\n`)
+    .replace(/<ul\b[^>]*>([\s\S]*?)<\/ul>/g, (_, list: string) => `\n\n${items(list, () => "-")}\n\n`)
+    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/g, (_, n: string, t: string) => `\n\n${"#".repeat(Number(n))} ${inline(t)}\n\n`)
+    .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/g, (_, t: string) => `\n\n${inline(t)}\n\n`)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function normalizeDraftMarkdown(md: string): string {
-  let text = unflattenMarkdown(md.replace(/\r\n/g, "\n").trim());
+  let text = unflattenMarkdown(htmlBlocksToMarkdown(md.replace(/\r\n/g, "\n").trim()));
   const wrapped = /^(`{3,}|~{3,})(?:markdown|md|mdx)?[ \t]*\n([\s\S]*)\n\1[ \t]*$/i.exec(text);
   if (wrapped) text = wrapped[2]!;
   return `${text.replace(/^\s*# [^\n]*\n+/, "").trim()}\n`;

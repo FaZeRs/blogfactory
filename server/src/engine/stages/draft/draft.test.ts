@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { DATA_RULE, fenceData, loadPrompt, renderPrompt } from "../../prompts/load.js";
-import { normalizeDraftMarkdown, unflattenMarkdown } from "../shared.js";
+import { htmlBlocksToMarkdown, normalizeDraftMarkdown, unflattenMarkdown } from "../shared.js";
 import { fakeCtx } from "../test-helpers.js";
 import { draftStage, type DraftInput } from "./index.js";
 
@@ -65,4 +65,11 @@ test("a long article whose line breaks became double spaces is repaired; normal 
   const normal = `Intro.\n\n## Heading\n\n${"Text with  two spaces. ".repeat(80)}\n\n- a\n- b\n`;
   expect(unflattenMarkdown(normal)).toBe(normal);
   expect(normalizeDraftMarkdown(flat)).toContain("\n## Section heading\n");
+});
+
+test("an article written as HTML blocks becomes Markdown; components and plain Markdown are left alone", () => {
+  const html = `<p>Intro with <strong>bold</strong> and <a href="https://x.example">a link</a>.{{c:e1}}</p><h2>First</h2><p>Body.</p><ul><li>One</li><li>Two</li></ul><h3>Sub</h3><ol><li>Step</li><li>Next</li></ol><Callout type="tip">Keep</Callout>`;
+  expect(htmlBlocksToMarkdown(html)).toBe(`Intro with **bold** and [a link](https://x.example).{{c:e1}}\n\n## First\n\nBody.\n\n- One\n- Two\n\n### Sub\n\n1. Step\n2. Next\n\n<Callout type="tip">Keep</Callout>`);
+  const md = "Intro.\n\n<p>one stray tag</p>\n\n## Heading\n";
+  expect(htmlBlocksToMarkdown(md)).toBe(md);
 });
