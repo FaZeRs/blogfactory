@@ -25,6 +25,17 @@ const siteHost = (url: string) => {
 const ROLE_RE = /^(?:info|hello|contact|support|sales|team|press|help|office|admin|privacy|legal|billing)@/i;
 // A real-looking assignment value has a letter and a digit (or is long); code like `password=getPassword()` does not.
 const realValue = (v: string) => !PLACEHOLDER_RE.test(v) && /[A-Za-z]/.test(v) && (/\d/.test(v) || v.length >= 16) && !/[(){}]/.test(v);
+// An unquoted `secret: word` is often prose ("The secret: cross-functional teams"), so it also needs a digit.
+const secretAssignment = (m: string) => {
+  const [, sep = "", quote = "", value = ""] = /[^:=]*?([:=])\s*(["']?)(.*)$/.exec(m) ?? [];
+  return realValue(value) && (sep === "=" || quote !== "" || /\d/.test(value));
+};
+// Reserved example domains (RFC 2606); any other host with credentials is treated as real.
+const RESERVED_HOST_RE = /^(?:[\w-]+\.)*(?:example\.(?:com|org|net)|example|test|invalid)(?::\d+)?$/i;
+const placeholderUrlCredentials = (m: string) => {
+  const [, credentials = "", host = ""] = /^https?:\/\/([^@]+)@(.*)$/.exec(m) ?? [];
+  return PLACEHOLDER_RE.test(credentials) || RESERVED_HOST_RE.test(host);
+};
 
 const RULES: readonly LeakRule[] = [
   // Provider tokens. A bare `sk-` keeps its word boundary so `risk-assessment-…` is not a key.
@@ -35,9 +46,9 @@ const RULES: readonly LeakRule[] = [
   { hint: "Remove the credential", message: "contains a Google API key", re: /\bAIza[0-9A-Za-z_-]{30,}/g, severity: "blocker" },
   { hint: "Remove the credential", message: "contains a JWT", re: /\beyJ[A-Za-z0-9_-]{10,1024}\.[A-Za-z0-9_-]{10,8192}\.[A-Za-z0-9_-]{10,2048}/g, severity: "blocker" },
   { hint: "Remove the private key", message: "contains a private key block", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g, severity: "blocker" },
-  { hint: "Remove the credential", message: "assigns a secret value", re: /(?<![?&\w])(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|auth[_-]?token|token)["']?\s*[:=]\s*["']?[^\s"'<>,;&]{8,}/gi, severity: "blocker", allow: (m) => !realValue(m.replace(/^[^:=]*[:=]\s*["']?/, "")) },
+  { hint: "Remove the credential", message: "assigns a secret value", re: /(?<![?&\w])(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|auth[_-]?token|token)["']?\s*[:=]\s*["']?[^\s"'<>,;&]{8,}/gi, severity: "blocker", allow: (m) => !secretAssignment(m) },
   // URLs that carry credentials.
-  { hint: "Remove the credentials from the URL", message: "URL contains a username and password", re: /https?:\/\/[^\s/:@]+:[^\s/@]+@[^\s/]+/g, severity: "blocker", allow: (m) => PLACEHOLDER_RE.test(m) },
+  { hint: "Remove the credentials from the URL", message: "URL contains a username and password", re: /https?:\/\/[^\s/:@]+:[^\s/@]+@[^\s/]+/g, severity: "blocker", allow: placeholderUrlCredentials },
   {
     hint: "Remove the credential from the URL",
     message: "URL contains a token or key parameter",

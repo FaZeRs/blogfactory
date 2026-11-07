@@ -229,6 +229,9 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
     "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop",
     "password=Hunter2isGreat",
     "https://admin:s3cretpw@db.corp.net/x",
+    "https://admin:S3curePassword42@samples.acme.io",
+    "secret: Summer2024rocks",
+    "api_key: 'longsecretvaluewithoutdigits'",
     "https://api.site.com/v1?token=abcdef1234567890abcd",
   ];
   for (const s of secrets) {
@@ -266,6 +269,8 @@ test("leaks: placeholders and look-alikes pass", () => {
     "Visit https://example.com/?key=marketing-automation-tools or 8.8.8.8",
     "In 2024 we paid $1,299.00 for v10.2.3.4 of the tool, ISBN 978-3-16-148410-0.",
     "Call +1 555 123 4567 or email jane@example.com",
+    "The secret: cross-functional collaboration makes teams effective.",
+    "Connect to https://user:pass1234@db.example.com or https://u:p4ssword@app.test",
   ];
   for (const md of fine) expect(leak(md).every((r) => r.passed), md).toBe(true);
 });
