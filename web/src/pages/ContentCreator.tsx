@@ -411,7 +411,7 @@ export default function ContentCreator() {
   const [personaId, setPersonaId] = useState("");
   const [modelId, setModelId] = useState("anthropic/claude-3.5-sonnet");
   const [pickedVariations, setVariations] = useState<1 | 3 | 5>(1);
-  const [pickedMode, setGenerationMode] = useState<EngineMode>("fast");
+  const [pickedMode, setGenerationMode] = useState<EngineMode>("normal");
   const { data: engineInfo } = useEngineSettings(activeSiteId);
   const engineEligible = (sourceType === "article_keyword" || sourceType === "article_title") && !!engineInfo?.availability.available;
   const generationMode: EngineMode = engineEligible ? pickedMode : "fast";

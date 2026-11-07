@@ -34,6 +34,8 @@ const GATES: Record<string, string> = {
   components: "Lindevo components",
   factcheck: "Fact-check against the evidence",
   faq: "FAQ answers the planned questions",
+  leaks: "No secrets or private data",
+  "leaks-warnings": "Contact details",
   links: "Links work",
   "links-warnings": "Link warnings",
   meta: "Title, description and length",

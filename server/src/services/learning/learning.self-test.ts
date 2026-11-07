@@ -66,6 +66,17 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.deepEqual((rows[0]!.payload as any).hunks.map((h: any) => h.after), ["simply use"]);
     await recordPostEditSignal({ userId: owner.id, postId: engine.id, content: "We utilize the tool every day." });
     assert.equal((await signals(engine.id)).length, 0, "back at the engine's text, nothing remains");
+    // a correction already recorded on an earlier day is not stored again
+    await recordPostEditSignal({ userId: owner.id, postId: engine.id, content: "We use the tool every day." });
+    await db.update(learningSignals).set({ day: "2000-01-01" }).where(eq(learningSignals.postId, engine.id));
+    await recordPostEditSignal({ userId: owner.id, postId: engine.id, content: "We use  the tool every day, fast." });
+    rows = (await signals(engine.id)).sort((a, b) => a.day.localeCompare(b.day));
+    assert.equal(rows.length, 2);
+    assert.deepEqual((rows[1]!.payload as any).hunks.map((h: any) => [h.before, h.after]), [["day.", "day, fast."]], "only the new hunk is stored");
+    assert.deepEqual([(rows[1]!.payload as any).hunkCount, (rows[0]!.payload as any).hunkCount], [1, 1]);
+    await recordPostEditSignal({ userId: owner.id, postId: engine.id, content: "We use the tool every day." });
+    assert.deepEqual((await signals(engine.id)).map((r) => r.day), ["2000-01-01"], "nothing new: no row for today, and today's earlier row is removed");
+    await db.delete(learningSignals).where(eq(learningSignals.postId, engine.id));
     await recordPostEditSignal({ userId: owner.id, postId: byHand.id, content: "Typed by hand, edited." });
     assert.equal((await signals(byHand.id)).length, 0, "a post no engine run wrote is not a signal");
     await recordPostEditSignal({ userId: other.id, postId: engine.id, content: "Hijack." });

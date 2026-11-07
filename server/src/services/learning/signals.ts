@@ -68,8 +68,24 @@ export function wordDiff(before: string, after: string): EditPayload {
   return { hunks: hunks.slice(0, SIGNAL_LIMITS.hunks), hunkCount: hunks.length, editRatio: Math.round((changed / Math.max(1, a.length + b.length)) * 1000) / 1000 };
 }
 
+const hunkKey = (h: Hunk) => `${h.before}→${h.after}`.replace(/\s+/g, " ").trim().toLowerCase();
+
+/** The diff without the hunks an earlier day's signal for this post and locale already holds, so one correction counts once. */
+async function newHunksOnly(userId: string, postId: string, locale: string | null, payload: EditPayload): Promise<EditPayload> {
+  const earlier = await db.select({ payload: learningSignals.payload }).from(learningSignals).where(and(
+    eq(learningSignals.userId, userId), eq(learningSignals.postId, postId), eq(learningSignals.kind, "edit"),
+    sql`coalesce(${learningSignals.locale}, '') = ${locale ?? ""}`, sql`${learningSignals.day} < (now() AT TIME ZONE 'utc')::date`,
+  ));
+  const seen = new Set(earlier.flatMap((r) => ((r.payload as Partial<EditPayload>).hunks ?? []).map(hunkKey)));
+  const hunks = payload.hunks.filter((h) => !seen.has(hunkKey(h)));
+  const hunkCount = Math.max(0, payload.hunkCount - (payload.hunks.length - hunks.length));
+  // shortcut: editRatio is scaled by the share of hunks kept, not recomputed from words; upgrade if the ratio is ever shown per signal.
+  return { hunks, hunkCount, editRatio: Math.round(payload.editRatio * (hunkCount / Math.max(1, payload.hunkCount)) * 1000) / 1000 };
+}
+
 async function putEdit(input: { userId: string; siteId: string; postId: string; locale: string | null; payload: EditPayload | null }) {
-  const { userId, siteId, postId, locale, payload } = input;
+  const { userId, siteId, postId, locale } = input;
+  const payload = input.payload && input.payload.hunkCount > 0 ? await newHunksOnly(userId, postId, locale, input.payload) : input.payload;
   if (!payload || payload.hunkCount === 0) {
     // The person is back at the engine's text: today's earlier diff no longer applies.
     await db.delete(learningSignals).where(and(
