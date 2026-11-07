@@ -2,7 +2,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { createDataForSeoClient } from "../adapters/dataforseo.js";
+import { createDataForSeoClient, memorySpend } from "../adapters/dataforseo.js";
 import { createEngineLlm, engineAiEndpoint, type EngineEndpoint } from "../adapters/llm.js";
 import { createPageReader } from "../adapters/reader.js";
 import { createSearchClient } from "../adapters/search.js";
@@ -65,8 +65,7 @@ async function matchFiles(pattern: string): Promise<string[]> {
 }
 
 async function record(topic: string, locale: string, endpoint: EngineEndpoint): Promise<void> {
-  let spent = 0;
-  const dataForSeo = createDataForSeoClient(process.env, { monthlySpentUsd: async () => spent, recordSpend: async (usd) => { spent += usd; } });
+  const dataForSeo = createDataForSeoClient(process.env, memorySpend());
   const run = { id: "record", userId: "eval", siteId: "eval", mode: "normal", settings: {}, locale, topic, sourceType: "article_keyword", reviseCount: 0 } as unknown as ArticleRunRow;
   const search = createSearchClient(process.env, dataForSeo);
   if (search.name === "none") throw new Error("Set SEARXNG_URL or DataForSEO credentials: --record-brief needs a search adapter.");

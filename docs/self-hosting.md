@@ -70,7 +70,7 @@ Fast mode needs nothing extra. Normal and deep run as background stages and need
 | `SEARXNG_URL` | SearXNG search endpoint |
 | `CRAWL4AI_URL`, `CRAWL4AI_TOKEN` | Crawl4AI page reader; the token is optional |
 | `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD` | DataForSEO search |
-| `DATAFORSEO_MONTHLY_USD` | Monthly DataForSEO cap (default `10`) |
+| `DATAFORSEO_MONTHLY_USD` | Monthly DataForSEO cap in USD for the whole instance (default `10`), shared by the API and worker in the `provider_spend` table |
 | `ENGINE_AI_BASE_URL`, `ENGINE_AI_API_KEY` | Instance OpenAI-compatible endpoint used instead of per-user OpenRouter keys; self-hosted only, never configured on Cloud |
 
 Create Content shows which adapters the instance has configured.

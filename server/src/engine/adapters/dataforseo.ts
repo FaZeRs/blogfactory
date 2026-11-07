@@ -26,11 +26,22 @@ const IDEAS_PATH = "dataforseo_labs/google/keyword_ideas/live";
 const RELATED_PATH = "dataforseo_labs/google/related_keywords/live";
 
 type Env = Record<string, string | undefined>;
-type Deps = {
-  fetchImpl?: typeof fetch;
-  monthlySpentUsd: () => Promise<number>;
-  recordSpend: (usd: number) => Promise<void>;
+export type DataForSeoSpend = {
+  /** Books `usd` against this month only if the month's total stays within `capUsd`; false when it would not. Must be atomic. */
+  reserve: (usd: number, capUsd: number) => Promise<boolean>;
+  /** Replaces a reservation with the billed cost (0 releases it). */
+  settle: (reservedUsd: number, usd: number) => Promise<void>;
 };
+type Deps = DataForSeoSpend & { fetchImpl?: typeof fetch };
+
+/** In-memory spend for tests and the eval CLI; the engine uses the shared Postgres one. */
+export function memorySpend(spentUsd = 0, onSettle?: (usd: number) => void): DataForSeoSpend & { spent: () => number } {
+  return {
+    reserve: async (usd, capUsd) => (spentUsd + usd <= capUsd ? ((spentUsd += usd), true) : false),
+    settle: async (reservedUsd, usd) => { spentUsd += usd - reservedUsd; onSettle?.(usd); },
+    spent: () => spentUsd,
+  };
+}
 
 export function localeMarket(locale: string): { locationCode: number; languageCode: string } {
   switch (locale) {
@@ -140,8 +151,6 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
     return QUOTA_CODES.has(code) || code === 429 || code === 402 ? new RateLimitError(text) : new Error(text);
   };
 
-  const overBudget = async () => (await deps.monthlySpentUsd()) >= cap;
-
   /** The reply's cost, else its tasks' costs, else 0 for a refused call, else the estimate. */
   function costOf(envelope: Envelope | null, estimate: number): number {
     const reported = parseCost(envelope?.cost);
@@ -153,8 +162,20 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
     return estimate;
   }
 
+  /** Reserves the estimate first, so concurrent calls cannot all pass the cap; [] when the month's budget is spent. */
   async function call(path: string, body: Record<string, unknown>, estimate: number, signal?: AbortSignal): Promise<unknown[]> {
     signal?.throwIfAborted();
+    if (!(await deps.reserve(estimate, cap))) return [];
+    let billed = 0;
+    try {
+      signal?.throwIfAborted(); // the reservation awaited; the run may have been cancelled meanwhile
+      return await send(path, body, estimate, signal, (usd) => { billed = usd; });
+    } finally {
+      await deps.settle(estimate, billed);
+    }
+  }
+
+  async function send(path: string, body: Record<string, unknown>, estimate: number, signal: AbortSignal | undefined, bill: (usd: number) => void): Promise<unknown[]> {
     const deadline = signal ? AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), signal]) : AbortSignal.timeout(TIMEOUT_MS);
     let res: Response;
     try {
@@ -186,8 +207,7 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
       if (signal?.aborted) throw signal.reason;
     }
     // A refused task can still be billed, so the spend is booked before the status is checked.
-    const usd = costOf(envelope, estimate);
-    if (usd > 0) await deps.recordSpend(usd);
+    bill(costOf(envelope, estimate));
     if (!envelope) throw fail(path, 59_991, "the reply was cut short or is not a DataForSEO response");
     if (envelope.status_code !== STATUS_OK) throw fail(path, envelope.status_code, envelope.status_message);
     const task = envelope.tasks?.[0];
@@ -211,7 +231,6 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
 
   return {
     async serp(query, opts) {
-      if (await overBudget()) return [];
       const hits: SearchHit[] = [];
       for (const e of await serpElements(query, opts.locale, Math.max(1, Math.min(opts.limit, 200)), opts.signal)) {
         const url = sanitizeText(e.url ?? "");
@@ -223,7 +242,6 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
     },
 
     async keywordOverview(keyword, opts) {
-      if (await overBudget()) return null;
       const { locationCode, languageCode } = localeMarket(opts.locale);
       const result = await call(
         OVERVIEW_PATH,
@@ -236,7 +254,7 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
     },
 
     async keywordIdeas(seeds, opts) {
-      if (!seeds.length || await overBudget()) return [];
+      if (!seeds.length) return [];
       const { locationCode, languageCode } = localeMarket(opts.locale);
       const result = await call(
         IDEAS_PATH,
@@ -251,7 +269,6 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
     },
 
     async relatedKeywords(keyword, opts) {
-      if (await overBudget()) return [];
       const { locationCode, languageCode } = localeMarket(opts.locale);
       const result = await call(
         RELATED_PATH,
@@ -266,7 +283,6 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
     },
 
     async peopleAlsoAsk(query, opts) {
-      if (await overBudget()) return [];
       const elements = await serpElements(query, opts.locale, 10);
       return elements
         .filter((e) => e.type === "people_also_ask")

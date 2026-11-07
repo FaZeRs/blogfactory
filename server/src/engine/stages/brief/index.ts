@@ -130,9 +130,10 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
     let related: KeywordOverview[] = [];
     if (input.keywordData && dataForSeo) {
       const opts = { locale: input.locale, signal: ctx.signal };
-      // One after the other: each checks the monthly cap, and in parallel both would pass it before either books its spend.
-      keyword = await dataForSeo.keywordOverview(input.topic, opts).catch(() => null);
-      related = await dataForSeo.relatedKeywords(input.topic, { ...opts, limit: 30 }).then((found) => relatedSearches(found, input.topic)).catch(() => []);
+      [keyword, related] = await Promise.all([
+        dataForSeo.keywordOverview(input.topic, opts).catch(() => null),
+        dataForSeo.relatedKeywords(input.topic, { ...opts, limit: 30 }).then((found) => relatedSearches(found, input.topic)).catch(() => []),
+      ]);
     }
     const lindevo = input.profile === "lindevo";
     const target = planTarget(input.serp?.typicalLength);

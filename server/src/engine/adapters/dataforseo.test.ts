@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { RateLimitError } from "../types.js";
-import { createDataForSeoClient, localeMarket } from "./dataforseo.js";
+import { createDataForSeoClient, localeMarket, memorySpend } from "./dataforseo.js";
 
 const ENV = { DATAFORSEO_LOGIN: "api@example.com", DATAFORSEO_PASSWORD: "hunter2hunter2" };
 const ok = (result: unknown[], cost: unknown = 0.0103) => ({
@@ -18,11 +18,8 @@ function setup(handler: (url: string, init: RequestInit) => Response | Promise<R
     calls.push({ url, body: JSON.parse(String(init.body))[0], auth: (init.headers as Record<string, string>).Authorization });
     return handler(url, init);
   }) as unknown as typeof fetch;
-  const client = createDataForSeoClient(env, {
-    fetchImpl,
-    monthlySpentUsd: async () => spentBefore,
-    recordSpend: async (usd) => void spend.push(usd),
-  });
+  // `spend` lists each call's billed cost; refused calls (0) are left out.
+  const client = createDataForSeoClient(env, { fetchImpl, ...memorySpend(spentBefore, (usd) => usd > 0 && void spend.push(usd)) });
   return { client: client!, calls, spend };
 }
 
@@ -45,7 +42,7 @@ test("localeMarket maps known locales and falls back to en", () => {
 });
 
 test("no client without credentials", () => {
-  const deps = { monthlySpentUsd: async () => 0, recordSpend: async () => {} };
+  const deps = memorySpend();
   expect(createDataForSeoClient({}, deps)).toBeNull();
   expect(createDataForSeoClient({ DATAFORSEO_LOGIN: "x" }, deps)).toBeNull();
 });
@@ -152,7 +149,7 @@ test("a pre-aborted signal never reaches the network", async () => {
 test("a stalled request times out through the abort signal", async () => {
   const fetchImpl = ((_u: unknown, init?: RequestInit) =>
     new Promise<Response>((_r, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)))) as typeof fetch;
-  const client = createDataForSeoClient(ENV, { fetchImpl, monthlySpentUsd: async () => 0, recordSpend: async () => {} })!;
+  const client = createDataForSeoClient(ENV, { fetchImpl, ...memorySpend() })!;
   const ac = new AbortController();
   const p = client.serp("x", { locale: "en", limit: 5, signal: ac.signal });
   ac.abort(new Error("stop"));
@@ -179,4 +176,20 @@ test("keywordIdeas drops zero volume, books spend and respects the cap", async (
   const capped = setup(() => json(ok([])), ENV, 99);
   expect(await capped.client.keywordIdeas(["a"], { locale: "en", limit: 5 })).toEqual([]);
   expect(capped.calls).toHaveLength(0);
+});
+
+test("concurrent calls near the cap: only those that fit the budget go out, and the billed cost replaces the estimate", async () => {
+  // 9.995 spent of 10: two 0.002 serp reservations fit, the third does not.
+  const spend = memorySpend(9.995);
+  const calls: string[] = [];
+  const fetchImpl = (async (url: string) => { calls.push(url); return json(ok([], 0.001)); }) as unknown as typeof fetch;
+  const client = createDataForSeoClient(ENV, { fetchImpl, ...spend })!;
+  await Promise.all([1, 2, 3].map(() => client.serp("x", { locale: "en", limit: 5 })));
+  expect(calls).toHaveLength(2);
+  expect(spend.spent()).toBeCloseTo(9.997);
+  // a failed request releases its reservation
+  const failing = memorySpend(1);
+  await createDataForSeoClient(ENV, { fetchImpl: (async () => new Response("", { status: 500 })) as unknown as typeof fetch, ...failing })!
+    .serp("x", { locale: "en", limit: 5 }).catch(() => {});
+  expect(failing.spent()).toBe(1);
 });
