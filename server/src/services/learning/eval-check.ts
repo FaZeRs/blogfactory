@@ -90,11 +90,10 @@ export async function runRuleEval(input: { userId: string; ruleId: string; deps?
     result = { status: "failed", error: String((e as Error)?.message ?? "failed").slice(0, 200), finishedAt: now().toISOString() };
   }
   await db.update(styleRules).set({ eval: result }).where(and(eq(styleRules.id, ruleId), eq(styleRules.userId, userId)));
-  for (const [requested, cost] of spentByModel) {
-    if (cost <= 0) continue;
+  const logs = [...spentByModel].filter(([, cost]) => cost > 0).map(([requested, cost]) => {
     const model = billedModel(requested);
-    await db.insert(generationLogs).values({ userId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: result.status === "done" ? "success" : "failed", cost, responseData: { learningEval: true } })
-      .catch(() => console.error("[learning] Could not log spend"));
-  }
+    return { userId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: result.status === "done" ? "success" : "failed", cost, responseData: { learningEval: true } };
+  });
+  if (logs.length) await db.insert(generationLogs).values(logs).catch(() => console.error("[learning] Could not log spend"));
   return result;
 }

@@ -40,15 +40,15 @@ const placeholderUrlCredentials = (m: string) => {
 const RULES: readonly LeakRule[] = [
   // Provider tokens. A bare `sk-` keeps its word boundary so `risk-assessment-…` is not a key.
   { hint: "Remove the credential", message: "contains an API key", re: /\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}|\bsk_live_[A-Za-z0-9]{10,}|\brk_live_[A-Za-z0-9]{10,}/g, severity: "blocker", allow: (m) => PLACEHOLDER_RE.test(m) },
-  { hint: "Remove the credential", message: "contains a GitHub token", re: /\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/g, severity: "blocker" },
+  { hint: "Remove the credential", message: "contains a GitHub token", re: /\bgh[pousr]_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/g, severity: "blocker", allow: (m) => PLACEHOLDER_RE.test(m) },
   { hint: "Remove the credential", message: "contains an AWS access key", re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, severity: "blocker", allow: (m) => PLACEHOLDER_RE.test(m) || /EXAMPLE/.test(m) },
-  { hint: "Remove the credential", message: "contains a Slack token", re: /\bxox[abprs]-[A-Za-z0-9-]{10,}/g, severity: "blocker" },
-  { hint: "Remove the credential", message: "contains a Google API key", re: /\bAIza[0-9A-Za-z_-]{30,}/g, severity: "blocker" },
+  { hint: "Remove the credential", message: "contains a Slack token", re: /\bxox[abprs]-[A-Za-z0-9-]{10,}/g, severity: "blocker", allow: (m) => PLACEHOLDER_RE.test(m) },
+  { hint: "Remove the credential", message: "contains a Google API key", re: /\bAIza[0-9A-Za-z_-]{30,}/g, severity: "blocker", allow: (m) => PLACEHOLDER_RE.test(m) },
   { hint: "Remove the credential", message: "contains a JWT", re: /\beyJ[A-Za-z0-9_-]{10,1024}\.[A-Za-z0-9_-]{10,8192}\.[A-Za-z0-9_-]{10,2048}/g, severity: "blocker" },
   { hint: "Remove the private key", message: "contains a private key block", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g, severity: "blocker" },
   { hint: "Remove the credential", message: "assigns a secret value", re: /(?<![?&\w])(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|auth[_-]?token|token)["']?\s*[:=]\s*["']?[^\s"'<>,;&]{8,}/gi, severity: "blocker", allow: (m) => !secretAssignment(m) },
   // URLs that carry credentials.
-  { hint: "Remove the credentials from the URL", message: "URL contains a username and password", re: /https?:\/\/[^\s/:@]+:[^\s/@]+@[^\s/]+/g, severity: "blocker", allow: placeholderUrlCredentials },
+  { hint: "Remove the credentials from the URL", message: "URL contains a username and password", re: /https?:\/\/[^\s/:@]+:[^\s/@]+@[\w-]+(?:\.[\w-]+)*(?::\d+)?/g, severity: "blocker", allow: placeholderUrlCredentials },
   {
     hint: "Remove the credential from the URL",
     message: "URL contains a token or key parameter",
@@ -64,11 +64,12 @@ const RULES: readonly LeakRule[] = [
   {
     hint: "Check this contact detail is meant to be public",
     message: "contains an email address",
-    re: /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g,
+    re: /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g,
     severity: "warning",
     allow: (m, input) => {
       const host = siteHost(input.siteUrl);
-      return EXAMPLE_HOST_RE.test(m) || (ROLE_RE.test(m) && host !== "" && m.toLowerCase().endsWith(`@${host}`));
+      // `logo@2x.png` is a retina image file, not an address.
+      return EXAMPLE_HOST_RE.test(m) || /\.(?:png|jpe?g|gif|svg|webp|avif)$/i.test(m) || (ROLE_RE.test(m) && host !== "" && m.toLowerCase().endsWith(`@${host}`));
     },
   },
   {

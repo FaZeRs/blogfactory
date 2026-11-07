@@ -271,6 +271,9 @@ test("leaks: placeholders and look-alikes pass", () => {
     "Call +1 555 123 4567 or email jane@example.com",
     "The secret: cross-functional collaboration makes teams effective.",
     "Connect to https://user:pass1234@db.example.com or https://u:p4ssword@app.test",
+    "Connect to `https://user:pass1234@db.example.com`, or [the app](https://u:p4ssword@app.test).",
+    "Set GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxx and SLACK_TOKEN=xoxb-xxxxxxxxxxxx",
+    "![logo](logo@2x.png) needs react@18.2.0",
   ];
   for (const md of fine) expect(leak(md).every((r) => r.passed), md).toBe(true);
 });
