@@ -1,9 +1,10 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { ideas, siteIntegrations } from "../../db/schema.js";
+import { ideas, posts, siteIntegrations } from "../../db/schema.js";
 import { startArticleRun } from "../../engine/article-runs.js";
 import { truncate } from "../../engine/util.js";
 import { finishOperationEvent, startOperationEvent } from "../operation-events.js";
+import { REFRESH_ANGLE, topQueriesForPost } from "../refresh/detect.js";
 import { getEffectiveSettings } from "../user-settings.js";
 import { getIdeaSettings, type IdeaSettings } from "./settings.js";
 
@@ -163,6 +164,18 @@ function instructionsFor(idea: Idea) {
   ].filter(Boolean).join("\n"), 1500);
 }
 
+/** A refresh idea re-drafts its post: the topic is the post's title, and the searches it already appears for steer the run. */
+async function refreshStart(idea: Idea, now: Date) {
+  const [post] = await db.select({ title: posts.title }).from(posts)
+    .where(and(eq(posts.id, idea.refreshPostId!), eq(posts.userId, idea.userId), eq(posts.siteId, idea.siteId))).limit(1);
+  if (!post) throw new Error("The post to refresh no longer exists");
+  const queries = await topQueriesForPost(idea.userId, idea.siteId, idea.refreshPostId!, now);
+  return {
+    topic: post.title,
+    guidance: { angle: REFRESH_ANGLE, instructions: queries.length ? truncate(`Searches this post already appears for:\n${queries.map((q) => `- ${q}`).join("\n")}`, 1500) : null },
+  };
+}
+
 /**
  * Starts the article run for a `new` or `scheduled` idea and marks it `in_progress`. The claim comes first, so a second
  * caller finds nothing to start. When the run cannot start the idea goes back (to `scheduled` if it has a slot) with the
@@ -180,12 +193,15 @@ export async function startIdea(userId: string, siteId: string, ideaId: string, 
       db.select({ id: siteIntegrations.id }).from(siteIntegrations)
         .where(and(eq(siteIntegrations.userId, userId), eq(siteIntegrations.siteId, siteId), eq(siteIntegrations.status, "connected"))),
     ]);
+    const refresh = claimed.refreshPostId ? await refreshStart(claimed, now) : null;
     const started = await run({
-      userId, siteId, mode: claimed.mode === "deep" ? "deep" : "normal", sourceType: "article_title", topic: claimed.title,
+      userId, siteId, mode: claimed.mode === "deep" ? "deep" : "normal", sourceType: "article_title", topic: refresh?.topic ?? claimed.title,
       preferredIntegrationId: connected.length === 1 ? connected[0]!.id : null,
       origin: "web",
-      guidance: { angle: claimed.angle, instructions: instructionsFor(claimed) },
-      cover: Boolean(settings.imageModel),
+      guidance: refresh?.guidance ?? { angle: claimed.angle, instructions: instructionsFor(claimed) },
+      // The post keeps its cover; a refresh only writes new text.
+      cover: !refresh && Boolean(settings.imageModel),
+      refreshPostId: claimed.refreshPostId,
     });
     const [row] = await db.update(ideas).set({ jobId: started.jobId, updatedAt: now }).where(and(eq(ideas.id, ideaId), eq(ideas.userId, userId))).returning();
     return { idea: row!, run: started };

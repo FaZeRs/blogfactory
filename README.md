@@ -52,6 +52,10 @@ Each step is visible in Runs. A fact-check and, in deep mode, a reader review ca
 
 **Localization** translates finished articles into each language a site enables, with its own glossary and style guide. A native-language review and code checks run on every translation. Owner corrections are applied with **Revise translation**, and a Lindevo site receives the Latvian version alongside the English draft.
 
+**Learning** turns your corrections into style rules. Edits to engine-made posts and translations, and the comments you give with **Revise with comments** and **Revise translation**, are recorded. Once a week (or with **Suggest rules**) the engine proposes up to 5 rules from patterns that repeat, with the corrections behind each one. Nothing applies until you approve it in **Brand Voice → Learned rules**; approved rules go into every later brief, draft, revision and translation. A draft rule can first be tested against the eval briefs.
+
+**Refresh** finds published posts that are losing search traffic (clicks down 30% or more, position worse by 5) or sit just off page one (position 8–20 with 100+ impressions), using Search Console data, and puts them in the Ideas inbox with a Refresh badge. Approving one re-drafts the post through the full engine, with the post itself and its search queries as input, and saves the result as a new revision of the same post, so its URL and CMS article are kept.
+
 **Cited in AI answers** (Search Growth) asks AI answer engines (OpenAI, Perplexity and Google, all through OpenRouter web search) the questions your customers ask, once a week. It records which answers cite your site, which mention your brand, and which competitors they cite instead. A question where competitors are cited and you aren't becomes an idea.
 
 Agents do the work through MCP. The web app is where operators see what needs attention, resolve blockers, review the current version, and approve a CMS handoff. The server-enforced authority ceiling is intentionally narrow: no live publishing, deletes, credential access, arbitrary providers, or admin tools through MCP.

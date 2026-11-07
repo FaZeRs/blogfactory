@@ -4,6 +4,7 @@ import { DATA_RULE, fenceData, preparePrompt, promptVersion } from "../../prompt
 import type { Stage } from "../../runtime/stage.js";
 import { StageInputError } from "../../types.js";
 import { sanitizeText } from "../../util.js";
+import { NO_RULES } from "../../../services/learning/rules.js";
 import { componentVars, loadWriterContext, toDraftOutput, type DraftInput } from "../draft/index.js";
 import { DraftSchema, type DraftOutput } from "../draft/schema.js";
 import type { GatesOutput } from "../gates/schema.js";
@@ -47,6 +48,7 @@ export const reviseStage: Stage<ReviseInput, DraftOutput> = {
       ...componentVars(input),
       locale: input.locale,
       voice: input.voice || "No custom voice rules.",
+      styleRules: input.styleRules ?? NO_RULES,
       minWords: g.minWords,
       maxWords: g.maxWords,
       titleMax: g.titleMax,

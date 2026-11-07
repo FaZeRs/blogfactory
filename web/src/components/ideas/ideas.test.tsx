@@ -18,7 +18,7 @@ const idea: Idea = {
   alternateKeywords: [], searchIntent: "informational", audienceQuestion: null,
   brief: { whyNow: "New subsidy", outline: ["A", "B", "C"], informationGain: ["Own data"], sources: [], suggestedMode: "normal" },
   score: 72, scoreBreakdown: { trend: 0.8, fit: 0.7, demand: 0.6, feasibility: 0.5, novelty: 0.9, gain: 0.4, keyword: { volume: 1200, difficulty: 30, intent: "informational" }, nearestPost: { id: "p9", title: "Old post", similarity: 0.6 }, rationale: "Strong" },
-  origin: "refresh", discoveryId: null, mode: "normal", scheduledFor: null, jobId: null, postId: null, rejectedReason: null, error: null, failedRuns: 0, createdAt: "", updatedAt: "",
+  origin: "refresh", discoveryId: null, mode: "normal", scheduledFor: null, jobId: null, postId: null, refreshPostId: "p1", refreshReason: "clicks −42% (28d)", rejectedReason: null, error: null, failedRuns: 0, createdAt: "", updatedAt: "",
 };
 
 async function mount(node: React.ReactNode) {
@@ -38,6 +38,15 @@ describe("ideas", () => {
     const el = await mount(<IdeaCard idea={idea} />);
     for (const t of ["Trend", "Search demand", "Novelty", "volume 1200", "Similar to:", "Old post", "Refresh"]) expect(el.textContent).toContain(t);
     expect(el.querySelectorAll('[role="img"]')).toHaveLength(6);
+  });
+
+  it("shows a refresh idea's badge, reason and a link to the post", async () => {
+    const el = await mount(<IdeaCard idea={idea} />);
+    expect(el.textContent).toContain("Refresh");
+    expect(el.textContent).toContain("clicks −42% (28d)");
+    expect(el.querySelector('a[href="/library/posts/p1/edit"]')?.textContent).toBe("Open the post");
+    const plain = await mount(<IdeaCard idea={{ ...idea, origin: "discovered", refreshPostId: null, refreshReason: null }} />);
+    expect(plain.textContent).not.toContain("Open the post");
   });
 
   it("renders an unscored manual idea with an empty brief, and a sitemap match as an external link", async () => {

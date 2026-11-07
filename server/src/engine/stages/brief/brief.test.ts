@@ -116,3 +116,14 @@ test("repairBrief fixes near misses in titles and the description; a fixed brief
   expect(capped.titleOptions).toEqual(["Solar panels, simply", ...five.slice(0, 4)]);
   expect(BriefModelSchema.safeParse(capped).success).toBe(true);
 });
+
+test("the editor's direction and, on a refresh, the current article reach the brief prompt; a new article says so", async () => {
+  const refresh = fakeCtx({ llm: { brief: [good()] } });
+  await briefStage.run({ ...input, guidance: "Angle: Keep what still holds", current: "Title: Old post\n\nOld body text." }, refresh.ctx);
+  const user = refresh.llm.calls[0]!.user;
+  expect(user).toContain("Keep what still holds");
+  expect(user).toContain("Old body text.");
+  const fresh = fakeCtx({ llm: { brief: [good()] } });
+  await briefStage.run(input, fresh.ctx);
+  expect(fresh.llm.calls[0]!.user).toContain("None: this is a new article.");
+});

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/index.js";
-import { articleEvidence, articleSources, articleStageRuns } from "../../db/schema.js";
+import { articleEvidence, articleSources, articleStageRuns, posts } from "../../db/schema.js";
 import { renderCitations } from "../citations.js";
 import type { EvidenceItem, SourceItem } from "../gates/types.js";
 import { resolveRunSettings, parseEngineSettings } from "../modes.js";
@@ -147,4 +147,16 @@ export function writerVoice(settings: Record<string, unknown>, topic: string): s
 /** A passed article is localized before delivery only when its site has localization on with a locale; otherwise it is delivered. */
 export async function afterChecks(run: ArticleRunRow): Promise<"localize" | "deliver"> {
   return activeLocales(await getLocalization(run.userId, run.siteId)).length ? "localize" : "deliver";
+}
+
+const CURRENT_MAX = 30_000;
+export const NO_CURRENT = "None: this is a new article.";
+
+/** For a refresh run, the post it updates (title and body, user- and site-scoped); "" for a new article. */
+export async function refreshCurrentText(run: ArticleRunRow): Promise<string> {
+  const id = (run.settings as { refreshPostId?: unknown } | null)?.refreshPostId;
+  if (typeof id !== "string") return "";
+  const [post] = await db.select({ title: posts.title, content: posts.content }).from(posts)
+    .where(and(eq(posts.id, id), eq(posts.userId, run.userId), eq(posts.siteId, run.siteId))).limit(1);
+  return post ? `Title: ${post.title}\n\n${post.content.slice(0, CURRENT_MAX)}` : "";
 }

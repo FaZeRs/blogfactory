@@ -27,6 +27,7 @@ import {
   type EditorialState,
 } from "../services/post-revisions.js";
 import { getReviewPacket, savedPublishingMetadata } from "../services/control-plane.js";
+import { recordPostEditSignal } from "../services/learning/signals.js";
 import { scoreRevisions } from "../services/post-scorecard.js";
 import { getEffectiveSettings } from "../services/user-settings.js";
 import { createPostReviseRoutes } from "./post-revise.js";
@@ -812,6 +813,7 @@ postsRoutes.put("/:id", async (c) => {
     throw error;
   }
   const updated = updateResult.post;
+  if (typeof body.content === "string" && updateResult.changed) await recordPostEditSignal({ userId, postId: id, content: updated.content });
   let seoJob: Awaited<ReturnType<typeof enqueueSeoMetadata>> | null = null;
   if (typeof body.title === "string" || typeof body.content === "string") {
     seoJob = await enqueueSeoMetadata({ userId, postId: id, trigger: "save" });

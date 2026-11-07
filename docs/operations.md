@@ -91,6 +91,8 @@ Staged-engine runs (`normal`/`deep`) are advanced by the worker's `articles` dra
 
 The worker's `ideas` drain runs queued idea discoveries (`BACKGROUND_WORKER_IDEA_DISCOVERIES`, default 1, range 1-4) and starts scheduled ideas when their slot minus `leadDays` arrives. A start that fails returns the idea to `scheduled` with its error, and is retried at most every 30 minutes. A discovery costs about $0.05-0.30 (one model call plus DataForSEO lookups). It is logged in `generation_logs` and counted by the account guardrails.
 
+The worker's daily tick also runs `learning-distill` (only on Sundays UTC, for sites with learning enabled; one model call per site, skipped with fewer than 2 signals or 5 waiting proposals) and `refresh-detection` (sites with Search Console data; no model calls, at most 2 new refresh ideas per site a day).
+
 Reading a stuck run: in `article_runs`, `state` is `active`, `done`, `escalated`, or `failed`, and `state_reason` says why (including budget pauses and failure text). An `active` run is waiting when `next_attempt_at` is in the future (retry, 429 reschedule, or budget pause); it is held by a worker while `lease_owner` is set and `lease_expires_at` is in the future. An expired lease with no progress is reclaimed on the next drain. `article_stage_runs` (filter by `run_id`) lists each stage attempt with `status`, `error`, `cost_usd`, and timestamps; a run fails after 3 attempts of one stage. The Runs page shows the same data as a stage timeline.
 
 Do not disable a failing scheduled workflow to make Actions appear clean. Confirm the affected task, timeout, and backend behavior before a narrow fix.

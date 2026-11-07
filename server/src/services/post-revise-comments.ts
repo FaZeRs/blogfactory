@@ -13,6 +13,8 @@ import { ApiError } from "../http/error-contract.js";
 import { checkAccountGuardrails } from "./account-guardrails.js";
 import { getOpenRouterKey } from "./api-keys.js";
 import { finishOperationEvent, startOperationEvent } from "./operation-events.js";
+import { NO_RULES, styleRulesText } from "./learning/rules.js";
+import { recordCommentSignal } from "./learning/signals.js";
 import { cleanGeneratedPostContent, cleanPostTitle } from "./post-cleanup.js";
 import { PostVersionConflictError, updatePostWithRevision } from "./post-revisions.js";
 import { getEffectiveSettings } from "./user-settings.js";
@@ -61,6 +63,7 @@ export async function reviseWithComments(input: { userId: string; postId: string
   const prompt = await preparePrompt("revise-comments", {
     dataRule: DATA_RULE,
     voice: buildVoiceContentInstructions(settings as never).join("\n") || "No custom voice rules.",
+    styleRules: post.siteId ? await styleRulesText(userId, post.siteId, "draft") : NO_RULES,
     titleMax: g.titleMax,
     descriptionMax: g.descriptionMax,
     comments: fenceData("comments", sanitizeText(input.comments)),
@@ -82,6 +85,7 @@ export async function reviseWithComments(input: { userId: string; postId: string
       changes: { title: cleanPostTitle(sanitizeText(r.value.title)), content: markdown, summary: sanitizeText(r.value.description).trim() },
     });
     ok = true;
+    await recordCommentSignal({ userId, siteId: post.siteId, postId, locale: null, comments: input.comments });
     return result;
   } catch (error) {
     costUsd += Number((error as { costUsd?: number })?.costUsd) || 0;

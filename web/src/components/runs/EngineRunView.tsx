@@ -74,6 +74,7 @@ function summary(stage: EngineStageRun, d: Details): string {
       return `${made} of ${list(d.locales).length} translation${list(d.locales).length === 1 ? "" : "s"} made`;
     }
     case "deliver":
+      if (d.refreshed) return d.escalated ? "Post refreshed, back in review with open problems" : "Post refreshed, back in review";
       return d.escalated ? "Saved to Review Queue with open problems" : "Saved to Review Queue";
     default:
       return "";
@@ -350,6 +351,7 @@ function StageBody({ stage, engine }: { stage: EngineStageRun; engine: EngineRun
     case "deliver":
       return text(d.postId) ? (
         <div className="flex flex-wrap gap-3 text-sm">
+          {text(d.note) && <p className="basis-full text-muted-foreground">{text(d.note)}</p>}
           <Link to={`/library/posts/${text(d.postId)}/edit`} className="inline-flex items-center gap-1 text-byword-blue hover:underline">
             Open draft <ExternalLink className="h-3.5 w-3.5" />
           </Link>

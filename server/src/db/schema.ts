@@ -8,6 +8,7 @@ import {
   timestamp,
   jsonb,
   index,
+  date,
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -588,6 +589,7 @@ export const userSettings = pgTable("user_settings", {
   ideaSettings: jsonb("idea_settings"),
   aiVisibility: jsonb("ai_visibility"),
   localization: jsonb("localization"),
+  learning: jsonb("learning"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -754,6 +756,9 @@ export const ideas = pgTable("ideas", {
   scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
   jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
   postId: uuid("post_id").references(() => posts.id, { onDelete: "set null" }),
+  /** The existing post a refresh idea re-drafts; null for a new article. */
+  refreshPostId: uuid("refresh_post_id").references(() => posts.id, { onDelete: "set null" }),
+  refreshReason: text("refresh_reason"),
   rejectedReason: text("rejected_reason"),
   error: text("error"),
   failedRuns: integer("failed_runs").default(0).notNull(),
@@ -802,10 +807,44 @@ export const postTranslations = pgTable("post_translations", {
   status: text("status").default("needs_review").notNull(),
   findings: jsonb("findings").default(sql`'[]'`).notNull(),
   sourceRevisionId: uuid("source_revision_id").references(() => postRevisions.id, { onDelete: "set null" }),
+  engineContent: text("engine_content"),
   costUsd: real("cost_usd").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("post_translations_post_locale_idx").on(t.postId, t.locale),
   index("post_translations_site_idx").on(t.userId, t.siteId),
+]);
+
+// ── learning ──
+export const learningSignals = pgTable("learning_signals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  locale: text("locale"),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").default(sql`'{}'`).notNull(),
+  day: date("day").default(sql`(now() AT TIME ZONE 'utc')::date`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("learning_signals_site_idx").on(t.userId, t.siteId, t.createdAt),
+]);
+
+export const styleRules = pgTable("style_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  scope: text("scope").notNull(),
+  rule: text("rule").notNull(),
+  rationale: text("rationale").default("").notNull(),
+  op: text("op").default("add").notNull(),
+  targetRuleId: uuid("target_rule_id").references((): AnyPgColumn => styleRules.id, { onDelete: "set null" }),
+  status: text("status").default("proposed").notNull(),
+  evidence: jsonb("evidence").default(sql`'[]'`).notNull(),
+  eval: jsonb("eval"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+}, (t) => [
+  index("style_rules_site_status_idx").on(t.userId, t.siteId, t.status),
 ]);
