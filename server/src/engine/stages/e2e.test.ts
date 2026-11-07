@@ -13,7 +13,7 @@ describe.skipIf(!enabled)("engine end to end (fakes only)", () => {
   const postOf = async (id: string | null) => (await db.select().from(posts).where(eq(posts.id, id!)))[0]!;
   const stages = async (runId: string) => (await db.select().from(articleStageRuns).where(eq(articleStageRuns.runId, runId))).map((r: { stage: string }) => r.stage);
 
-  test("a normal run ends with an in_review post, a rendered citation and no markers; no keyword lookup", async () => {
+  test("a normal run ends with an in_review post, a rendered citation and no markers; one keyword lookup", async () => {
     const { run } = await t!.fixture("normal");
     const { deps, keywordCalls } = t!.makeDeps({ drafts: [t!.GOOD_ARTICLE], revisions: [] });
     const end = await t!.drive(run.id, deps);
@@ -26,7 +26,7 @@ describe.skipIf(!enabled)("engine end to end (fakes only)", () => {
     expect(post.content).toContain("## Sources");
     expect(post.title).toBe("Solar for small teams, explained");
     expect((post.publishingMetadata as { engine: unknown }).engine).toEqual({ runId: run.id, mode: "normal", escalated: false });
-    expect(keywordCalls.n).toBe(0);
+    expect(keywordCalls.n).toBe(1);
     expect(await stages(run.id)).not.toContain("revise");
   });
 

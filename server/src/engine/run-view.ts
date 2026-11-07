@@ -21,7 +21,7 @@ export function stageDetails(stage: StageKey, stored: unknown): Obj | null {
       };
     case "brief":
       return {
-        ...pick(out, ["chosenTitle", "titleOptions", "angle", "description", "primaryKeyword", "keywordData", "takeaways"]),
+        ...pick(out, ["chosenTitle", "titleOptions", "angle", "description", "primaryKeyword", "keywordData", "secondaryKeywords", "takeaways"]),
         outline: arr(out.outline).map((s) => pick(obj(s), ["heading", "purpose", "words", "claimIds"])),
         faq: arr(out.faq).map((f) => obj(f).question).filter(Boolean),
         internalLinks: arr(out.internalLinks).map((l) => pick(obj(l), ["url", "anchorText"])),

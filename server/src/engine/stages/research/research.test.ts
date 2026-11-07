@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { fakeCtx } from "../test-helpers.js";
 import { analyzeSerp, competitorOutline, serpQuestions } from "./competitors.js";
-import { normalizeUrl, researchCore, type ResearchInput } from "./index.js";
+import { diverseUrls, normalizeUrl, researchCore, type ResearchInput } from "./index.js";
 import { SerpAnalysisSchema } from "./schema.js";
 
 const input: ResearchInput = { topic: "solar panels", sourceType: "article_keyword", locale: "en", maxQueries: 3, maxPages: 5, maxClaimsPerPage: 5, minVerifiedClaims: 3 };
@@ -11,6 +11,13 @@ const PAGE = `# Report\n\n${QUOTE}.\n\n${"Filler sentence about energy markets a
 test("normalizeUrl strips tracking, hash and credentials", () => {
   expect(normalizeUrl("https://u:p@a.example/x/?utm_source=z&b=1#h")).toBe("https://a.example/x/?b=1");
   expect(normalizeUrl("ftp://a.example")).toBeNull();
+});
+
+test("diverseUrls takes hits round-robin across queries, at most two per site", () => {
+  const a = ["https://a.test/1", "https://www.a.test/2", "https://a.test/3", "https://b.test/1"];
+  const b = ["https://c.test/1", "https://a.test/1", "https://d.test/1"];
+  expect(diverseUrls([a, b])).toEqual(["https://a.test/1", "https://c.test/1", "https://www.a.test/2", "https://d.test/1", "https://b.test/1"]);
+  expect(diverseUrls([])).toEqual([]);
 });
 
 test("verifies quotes against the page, skips unreadable URLs and dedupes redirects", async () => {

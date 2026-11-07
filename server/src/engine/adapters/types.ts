@@ -13,5 +13,7 @@ export interface DataForSeoClient {
   keywordOverview(keyword: string, opts: { locale: string; signal?: AbortSignal }): Promise<KeywordOverview | null>;
   /** Related keywords for a few seed topics, with volume, difficulty and intent. Volume 0 or unknown is dropped. */
   keywordIdeas(seeds: string[], opts: { locale: string; limit: number; signal?: AbortSignal }): Promise<KeywordOverview[]>;
+  /** Google's "searches related to" for one keyword, with volume, difficulty and intent. Volume 0 or unknown is dropped. */
+  relatedKeywords(keyword: string, opts: { locale: string; limit: number; signal?: AbortSignal }): Promise<KeywordOverview[]>;
   peopleAlsoAsk(query: string, opts: { locale: string }): Promise<string[]>;
 }

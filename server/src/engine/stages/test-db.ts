@@ -153,6 +153,7 @@ export function makeDeps(script: Script) {
   const dataForSeo: DataForSeoClient = {
     serp: async () => [],
     keywordIdeas: async () => [],
+    relatedKeywords: async () => [],
     keywordOverview: async (keyword): Promise<KeywordOverview> => {
       keywordCalls.n += 1;
       return { keyword, volume: 100, difficulty: 10, intent: "informational", aiOverview: false };

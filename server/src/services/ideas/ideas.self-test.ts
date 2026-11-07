@@ -68,6 +68,7 @@ const NOW = new Date("2026-11-05T12:00:00Z");
 const dfs: DataForSeoClient = {
   serp: async () => [],
   keywordOverview: async (keyword) => ({ keyword, volume: 500, difficulty: 25, intent: "informational", aiOverview: false }),
+  relatedKeywords: async () => [],
   keywordIdeas: async () => [
     { keyword: "crm pricing", volume: 900, difficulty: 40, intent: "commercial", aiOverview: false },
     { keyword: "crm zero", volume: 0, difficulty: 1, intent: null, aiOverview: false },

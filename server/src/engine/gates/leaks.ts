@@ -64,7 +64,7 @@ const RULES: readonly LeakRule[] = [
   {
     hint: "Check this contact detail is meant to be public",
     message: "contains an email address",
-    re: /(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g,
+    re: /(?<![\w.+-])(?<!\/\/[^\s/:@]+:)[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b/g,
     severity: "warning",
     allow: (m, input) => {
       const host = siteHost(input.siteUrl);

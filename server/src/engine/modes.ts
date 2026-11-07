@@ -42,10 +42,10 @@ export const MODE_PRESETS: Record<EngineMode, ModePreset> = {
     // Two loops: a fact-check fix often needs a second pass to restore the length the removed claims took.
     maxRevise: 2,
     review: ["factcheck"],
-    research: { maxQueries: 3, maxPages: 6, maxClaimsPerPage: 5, maxCompetitors: 4, minVerifiedClaims: 3, useKeywordData: false },
+    research: { maxQueries: 4, maxPages: 8, maxClaimsPerPage: 5, maxCompetitors: 4, minVerifiedClaims: 3, useKeywordData: true },
     models: models("anthropic/claude-sonnet-5.5"),
     budgetUsd: 1,
-    estimateUsd: { research: 0.05, brief: 0.03, draft: 0.15, gates: 0, review: 0.02, revise: 0.07, localize: 0, deliver: 0 },
+    estimateUsd: { research: 0.07, brief: 0.03, draft: 0.15, gates: 0, review: 0.02, revise: 0.07, localize: 0, deliver: 0 },
   },
   deep: {
     stages: STAGES,
