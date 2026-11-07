@@ -81,7 +81,7 @@ Staged generation engine behind the `normal` and `deep` modes; design in `docs/s
 - [x] Sub-project 4: topic discovery (scored ideas, word-overlap novelty, schedule and autopilot, owner idea sources: feeds, Hacker News, subreddits, watched pages; built-in sources can be switched off).
 - [x] Sub-project 5: localization (per-site locales, glossary, style guide, native review, parity checks, Lindevo `lv` delivery).
 - [x] Sub-project 6: learning (owner-approved style rules from edits and comments, advisory eval check, refresh queue from Search Console).
-- [ ] Sub-project 7: covers, provenance box, distribution pack. Shipped: covers and cover tools, the Lindevo provenance box. Open: the distribution pack.
+- [x] Sub-project 7: covers and cover tools, the Lindevo provenance box, and the share kit (a LinkedIn post, a short thread, a newsletter blurb, pull quotes checked word for word against the article, and a teaser, written on request from the saved post and copied by hand).
 - [x] Sub-project 8: AI answer visibility (weekly answer-engine probe).
 - [ ] Cutover from the Lindevo engine (needs sub-projects 1, 3, 5 and 8, the pairwise eval win, and 6 approved real posts). Deferred by the owner (2026-11-07).
 

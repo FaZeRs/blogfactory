@@ -96,12 +96,11 @@ export async function reviseWithComments(input: { userId: string; postId: string
     throw new ApiError(502, "upstream_failure", "The revision failed and nothing was changed. Try again.");
   } finally {
     await finishOperationEvent({ id: eventId, status: ok ? "succeeded" : "failed", durationMs: Date.now() - started, metadata: { cost_usd: costUsd, comments_length: input.comments.length } }).catch(() => {});
-    if (costUsd > 0) {
-      const model = billedModel(deps.model);
-      await db.insert(generationLogs).values({
-        userId, postId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
-        responseData: { reviseWithComments: true },
-      }).catch(() => console.error("[revise-comments] Could not log spend"));
-    }
+    // Zero-cost (subscription or free model) calls are logged too: the daily request limit counts these rows.
+    const model = billedModel(deps.model);
+    await db.insert(generationLogs).values({
+      userId, postId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
+      responseData: { reviseWithComments: true },
+    }).catch(() => console.error("[revise-comments] Could not log spend"));
   }
 }

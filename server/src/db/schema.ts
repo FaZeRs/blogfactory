@@ -831,6 +831,17 @@ export const learningSignals = pgTable("learning_signals", {
   index("learning_signals_site_idx").on(t.userId, t.siteId, t.createdAt),
 ]);
 
+export const postShareKits = pgTable("post_share_kits", {
+  postId: uuid("post_id").primaryKey().references(() => posts.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  kit: jsonb("kit").notNull(),
+  contentHash: text("content_hash").notNull(),
+  modelId: text("model_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("post_share_kits_user_idx").on(t.userId),
+]);
+
 export const styleRules = pgTable("style_rules", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

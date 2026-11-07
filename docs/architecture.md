@@ -163,6 +163,8 @@ The backend decides eligibility and claims work. Schedulers must stay thin; do n
 
 **Revise with comments:** `POST /api/posts/:id/revise-with-comments` rewrites a post from the owner's comments, with the run's evidence when there is one, and saves a new revision under the same optimistic lock. It adds no MCP tool.
 
+**Share kit:** `GET/POST /api/posts/:id/share-kit` reads or writes one kit per post in `post_share_kits` (a LinkedIn post, a 3–6 post thread, a newsletter blurb, 2–3 pull quotes and a teaser). One model call writes it from the saved title and content with the site's voice; code fits the lengths and drops any pull quote that is not word for word in the article. The kit stores a hash of the post, so the post page says when the article changed after the kit was written. BlogFactory never posts it anywhere, and it adds no MCP tool.
+
 **Evals:** `npm run eval:engine -- --mode normal@<model>` runs every role on one model, and `#noreview` skips the review stage, so cheap or free OpenRouter models and the quality loop can be compared on the golden briefs. Reports record every finding by revise round.
 
 Research also reads the top-ranking pages for the topic (`article_sources.kind = 'competitor'`), extracts their outlines and the questions people ask, and produces a gap and information-gain analysis that the brief plans around. When a run's destination is Lindevo (`componentProfile` in `engine/profile.ts`), the brief, draft and revise prompts use Lindevo's markdown components, the `components` gate checks them with Lindevo's linter vendored in `engine/components/`, and deliver appends the `<provenance>` block. Other destinations get plain Markdown.

@@ -15,6 +15,7 @@ import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { PublishDialog } from "@/components/posts/PublishDialog";
 import { ReviseWithCommentsDialog } from "@/components/posts/ReviseWithCommentsDialog";
+import { ShareKitPanel } from "@/components/posts/ShareKitPanel";
 import { EditorialSafetyPanel, type EditorialState, type PostRevision } from "@/components/posts/EditorialSafetyPanel";
 import type { OrtakAlanMetadata } from "@/components/posts/ortak-alan-publishing";
 import { BywordCard, BywordPageShell, WorkspaceBackground } from "@/components/layout/BywordSurface";
@@ -218,6 +219,7 @@ export default function PostEditorPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["posts"] });
       queryClient.invalidateQueries({ queryKey: ["post", id] });
+      queryClient.invalidateQueries({ queryKey: ["post-share-kit", id] });
       toast.success("Post saved successfully");
     },
     onError: (error) => {
@@ -378,7 +380,7 @@ export default function PostEditorPage() {
                 setContent(revised.content);
                 queryClient.invalidateQueries({ queryKey: ["posts"] });
                 queryClient.invalidateQueries({ queryKey: ["post", id] });
-                for (const key of ["post-revisions", "post-revision-scorecard", "post-preflight"]) queryClient.invalidateQueries({ queryKey: [key, id] });
+                for (const key of ["post-revisions", "post-revision-scorecard", "post-preflight", "post-share-kit"]) queryClient.invalidateQueries({ queryKey: [key, id] });
               }}
               onReload={async () => {
                 await queryClient.refetchQueries({ queryKey: ["post", id] });
@@ -515,6 +517,8 @@ export default function PostEditorPage() {
               <p className="mt-5 border-t border-byword-border pt-4 text-sm text-muted-foreground">No canonical values have been saved yet. Open “SEO / Publish” to generate or enter them.</p>
             )}
           </BywordCard>
+
+          <ShareKitPanel postId={id!} unsaved={Boolean(hasChanges)} />
 
           {/* Metadata Section */}
           {post && (
