@@ -134,6 +134,7 @@ The backend decides eligibility and claims work. Schedulers must stay thin; do n
 - **Loop:** blockers go to `revise`, then gates, then review again, sharing `maxRevise` (normal 2, deep 3) and the stall rule.
 - **Other checks:**
   - the `style` code gate blocks machine-sounding phrases and heavy em-dash use;
+  - the `leaks` code gate blocks API keys, tokens, private keys and URLs with credentials (masked in the result); emails, phone numbers, private IPs and internal hosts are `leaks-warnings`;
   - the voice gate also blocks the site's own banned words (as whole words) and phrases (`user_settings.content_rules`).
 - **Prompt context:** the brief, draft and revise prompts get the site's voice rules plus its brand profile (company, audience, value propositions, CTAs and the most relevant knowledge chunks) through `writerVoice`.
 - **Draft repair:** `normalizeDraftMarkdown` repairs drafts that cheap models flatten (line breaks returned as spaces) or write as HTML.
