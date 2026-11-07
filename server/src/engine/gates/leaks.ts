@@ -5,16 +5,17 @@ const mask = (s: string, label?: RegExp) => {
   const shown = label?.exec(s)?.[0] ?? "";
   return `${shown}${s.slice(shown.length, shown.length + 4)}…`;
 };
-// Up to 3 plain words before a hit, so the excerpt can be found in the article; words with digits are skipped as they may be a secret.
-const context = (text: string, start: number) => {
-  const words = text.slice(Math.max(0, start - 60), start).split("\n").pop()!.split(/\s+/).filter(Boolean);
+// Up to 3 plain words before a hit (never before `floor`, the end of an earlier blocker), so the excerpt can be found in the article.
+// Words with digits or quotes are skipped: a quoted value (`secret: "CorrectHorse"`) may be a secret.
+const context = (text: string, start: number, floor: number) => {
+  const words = text.slice(Math.max(0, floor, start - 60), start).split("\n").pop()!.split(/\s+/).filter(Boolean);
   const kept: string[] = [];
   for (const w of words.reverse()) {
-    if (kept.length === 3 || !/^[\p{L}`'",.;:()!?-]+$/u.test(w)) break;
+    if (kept.length === 3 || !/^[\p{L}`,.;:()!?-]+$/u.test(w)) break;
     kept.unshift(w);
   }
   const lead = kept.join(" ");
-  return lead && /\s$/.test(text.slice(0, start)) ? `${lead} ` : lead;
+  return lead && /\s/.test(text[start - 1] ?? "") ? `${lead} ` : lead;
 };
 
 interface LeakRule {
@@ -58,7 +59,8 @@ const placeholderUrlCredentials = (m: string) => {
 const sampleJwt = (m: string) => {
   try {
     const claims = JSON.parse(Buffer.from(m.split(".")[1]!, "base64url").toString("utf8"));
-    return /^(?:john|jane) doe$/i.test(String(claims?.name ?? "")) || claims?.iat === 1516239022;
+    // the name alone is not enough: a real token can belong to someone called John Doe
+    return claims?.iat === 1516239022 || (claims?.sub === "1234567890" && /^(?:john|jane) doe$/i.test(String(claims?.name ?? "")));
   } catch {
     return false;
   }
@@ -131,7 +133,7 @@ export function leaksGate(input: GateInput): GateResult[] {
         if (r.allow?.(m[0], input) || seen.has(m[0]) || spans.some(([s, e]) => start < e && end > s)) return [];
         seen.add(m[0]);
         if (severity === "blocker") spans.push([start, end]);
-        return [{ excerpt: `${context(text, start)}${mask(m[0], r.label)}`, hint: r.hint, message: r.message }];
+        return [{ excerpt: `${context(text, start, Math.max(0, ...spans.map(([, e]) => (e <= start ? e : 0))))}${mask(m[0], r.label)}`, hint: r.hint, message: r.message }];
       })
     );
   return [gateResult("leaks", hits("blocker")), gateResult("leaks-warnings", hits("warning"), "warning")];

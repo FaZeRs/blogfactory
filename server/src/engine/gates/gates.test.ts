@@ -245,6 +245,8 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
   expect(blocked("Then set password=Hunter2isGreat in the file")[0]?.excerpt).toBe("Then set password=Hunt…");
   // Words with digits may be part of a secret, so they never become context.
   expect(blocked("a1b2c3d4 sk-proj1234567890abcdefghij")[0]?.excerpt).toBe("sk-p…");
+  // an earlier quoted secret never becomes context for the next hit
+  expect(blocked('secret: "CorrectHorseBattery" token: "AnotherSecretValue"').map((i) => i.excerpt).join(" ")).not.toContain("CorrectHorse");
   // Setup guides show local addresses on purpose: a warning, not a blocker.
   for (const host of ["192.168.1.20", "10.0.0.5", "http://localhost:3000", "db01.internal", "build.corp", "nas.local"]) {
     const [b, w] = leak(`Open \`${host}\` in a browser.`);

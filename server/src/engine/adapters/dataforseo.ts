@@ -171,7 +171,8 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
       signal?.throwIfAborted(); // the reservation awaited; the run may have been cancelled meanwhile
       return await send(path, body, estimate, signal, (usd) => { billed = usd; });
     } finally {
-      await deps.settle(estimate, billed);
+      // a failed settle keeps the estimate booked (safe side) and must not replace the result or the original error
+      await deps.settle(estimate, billed).catch(() => {});
     }
   }
 
