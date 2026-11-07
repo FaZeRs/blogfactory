@@ -35,12 +35,13 @@ export const contentHash = (post: { title: string; content: string }) => createH
 
 /** Fits the model's reply to the kit's limits; a pull quote that is not word for word in the article is dropped. */
 export function fitShareKit(reply: z.infer<typeof ReplySchema>, article: string): ShareKit {
-  const body = norm(article);
+  // Per paragraph, so a "quote" stitched across a heading and the text under it is not word for word.
+  const blocks = article.split(/\n\s*\n/).map(norm);
   return {
     linkedin: truncate(clean(reply.linkedin), 3000),
     thread: reply.thread.map(clean).filter(Boolean).map((p) => truncate(p, SHARE_KIT.threadChars)).slice(0, SHARE_KIT.threadMax),
     newsletter: truncate(clean(reply.newsletter), 1200),
-    quotes: [...new Set(reply.quotes.map(clean))].filter((q) => q.length >= 20 && body.includes(norm(q))).slice(0, SHARE_KIT.quotesMax),
+    quotes: [...new Set(reply.quotes.map(clean))].filter((q) => q.length >= 20 && blocks.some((b) => b.includes(norm(q)))).slice(0, SHARE_KIT.quotesMax),
     teaser: truncate(clean(reply.teaser), SHARE_KIT.teaserChars),
   };
 }
@@ -102,15 +103,14 @@ export async function createShareKit(input: { userId: string; postId: string; de
     costUsd += Number((error as { costUsd?: number })?.costUsd) || 0;
     if (error instanceof ApiError) throw error;
     if (error instanceof RateLimitError) throw new ApiError(429, "rate_limited", "The model is rate limited. Try again in a minute.");
-    console.error("[share-kit] model call failed", (error as Error)?.name, (error as Error)?.message);
+    console.error("[share-kit] model call failed", (error as Error)?.name);
     throw new ApiError(502, "upstream_failure", "The share kit could not be written. Try again.");
   } finally {
-    if (costUsd > 0) {
-      const model = billedModel(deps.model);
-      await db.insert(generationLogs).values({
-        userId, postId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
-        responseData: { shareKit: true },
-      }).catch(() => console.error("[share-kit] Could not log spend"));
-    }
+    // Zero-cost (subscription or free model) calls are logged too: the daily request limit counts these rows.
+    const model = billedModel(deps.model);
+    await db.insert(generationLogs).values({
+      userId, postId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: ok ? "success" : "failed", cost: costUsd,
+      responseData: { shareKit: true },
+    }).catch(() => console.error("[share-kit] Could not log spend"));
   }
 }

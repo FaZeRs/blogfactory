@@ -7,7 +7,7 @@ const fitted = fitShareKit({
   linkedin: "  Plain post.  ",
   thread: ["one", "", "x".repeat(400), "three", "four", "five", "six", "seven"],
   newsletter: "Blurb.",
-  quotes: ["A self-hosted setup costs about 20 euros a month on a small server.", "An invented quote that the article never said at all.", "A self-hosted setup costs about 20 euros a month on a small server."],
+  quotes: ["A self-hosted setup costs about 20 euros a month on a small server.", "An invented quote that the article never said at all.", "Costs A self-hosted setup costs about 20 euros", "A self-hosted setup costs about 20 euros a month on a small server."],
   teaser: "t".repeat(300),
 }, article);
 assert.equal(fitted.linkedin, "Plain post.");
@@ -67,6 +67,10 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
 
     const logs = await db.select().from(generationLogs).where(eq(generationLogs.postId, post.id));
     assert.deepEqual(logs.map((l) => [l.userId, l.cost, l.status, (l.responseData as any)?.shareKit]), [[owner.id, 0.01, "success", true], [owner.id, 0.01, "success", true]]);
+    // a zero-cost (subscription) call still counts toward the daily request limit
+    const free = createShareKitRoutes({ shareKitDeps: { llm: createFakeLlm({ brief: [reply] }), model: "test/model" } });
+    await new Hono().use("*", async (c, next) => { c.set("userId" as never, owner.id as never); await next(); }).route("/", free).onError(handleApiError).request(`/${post.id}/share-kit`, { method: "POST" });
+    assert.equal((await db.select().from(generationLogs).where(eq(generationLogs.postId, post.id))).length, 3);
     console.log("share kit route self-test ok");
   } finally {
     await db.delete(users).where(inArray(users.id, [owner.id, other.id]));

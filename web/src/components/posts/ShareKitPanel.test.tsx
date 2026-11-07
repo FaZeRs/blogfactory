@@ -8,7 +8,7 @@ import { ShareKitPanel } from "./ShareKitPanel";
 
 const get = vi.hoisted(() => vi.fn());
 const post = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/api", async (orig) => ({ ...(await orig<typeof import("@/lib/api")>()), api: { get, post } }));
+vi.mock("@/lib/api", () => ({ api: { get, post } }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const kit = { linkedin: "A LinkedIn post.", thread: ["First post.", "Second post."], newsletter: "A blurb.", quotes: ["A quoted line from it."], teaser: "A teaser." };

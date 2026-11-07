@@ -219,6 +219,7 @@ export default function PostEditorPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["posts"] });
       queryClient.invalidateQueries({ queryKey: ["post", id] });
+      queryClient.invalidateQueries({ queryKey: ["post-share-kit", id] });
       toast.success("Post saved successfully");
     },
     onError: (error) => {
@@ -379,7 +380,7 @@ export default function PostEditorPage() {
                 setContent(revised.content);
                 queryClient.invalidateQueries({ queryKey: ["posts"] });
                 queryClient.invalidateQueries({ queryKey: ["post", id] });
-                for (const key of ["post-revisions", "post-revision-scorecard", "post-preflight"]) queryClient.invalidateQueries({ queryKey: [key, id] });
+                for (const key of ["post-revisions", "post-revision-scorecard", "post-preflight", "post-share-kit"]) queryClient.invalidateQueries({ queryKey: [key, id] });
               }}
               onReload={async () => {
                 await queryClient.refetchQueries({ queryKey: ["post", id] });
