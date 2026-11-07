@@ -76,14 +76,14 @@ Staged generation engine behind the `normal` and `deep` modes; design in `docs/s
 
 - [x] Sub-project 1: staged runtime (research, brief, draft, gates, revise, deliver), search/crawl/DataForSEO adapters, eval harness (`npm run eval:engine`), `mode` on `generate_draft`, optional `publish_at` on `push_to_cms_draft`.
 - [ ] Make `normal` the default manual mode (flips only after the eval shows normal beating fast).
-- [ ] Sub-project 2: research depth (more sources, DataForSEO brief data, competitor gaps).
-- [ ] Sub-project 3: quality loop (adversarial fact-check, reader persona, sanitizer, revising from reviewer comments).
-- [ ] Sub-project 4: topic discovery (radar, scored slate, pgvector novelty, refresh candidates).
-- [ ] Sub-project 5: localization (native second language, glossary, parity gate).
-- [ ] Sub-project 6: learning (reviewer edit diffs to style rules, performance snapshots).
-- [ ] Sub-project 7: covers, provenance box, distribution pack.
-- [ ] Sub-project 8: AI answer visibility (weekly answer-engine probe).
-- [ ] Cutover from the Lindevo engine (needs sub-projects 1, 3, 5 and 8, the pairwise eval win, and 6 approved real posts).
+- [ ] Sub-project 2: research depth. Shipped: competitor outlines, gaps and People also ask in the brief. Open: more sources per run, DataForSEO keyword data in the brief.
+- [x] Sub-project 3: quality loop (adversarial fact-check, reader review, style gate, leak check, Revise with comments).
+- [x] Sub-project 4: topic discovery (scored ideas, word-overlap novelty, schedule and autopilot, owner idea sources: feeds, Hacker News, subreddits, watched pages; built-in sources can be switched off).
+- [x] Sub-project 5: localization (per-site locales, glossary, style guide, native review, parity checks, Lindevo `lv` delivery).
+- [x] Sub-project 6: learning (owner-approved style rules from edits and comments, advisory eval check, refresh queue from Search Console).
+- [ ] Sub-project 7: covers, provenance box, distribution pack. Shipped: covers and cover tools, the Lindevo provenance box. Open: the distribution pack.
+- [x] Sub-project 8: AI answer visibility (weekly answer-engine probe).
+- [ ] Cutover from the Lindevo engine (needs sub-projects 1, 3, 5 and 8, the pairwise eval win, and 6 approved real posts). Deferred by the owner (2026-11-07).
 
 ## Release language
 
