@@ -175,8 +175,10 @@ export async function loadDiscoveryDeps(userId: string, engineSettings: unknown)
   if (!endpoint) throw new Error("OpenRouter is not configured");
   let spent = 0;
   const dataForSeo = createDataForSeoClient(process.env, {
-    monthlySpentUsd: dataForSeoSpend.monthlySpentUsd,
-    recordSpend: async (usd) => { spent += usd; await dataForSeoSpend.recordSpend(usd); },
+    reserve: async (usd, capUsd) => {
+      const settle = await dataForSeoSpend.reserve(usd, capUsd);
+      return settle && (async (billedUsd) => { spent += billedUsd; await settle(billedUsd); });
+    },
   });
   let model = resolveRunSettings("normal", parseEngineSettings(engineSettings)).models.brief;
   model = await resolveEngineModel(endpoint, model);

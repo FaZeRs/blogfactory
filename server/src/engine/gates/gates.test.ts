@@ -239,8 +239,22 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
     expect(b?.passed, s).toBe(false);
     expect(b?.severity).toBe("blocker");
     expect(JSON.stringify(b)).not.toContain(s);
-    expect(b?.issues[0]?.excerpt?.length).toBeLessThanOrEqual(5);
+    // a few words of context, the rule's label, then at most 4 characters of the value
+    expect(b?.issues[0]?.excerpt?.replace(/^(?:Use `)?(?:password=|secret: |api_key: '|https:\/\/|\?token=)?/, "").length).toBeLessThanOrEqual(5);
   }
+  expect(blocked("Then set password=Hunter2isGreat in the file")[0]?.excerpt).toBe("Then set password=Hunt…");
+  // No excerpt carries an earlier secret as context, whatever the rule order, and repeats count as secrets too.
+  for (const md of ["sk-abcdefghijklmnopqrstuvwxyz ghp_abcdefghijklmnopqrstuvwxyz", "ghp_abcdefghijklmnopqrstuvwxyz sk-abcdefghijklmnopqrstuvwxyz", "sk-abcdefghijklmnopqrstuvwxyz and sk-abcdefghijklmnopqrstuvwxyz then ghp_abcdefghijklmnopqrstuvwxyz"]) {
+    const out = JSON.stringify(leak(md));
+    expect(out, md).not.toContain("abcdefghij");
+  }
+  // A real token for someone called John Doe still blocks; only the exact public samples pass.
+  const doe = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ sub: "u_42", name: "John Doe", iat: 1516239022 })).toString("base64url")}.realsignature1234567`;
+  expect(blocked(doe)).toHaveLength(1);
+  // Words with digits may be part of a secret, so they never become context.
+  expect(blocked("a1b2c3d4 sk-proj1234567890abcdefghij")[0]?.excerpt).toBe("sk-p…");
+  // an earlier quoted secret never becomes context for the next hit
+  expect(blocked('secret: "CorrectHorseBattery" token: "AnotherSecretValue"').map((i) => i.excerpt).join(" ")).not.toContain("CorrectHorse");
   // Setup guides show local addresses on purpose: a warning, not a blocker.
   for (const host of ["192.168.1.20", "10.0.0.5", "http://localhost:3000", "db01.internal", "build.corp", "nas.local"]) {
     const [b, w] = leak(`Open \`${host}\` in a browser.`);
@@ -274,8 +288,14 @@ test("leaks: placeholders and look-alikes pass", () => {
     "Connect to `https://user:pass1234@db.example.com`, or [the app](https://u:p4ssword@app.test).",
     "Set GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxx and SLACK_TOKEN=xoxb-xxxxxxxxxxxx",
     "![logo](logo@2x.png) needs react@18.2.0",
+    // demo passwords every tutorial uses
+    "password=password123 and POSTGRES_PASSWORD: 'P@ssw0rd!'",
+    "secret: changeit123",
+    // the jwt.io sample token
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
   ];
   for (const md of fine) expect(leak(md).every((r) => r.passed), md).toBe(true);
+  expect(blocked("Connect with https://admin:admin123@db.acme.io")).toEqual([]);
 });
 
 test("leaks: emails and phones only warn; own-domain role address is allowed", () => {

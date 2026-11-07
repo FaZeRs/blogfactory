@@ -5,6 +5,8 @@ import {
   boolean,
   integer,
   real,
+  doublePrecision,
+  primaryKey,
   timestamp,
   jsonb,
   index,
@@ -858,4 +860,13 @@ export const styleRules = pgTable("style_rules", {
   decidedAt: timestamp("decided_at", { withTimezone: true }),
 }, (t) => [
   index("style_rules_site_status_idx").on(t.userId, t.siteId, t.status),
+]);
+
+// Instance-wide monthly provider spend (not tenant data): the API and the worker reserve against the same row.
+export const providerSpend = pgTable("provider_spend", {
+  provider: text("provider").notNull(),
+  month: text("month").notNull(),
+  usd: doublePrecision("usd").notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.provider, t.month] }),
 ]);
