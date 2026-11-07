@@ -10,6 +10,7 @@ import { similarityGate } from "./similarity.js";
 import { structureGate } from "./structure.js";
 import { type EvidenceItem, type GateInput, type SourceItem, gateBlockers } from "./types.js";
 import { STYLE_PHRASES, styleGate } from "./style.js";
+import { leaksGate } from "./leaks.js";
 import { voiceGate } from "./voice.js";
 
 const cfg = ENGINE_CONFIG.gates;
@@ -59,7 +60,7 @@ const messages = (r: { issues: { message: string }[] }) => r.issues.map((i) => i
 test("a clean article passes every code gate, in a fixed order", async () => {
   const results = await runCodeGates(input, { checkLink: ok, config: ENGINE_CONFIG });
   expect(results.map((r) => r.gate)).toEqual([
-    "structure", "meta", "faq", "voice", "voice-warnings", "style", "style-warnings", "citations", "links", "links-warnings", "overlap", "similarity",
+    "structure", "meta", "faq", "voice", "voice-warnings", "style", "style-warnings", "leaks", "leaks-warnings", "citations", "links", "links-warnings", "overlap", "similarity",
   ]);
   expect(gateBlockers(results)).toEqual([]);
   expect(results.find((r) => r.gate === "meta")?.metrics?.words).toBeGreaterThan(cfg.minWords);
@@ -209,4 +210,72 @@ test("style blocks dense prose: an average over 22 words a sentence names the lo
   const { proseParagraphs } = await import("./style.js");
   expect(proseParagraphs("Intro sentence with five words.\n\n```js\nconst total = price * count + tax;\n\nconst shown = total.toFixed(2) + unit;\n```\n")).toEqual(["Intro sentence with five words."]);
   expect(proseSentences("The first one is here. 10 more words come next.")).toEqual(["The first one is here.", "10 more words come next."]);
+});
+
+const leak = (md: string, extra: Partial<GateInput> = {}) => leaksGate({ ...input, markdown: md, ...extra });
+const blocked = (md: string) => leak(md)[0]?.issues ?? [];
+
+test("leaks: every secret detector blocks, with a masked excerpt", () => {
+  const secrets = [
+    "sk-proj1234567890abcdefghij",
+    "sk-ant-api03-abcdefghijklmnop1234",
+    "ghp_abcdefghijklmnopqrstuvwxyz1234",
+    "github_pat_11ABCDEFG0abcdefghijklmn",
+    "AKIAQWERTYUIOPASDFGH",
+    "xoxb-1234567890-abcdefghij",
+    "sk_live_abcdefghij1234567890",
+    "rk_live_abcdefghij1234567890",
+    "AIzaSyA1234567890abcdefghijklmnopqrstu",
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop",
+    "password=Hunter2isGreat",
+    "https://admin:s3cretpw@db.corp.net/x",
+    "https://api.site.com/v1?token=abcdef1234567890abcd",
+    "192.168.1.20",
+    "10.0.0.5",
+    "http://localhost:3000",
+    "db01.internal",
+    "build.corp",
+    "nas.local",
+  ];
+  for (const s of secrets) {
+    const [b] = leak(`Use \`${s}\` here.`);
+    expect(b?.passed, s).toBe(false);
+    expect(b?.severity).toBe("blocker");
+    expect(JSON.stringify(b)).not.toContain(s);
+    expect(b?.issues[0]?.excerpt?.length).toBeLessThanOrEqual(5);
+  }
+  const key = leak("-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----")[0];
+  expect(key?.passed).toBe(false);
+  expect(gateBlockers([key as never])[0]?.fix).toBe("Remove the private key");
+});
+
+test("leaks: title, description and code blocks are scanned", () => {
+  expect(leak("text", { title: "ghp_abcdefghijklmnopqrstuvwxyz1234" })[0]?.passed).toBe(false);
+  expect(leak("text", { description: "10.1.2.3" })[0]?.passed).toBe(false);
+  expect(blocked("```\nAKIAQWERTYUIOPASDFGH\n```")).toHaveLength(1);
+});
+
+test("leaks: placeholders and look-alikes pass", () => {
+  const fine = [
+    "Set OPENAI_API_KEY=YOUR_API_KEY and sk-... in .env",
+    "api_key=xxxxxxxxxxxx and token: <token>",
+    "password=${PASSWORD} or password=getPassword()",
+    "AKIAIOSFODNN7EXAMPLE",
+    "risk-assessment-framework-for-teams",
+    "Visit https://example.com/?key=marketing-automation-tools or 8.8.8.8",
+    "In 2024 we paid $1,299.00 for v10.2.3.4 of the tool, ISBN 978-3-16-148410-0.",
+    "Call +1 555 123 4567 or email jane@example.com",
+  ];
+  for (const md of fine) expect(leak(md).every((r) => r.passed), md).toBe(true);
+});
+
+test("leaks: emails and phones only warn; own-domain role address is allowed", () => {
+  const [b, w] = leak("Write to jane.doe@acme.io or call +44 20 7946 0958.");
+  expect(b?.passed).toBe(true);
+  expect(w?.severity).toBe("warning");
+  expect(w?.issues).toHaveLength(2);
+  expect(JSON.stringify(w)).not.toContain("jane.doe@acme.io");
+  expect(gateBlockers([b as never, w as never])).toEqual([]);
+  expect(leak("Mail hello@acme.io", { siteUrl: "https://www.acme.io" })[1]?.passed).toBe(true);
+  expect(leak("Mail jane@acme.io", { siteUrl: "https://www.acme.io" })[1]?.passed).toBe(false);
 });
