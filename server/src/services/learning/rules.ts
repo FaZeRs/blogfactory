@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { styleRules } from "../../db/schema.js";
 import { fenceData } from "../../engine/prompts/load.js";
@@ -103,10 +103,4 @@ export async function ownedRuleForEval(userId: string, id: string) {
   if (row.status !== "proposed" || row.op !== "add") throw new ApiError(409, "conflict", "Only a proposed new rule can be tested");
   if (row.scope !== "draft") throw new ApiError(400, "validation_error", "Evals cover English draft rules only");
   return row;
-}
-
-export async function pendingCount(userId: string, siteId: string) {
-  const rows = await db.select({ id: styleRules.id }).from(styleRules)
-    .where(and(eq(styleRules.userId, userId), eq(styleRules.siteId, siteId), inArray(styleRules.status, ["proposed"])));
-  return rows.length;
 }

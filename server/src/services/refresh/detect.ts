@@ -149,8 +149,8 @@ export async function findRefreshCandidates(userId: string, siteId: string, now 
 }
 
 /** The queries a post's pages appeared for in the last 28 days, by impressions. */
-export async function topQueriesForPost(userId: string, siteId: string, postId: string, now = new Date(), limit = 10): Promise<string[]> {
-  const post = (await publishedPosts(userId, siteId)).find((p) => p.id === postId);
+export async function topQueriesForPost(userId: string, siteId: string, postId: string, now = new Date(), limit = 10, known?: PostPages): Promise<string[]> {
+  const post = known ?? (await publishedPosts(userId, siteId)).find((p) => p.id === postId);
   if (!post) return [];
   const since = isoDay(new Date(now.getTime() - WINDOW_DAYS * DAY_MS));
   const rows = await db.select({
@@ -166,7 +166,7 @@ export async function topQueriesForPost(userId: string, siteId: string, postId: 
 /** Creates up to the daily cap of refresh ideas for one site. Returns how many were created. */
 export async function detectRefreshIdeas(userId: string, siteId: string, now = new Date()): Promise<number> {
   const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(ideas).where(and(
-    eq(ideas.userId, userId), eq(ideas.siteId, siteId), eq(ideas.origin, "refresh"), gte(ideas.createdAt, new Date(now.getTime() - DAY_MS)),
+    eq(ideas.userId, userId), eq(ideas.siteId, siteId), eq(ideas.origin, "refresh"), sql`${ideas.refreshPostId} is not null`, gte(ideas.createdAt, new Date(now.getTime() - DAY_MS)),
   ));
   const room = MAX_NEW_PER_DAY - (n ?? 0);
   if (room < 1) return 0;
@@ -175,7 +175,7 @@ export async function detectRefreshIdeas(userId: string, siteId: string, now = n
   const settings = await getIdeaSettings(userId, siteId);
   let created = 0;
   for (const { post, verdict } of found) {
-    const queries = await topQueriesForPost(userId, siteId, post.id, now, 3);
+    const queries = await topQueriesForPost(userId, siteId, post.id, now, 3, post);
     const [row] = await db.insert(ideas).values({
       userId, siteId, status: "new", origin: "refresh", mode: settings.defaultMode,
       title: truncate(`Refresh: ${post.title}`, 200), angle: REFRESH_ANGLE, primaryKeyword: queries[0] ?? null,

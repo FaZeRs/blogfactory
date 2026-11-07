@@ -35,7 +35,7 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
   const { randomUUID } = await import("node:crypto");
   const { and, eq } = await import("drizzle-orm");
   const { db } = await import("../../db/index.js");
-  const { articleRuns, jobs, learningSignals, operationEvents, postTranslations, posts, sites, styleRules, users } = await import("../../db/schema.js");
+  const { articleRuns, jobs, learningSignals, operationEvents, postTranslations, posts, sites, styleRules, userSettings, users } = await import("../../db/schema.js");
   const { createFakeLlm } = await import("../../engine/adapters/fake-llm.js");
   const { updatePostWithRevision } = await import("../post-revisions.js");
   const { recordCommentSignal, recordPostEditSignal, recordTranslationEditSignal } = await import("./signals.js");
@@ -139,6 +139,9 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     await assert.rejects(() => run({ llm: createFakeLlm({}), model: "m" }), /no reply left/);
     const events = await db.select().from(operationEvents).where(and(eq(operationEvents.userId, owner.id), eq(operationEvents.action, "learning.distill")));
     assert.ok(events.some((e) => e.status === "failed"));
+    // a paused account makes no model call (noCall would throw)
+    await db.insert(userSettings).values({ userId: owner.id, siteId: null, budgetPaused: true });
+    assert.equal((await run({ llm: noCall, model: "m" })).skipped, "guardrails");
     // translations table untouched by signals
     assert.equal((await db.select().from(postTranslations).where(eq(postTranslations.postId, engine.id))).length, 0);
     console.log("learning self-test passed");

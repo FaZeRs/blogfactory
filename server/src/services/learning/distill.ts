@@ -8,6 +8,7 @@ import { DATA_RULE, fenceData, preparePrompt } from "../../engine/prompts/load.j
 import { sanitizeText } from "../../engine/util.js";
 import { getOpenRouterKey } from "../api-keys.js";
 import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
+import { checkAccountGuardrails } from "../account-guardrails.js";
 import { similarity, tokens } from "../ideas/novelty.js";
 import { finishOperationEvent, startOperationEvent } from "../operation-events.js";
 import { getEffectiveSettings } from "../user-settings.js";
@@ -17,7 +18,7 @@ import { RULE_MAX, SCOPE_RE, getLearning, saveLearning } from "./rules.js";
 export const DISTILL = { windowDays: 28, minSignals: 2, maxPending: 5, maxRules: 5, similarity: 0.8, signals: 150, excerpt: 160 } as const;
 
 export type DistillDeps = { llm: EngineLlm; model: string };
-export type DistillResult = { skipped?: "signals" | "pending"; signals: number; proposals: number; costUsd: number };
+export type DistillResult = { skipped?: "signals" | "pending" | "guardrails"; signals: number; proposals: number; costUsd: number };
 
 const ReplySchema = z.object({
   rules: z.array(z.object({
@@ -87,6 +88,8 @@ export async function distillSite(input: { userId: string; siteId: string; deps?
   const waiting = rules.filter((r) => r.status === "proposed");
   if (signals.length < DISTILL.minSignals) return { skipped: "signals", signals: signals.length, proposals: 0, costUsd: 0 };
   if (waiting.length >= DISTILL.maxPending) return { skipped: "pending", signals: signals.length, proposals: 0, costUsd: 0 };
+  // A paused account, or one over its daily or monthly limit, makes no model calls; the weekly task tries again next week.
+  if ((await checkAccountGuardrails(userId, now)).blocked) return { skipped: "guardrails", signals: signals.length, proposals: 0, costUsd: 0 };
 
   const started = Date.now();
   const eventId = await startOperationEvent({ userId, siteId, origin: "system", action: "learning.distill", objectType: "site", objectId: siteId });
@@ -110,7 +113,8 @@ export async function distillSite(input: { userId: string; siteId: string; deps?
     const r = await deps.llm.json({ role: "brief", model: deps.model, system: prompt.system, user: prompt.user, schema: ReplySchema, maxTokens: 4000 });
     costUsd = r.costUsd;
 
-    const taken = rules.filter((x) => (x.status === "approved" || x.status === "proposed") && x.op === "add");
+    // A rule the owner rejected is not proposed again.
+    const taken = rules.filter((x) => x.status !== "retired" && x.op === "add");
     const retiring = new Set(waiting.filter((x) => x.op === "retire").map((x) => x.targetRuleId));
     const room = DISTILL.maxPending - waiting.length;
     const rows: (typeof styleRules.$inferInsert)[] = [];

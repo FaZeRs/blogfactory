@@ -51,7 +51,7 @@ export function createLearningRoutes(deps: LearningRouteDeps = {}) {
 
   routes.post("/rules/:id/approve", async (c) => {
     const userId = getUserId(c);
-    const body = await c.req.json().catch(() => ({})) as { rule?: unknown };
+    const body = await readJsonObject(c).catch(() => ({} as Record<string, unknown>));
     if (body.rule !== undefined && typeof body.rule !== "string") throw validation("rule", "rule must be text");
     return c.json({ rule: await approveRule(userId, ruleId(c), body.rule as string | undefined) });
   });

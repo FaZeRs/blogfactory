@@ -33,16 +33,23 @@ function lcsPairs(a: string[], b: string[]): [number, number][] {
 /** A word-level diff of the engine's text against the person's: the changed hunks (at most 40, each shortened) and the share of words changed. */
 export function wordDiff(before: string, after: string): EditPayload {
   const split = (s: string, by: RegExp) => s.split(by).filter(Boolean);
+  const trimEnds = (x: string[], y: string[]) => {
+    let h = 0;
+    while (h < x.length && h < y.length && x[h] === y[h]) h += 1;
+    let t = 0;
+    while (t < x.length - h && t < y.length - h && x[x.length - 1 - t] === y[y.length - 1 - t]) t += 1;
+    return [h, t] as const;
+  };
   let sep = /\s+/;
   let a = split(before.trim(), sep);
   let b = split(after.trim(), sep);
-  // shortcut: a text this large is diffed by paragraph, so its hunks are coarser; upgrade to a Myers diff if that matters.
-  if (a.length * b.length > MAX_CELLS) { sep = /\n\s*\n/; a = split(before.trim(), sep); b = split(after.trim(), sep); }
+  let [head, tail] = trimEnds(a, b);
+  // shortcut: when the changed middle is this large it is diffed by paragraph, so its hunks are coarser; upgrade to a Myers diff if that matters.
+  if ((a.length - head - tail) * (b.length - head - tail) > MAX_CELLS) {
+    sep = /\n\s*\n/; a = split(before.trim(), sep); b = split(after.trim(), sep);
+    [head, tail] = trimEnds(a, b);
+  }
   const join = sep.source === "\\s+" ? " " : "\n\n";
-  let head = 0;
-  while (head < a.length && head < b.length && a[head] === b[head]) head += 1;
-  let tail = 0;
-  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail += 1;
   const ma = a.slice(head, a.length - tail);
   const mb = b.slice(head, b.length - tail);
   const pairs = lcsPairs(ma, mb).map(([x, y]): [number, number] => [x + head, y + head]);

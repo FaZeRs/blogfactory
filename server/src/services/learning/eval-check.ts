@@ -3,6 +3,7 @@ import { db } from "../../db/index.js";
 import { generationLogs, styleRules } from "../../db/schema.js";
 import { engineAiEndpoint, type EngineLlm } from "../../engine/adapters/llm.js";
 import { RUBRIC_DIMENSIONS, type RubricDimension } from "../../engine/evals/decide.js";
+import { checkAccountGuardrails } from "../account-guardrails.js";
 import { generateEngineArticle, judgePairwise, judgeRubric, type EvalDraft } from "../../engine/evals/run.js";
 import { loadEvalBriefs, type EvalBrief } from "../../engine/evals/schema.js";
 import { parseEngineSettings, resolveRunSettings } from "../../engine/modes.js";
@@ -53,7 +54,10 @@ export async function runRuleEval(input: { userId: string; ruleId: string; deps?
   let spent = 0;
   let result: RuleEval;
   let judgeModel: string | null = null;
+  // Checked before the eval and before each brief: a test is 6 generations plus judging, and must stop once the account is blocked.
+  const guard = async () => { const g = await checkAccountGuardrails(userId, now()); if (g.blocked) throw new Error(g.message); };
   try {
+    await guard();
     const deps = input.deps ?? await loadEvalDeps(userId, (await getEffectiveSettings(userId, row.siteId)).engineSettings);
     judgeModel = deps.draftModel;
     const llm: EngineLlm = { async json(req) { try { const r = await deps.llm.json(req); spent += r.costUsd; return r; } catch (e) { spent += Number((e as { costUsd?: number })?.costUsd) || 0; throw e; } } };
@@ -62,6 +66,7 @@ export async function runRuleEval(input: { userId: string; ruleId: string; deps?
     const verdicts: ("win" | "loss" | "tie")[] = [];
     const deltas: Record<RubricDimension, number>[] = [];
     for (const brief of briefs) {
+      await guard();
       try {
         const write = async (styleRules?: string) => ({ ...(await generateEngineArticle(brief, "normal", llm, { now: now }, deps.draftModel, false, { styleRules })), briefId: brief.id, mode: "normal" }) as unknown as EvalDraft;
         const base = await write();

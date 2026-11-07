@@ -124,7 +124,8 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
 
     // The insert trigger wrote revision 1; the post enters review on that revision. A refresh goes back to review on its new revision.
     const revision = await currentPostRevision(run.userId, post.id);
-    if (refreshWritten) {
+    // A retry after a crash between the write and this step finds the refresh revision still in draft.
+    if (refreshWritten || (refreshId && post.editorialState === "draft" && revision?.source === "refresh")) {
       await setPostEditorialState({ userId: run.userId, postId: post.id, state: "in_review", expectedRevisionId: revision!.id });
     } else if (!refreshId && post.editorialState === "draft" && revision?.revisionNumber === 1) {
       await setPostEditorialState({ userId: run.userId, postId: post.id, state: "in_review", expectedRevisionId: revision.id });
@@ -145,11 +146,15 @@ export const deliverStage: Stage<DeliverInput, DeliverOutput> = {
       // The translation was made before the English got its provenance tag; Lindevo's parity lint needs the same last component in both.
       const provenance = /<provenance\b[^>]*><\/provenance>\s*$/.exec(post.content)?.[0].trim();
       if (made.length) {
-        await db.insert(postTranslations).values(made.map((l) => ({
+        await db.insert(postTranslations).values(made.map((l) => {
+          const content = provenance ? appendProvenance(l.content, provenance).trimEnd() : l.content;
+          return {
           userId: run.userId, siteId: run.siteId, postId: post.id, locale: l.locale,
-          title: l.title, slug: l.slug, description: l.description, content: provenance ? appendProvenance(l.content, provenance).trimEnd() : l.content, imageAlt: l.imageAlt, keyword: l.keyword,
+          // engineContent: what the engine wrote, so a later hand edit becomes a learning signal.
+          title: l.title, slug: l.slug, description: l.description, content, engineContent: content, imageAlt: l.imageAlt, keyword: l.keyword,
           status: l.status === "ready" ? "ready" : "needs_review", findings: l.findings, sourceRevisionId: firstRevision?.id ?? null, costUsd: l.costUsd,
-        }))).onConflictDoNothing();
+          };
+        })).onConflictDoNothing();
       }
     } catch (err) {
       // The English draft exists and is reviewable; the translation can be made again from the editor.
