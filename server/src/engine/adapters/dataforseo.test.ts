@@ -159,6 +159,15 @@ test("a stalled request times out through the abort signal", async () => {
   await expect(p).rejects.toThrow("stop");
 });
 
+test("relatedKeywords reads keyword_data and drops zero volume", async () => {
+  const item = (keyword: string, volume: number) => ({ keyword_data: { keyword, keyword_info: { search_volume: volume } }, depth: 1 });
+  const { client, calls } = setup(() => json(ok([{ items: [item("n8n cloud pricing", 300), item("n8n docker", 0), { keyword_data: "junk" }] }])));
+  const out = await client.relatedKeywords("n8n cloud", { locale: "en", limit: 30 });
+  expect(out.map((k) => k.keyword)).toEqual(["n8n cloud pricing"]);
+  expect(calls[0].url).toContain("related_keywords/live");
+  expect(calls[0].body).toMatchObject({ keyword: "n8n cloud", depth: 1, limit: 30 });
+});
+
 test("keywordIdeas drops zero volume, books spend and respects the cap", async () => {
   const item = (keyword: string, volume: number | null) => ({ keyword, keyword_info: { search_volume: volume }, keyword_properties: { keyword_difficulty: 20 } });
   const { client, calls, spend } = setup(() => json(ok([{ items: [item("a b", 100), item("c d", 0), item("e f", null)] }])));

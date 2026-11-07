@@ -57,7 +57,7 @@ test("two invalid replies fail the stage", async () => {
 
 test("deep mode looks the keyword up once; it lands in the output", async () => {
   let calls = 0;
-  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordIdeas: async () => [], keywordOverview: async (keyword: string) => { calls += 1; return { keyword, volume: 900, difficulty: 30, intent: "informational", aiOverview: false }; } };
+  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordIdeas: async () => [], relatedKeywords: async () => [], keywordOverview: async (keyword: string) => { calls += 1; return { keyword, volume: 900, difficulty: 30, intent: "informational", aiOverview: false }; } };
   const { ctx } = fakeCtx({ llm: { brief: [good()] }, dataForSeo });
   const out = await briefStage.run({ ...input, keywordData: true }, ctx);
   expect(calls).toBe(1);
@@ -66,7 +66,7 @@ test("deep mode looks the keyword up once; it lands in the output", async () => 
 
 test("deep mode falls back to the chosen keyword when the topic has no search data", async () => {
   const asked: string[] = [];
-  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordIdeas: async () => [], keywordOverview: async (keyword: string) => {
+  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordIdeas: async () => [], relatedKeywords: async () => [], keywordOverview: async (keyword: string) => {
     asked.push(keyword);
     return asked.length === 1 ? null : { keyword, volume: 4400, difficulty: 31, intent: "commercial", aiOverview: false };
   } };
@@ -74,6 +74,19 @@ test("deep mode falls back to the chosen keyword when the topic has no search da
   const out = await briefStage.run({ ...input, topic: "how to pick solar panels for a small roof", keywordData: true }, ctx);
   expect(asked).toEqual(["how to pick solar panels for a small roof", good().primaryKeyword]);
   expect(out.output.keywordData?.volume).toBe(4400);
+});
+
+test("related searches reach the prompt; secondary keywords outside them are dropped", async () => {
+  const kw = (keyword: string, volume: number | null) => ({ keyword, volume, difficulty: null, intent: null, aiOverview: false });
+  const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordOverview: async () => null, keywordIdeas: async () => [],
+    relatedKeywords: async () => [kw("solar panels", 9000), kw("solar panel cost", 2400), kw("best solar panels", 5000), kw("Solar Panel Cost", 10), kw("vps hosting", 8100)] };
+  const { ctx, llm } = fakeCtx({ llm: { brief: [good({ secondaryKeywords: ["best solar panels", " solar panel cost", "Solar Panel COST", "made up phrase"] })] }, dataForSeo });
+  const out = await briefStage.run({ ...input, keywordData: true }, ctx);
+  expect(llm.calls[0]?.user).toContain("- best solar panels (5000)\n- solar panel cost (2400)");
+  expect(llm.calls[0]?.user).not.toContain("- solar panels (9000)");
+  expect(llm.calls[0]?.user).not.toContain("vps hosting");
+  expect(out.output.secondaryKeywords).toEqual(["best solar panels", "solar panel cost"]);
+  expect(out.output.relatedKeywords).toEqual([{ keyword: "best solar panels", volume: 5000 }, { keyword: "solar panel cost", volume: 2400 }]);
 });
 
 test("link candidates come from the index only, deduped", () => {

@@ -76,7 +76,7 @@ Staged generation engine behind the `normal` and `deep` modes; design in `docs/s
 
 - [x] Sub-project 1: staged runtime (research, brief, draft, gates, revise, deliver), search/crawl/DataForSEO adapters, eval harness (`npm run eval:engine`), `mode` on `generate_draft`, optional `publish_at` on `push_to_cms_draft`.
 - [x] Make `normal` the default manual mode (2026-11-07 eval on 6 golden briefs: normal beat fast 6-0, mean 8.07 vs 5.83; Create Content falls back to fast when the engine is unavailable; MCP `generate_draft` keeps `fast` as its default).
-- [ ] Sub-project 2: research depth. Shipped: competitor outlines, gaps and People also ask in the brief. Open: more sources per run, DataForSEO keyword data in the brief.
+- [x] Sub-project 2: research depth: competitor outlines, gaps and People also ask in the brief; more sources per run (normal reads 8 pages from 4 queries, spread round-robin across queries with at most 2 pages per site); DataForSEO keyword data in normal and deep briefs (volume, difficulty, intent, and related searches the brief picks secondary keywords from).
 - [x] Sub-project 3: quality loop (adversarial fact-check, reader review, style gate, leak check, Revise with comments).
 - [x] Sub-project 4: topic discovery (scored ideas, word-overlap novelty, schedule and autopilot, owner idea sources: feeds, Hacker News, subreddits, watched pages; built-in sources can be switched off).
 - [x] Sub-project 5: localization (per-site locales, glossary, style guide, native review, parity checks, Lindevo `lv` delivery).

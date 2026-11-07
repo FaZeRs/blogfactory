@@ -19,10 +19,11 @@ const STATUS_PARTIAL = 40_106;
 const QUOTA_CODES = new Set([40_200, 40_202, 40_210]);
 const DEFAULT_MONTHLY_USD = 10;
 /** Booked when a billed reply carries no usable cost. */
-const ESTIMATE_USD = { serp: 0.002, overview: 0.01, ideas: 0.02 } as const;
+const ESTIMATE_USD = { serp: 0.002, overview: 0.01, ideas: 0.02, related: 0.02 } as const;
 const SERP_PATH = "serp/google/organic/live/advanced";
 const OVERVIEW_PATH = "dataforseo_labs/google/keyword_overview/live";
 const IDEAS_PATH = "dataforseo_labs/google/keyword_ideas/live";
+const RELATED_PATH = "dataforseo_labs/google/related_keywords/live";
 
 type Env = Record<string, string | undefined>;
 type Deps = {
@@ -73,6 +74,8 @@ const OverviewItem = z.object({
   search_intent_info: z.object({ main_intent: z.string().nullish().catch(null) }).nullish().catch(null),
   serp_info: z.object({ serp_item_types: z.array(z.string()).nullish().catch(null) }).nullish().catch(null),
 });
+
+const RelatedItem = z.object({ keyword_data: OverviewItem });
 
 /** Items that fit `schema`; one that does not is dropped, never fatal. */
 function parseItems<T>(items: readonly unknown[] | null | undefined, schema: z.ZodType<T>): T[] {
@@ -244,6 +247,21 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
       return parseItems(result, OverviewResult)
         .flatMap((r) => parseItems(r.items, OverviewItem))
         .map(toOverview)
+        .filter((k) => (k.volume ?? 0) > 0);
+    },
+
+    async relatedKeywords(keyword, opts) {
+      if (await overBudget()) return [];
+      const { locationCode, languageCode } = localeMarket(opts.locale);
+      const result = await call(
+        RELATED_PATH,
+        { keyword, location_code: locationCode, language_code: languageCode, depth: 1, limit: Math.max(1, Math.min(opts.limit, 100)) },
+        ESTIMATE_USD.related,
+        opts.signal,
+      );
+      return parseItems(result, OverviewResult)
+        .flatMap((r) => parseItems(r.items, RelatedItem))
+        .map((i) => toOverview(i.keyword_data))
         .filter((k) => (k.volume ?? 0) > 0);
     },
 

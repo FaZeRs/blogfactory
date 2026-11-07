@@ -228,6 +228,12 @@ function BriefBody({ d }: { d: Details }) {
             </p>
           </div>
         )}
+        {list(d.secondaryKeywords).length > 0 && (
+          <div>
+            <Label>Secondary keywords</Label>
+            <p>{list(d.secondaryKeywords).map(String).join(", ")}</p>
+          </div>
+        )}
       </div>
       <div>
         <Label>Title options</Label>

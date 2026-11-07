@@ -287,4 +287,11 @@ test("leaks: emails and phones only warn; own-domain role address is allowed", (
   expect(gateBlockers([b as never, w as never])).toEqual([]);
   expect(leak("Mail hello@acme.io", { siteUrl: "https://www.acme.io" })[1]?.passed).toBe(true);
   expect(leak("Mail jane@acme.io", { siteUrl: "https://www.acme.io" })[1]?.passed).toBe(false);
+  // A credential URL is the blocker's; the email rule must not store a piece of its password.
+  const [cb, cw] = leak("Use https://admin:s3cretpw@db.acme.io/x or mailto:jane@acme.io");
+  expect(cb?.passed).toBe(false);
+  expect(cw?.issues).toHaveLength(1);
+  expect(JSON.stringify(cw)).not.toContain("s3cr");
+  // A password with a character outside the email's local part must not leak either.
+  expect(JSON.stringify(leak("See https://admin:pa!ss@db.acme.io/x")[1])).not.toContain("ss@");
 });

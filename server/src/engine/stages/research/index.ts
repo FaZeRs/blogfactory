@@ -77,6 +77,27 @@ export function normalizeUrl(raw: string): string | null {
   return url.pathname.length > 1 && !url.search && text.endsWith("/") ? text.slice(0, -1) : text;
 }
 
+const MAX_PAGES_PER_HOST = 2;
+const hostOf = (url: string) => new URL(url).hostname.replace(/^www\./, "");
+
+/** Each query's top hit first, then each one's second, and so on, with at most two pages per site: the page budget spreads over queries and sites. */
+export function diverseUrls(perQuery: string[][]): string[] {
+  const urls = new Set<string>();
+  const perHost = new Map<string, number>();
+  const depth = Math.max(0, ...perQuery.map((q) => q.length));
+  for (let i = 0; i < depth; i += 1) {
+    for (const hits of perQuery) {
+      const url = hits[i];
+      if (!url || urls.has(url)) continue;
+      const host = hostOf(url);
+      if ((perHost.get(host) ?? 0) >= MAX_PAGES_PER_HOST) continue;
+      perHost.set(host, (perHost.get(host) ?? 0) + 1);
+      urls.add(url);
+    }
+  }
+  return [...urls];
+}
+
 const usage = (r: { model: string; promptTokens: number; completionTokens: number; costUsd: number }) => ({
   model: r.model,
   promptTokens: r.promptTokens,
@@ -110,17 +131,18 @@ export async function researchCore(input: ResearchInput, ctx: StageContext, spen
   const queries = planned.value.queries.slice(0, input.maxQueries);
 
   // URLs and the search hit's own title (a crawl's first heading is often a cookie banner).
-  const urls: string[] = [];
   const titles = new Map<string, string>();
+  const perQuery: string[][] = [];
   for (const query of queries) {
     const hits = await search.search(query, { locale: input.locale, limit: 6, signal: ctx.signal });
-    for (const hit of hits) {
+    perQuery.push(hits.flatMap((hit) => {
       const url = normalizeUrl(hit.url);
-      if (!url || urls.includes(url)) continue;
-      urls.push(url);
-      if (hit.title.trim() && !isBoilerplateTitle(hit.title)) titles.set(url, hit.title.trim());
-    }
+      if (!url) return [];
+      if (hit.title.trim() && !isBoilerplateTitle(hit.title) && !titles.has(url)) titles.set(url, hit.title.trim());
+      return [url];
+    }));
   }
+  const urls = diverseUrls(perQuery);
 
   // `reader.read` throws on non-public URLs: a page that cannot be read is skipped, not a stage failure.
   const fetched = await mapLimit(urls.slice(0, input.maxPages), FETCH_CONCURRENCY, async (url) => {

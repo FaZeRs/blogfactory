@@ -35,6 +35,8 @@ export const BriefModelSchema = z.object({
   faq: z.array(z.object({ question: z.string().min(10).max(160), answerPoints: z.array(z.string().min(3)).min(1).max(4) })).max(12),
   takeaways: z.array(z.string().min(10).max(200)).min(1).max(8),
   internalLinks: z.array(z.object({ url: z.string(), anchorText: z.string().min(2).max(80) })).max(12),
+  /** Related searches the article should also answer, picked from the keyword data; none without it. */
+  secondaryKeywords: z.array(z.string().min(2).max(80)).max(8).optional(),
   /** The call to action's service and pain point, or "none". Required (checked in `validateBrief`) for the Lindevo profile. */
   service: z.enum([...SERVICE_IDS, "none"]).optional(),
   painPoint: z.enum([...PAIN_POINT_IDS, "none"]).optional(),
@@ -44,6 +46,8 @@ export type Brief = z.infer<typeof BriefModelSchema>;
 /** Stored as `.output.output`: the brief plus what code knows about the keyword. */
 export const BriefOutputSchema = BriefModelSchema.extend({
   keywordData: z.object({ volume: z.number().nullable(), difficulty: z.number().nullable(), intent: z.string().nullable(), aiOverview: z.boolean() }).nullable(),
+  /** Related searches offered to the brief, by volume; missing on briefs made before they existed. */
+  relatedKeywords: z.array(z.object({ keyword: z.string(), volume: z.number().nullable() })).optional(),
 });
 export type BriefOutput = z.infer<typeof BriefOutputSchema>;
 

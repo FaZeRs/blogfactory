@@ -1,6 +1,6 @@
 ---
 name: draft
-version: 2026-11-07.3
+version: 2026-11-07.4
 ---
 <!-- system -->
 You write one blog article from an approved brief. Write clear, idiomatic prose in the language with locale "{{locale}}".
@@ -32,7 +32,7 @@ You write one blog article from an approved brief. Write clear, idiomatic prose 
 
 Title: the brief's chosen title (at most {{titleMax}} characters). Description: at most {{descriptionMax}} characters.
 
-Use the brief's `primaryKeyword` naturally in the title, the description, the opening paragraph and at least one H2. Do not repeat it more than about twice per 100 words.
+Use the brief's `primaryKeyword` naturally in the title, the description, the opening paragraph and at least one H2. Do not repeat it more than about twice per 100 words. Work each of the brief's `secondaryKeywords` in once where it reads naturally, ideally in the heading or opening sentence of the section that answers it; never force one in.
 
 {{include:style-rules}}
 

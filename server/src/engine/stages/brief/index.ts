@@ -57,8 +57,30 @@ export function editorGuidance(settings: unknown): string {
   return [angle && `Angle: ${angle}`, instructions && `Instructions: ${instructions}`].filter(Boolean).join("\n");
 }
 
-export const keywordText = (k: KeywordOverview | null) =>
-  k ? `Search volume: ${k.volume ?? "unknown"}; difficulty: ${k.difficulty ?? "unknown"}; intent: ${k.intent ?? "unknown"}; AI overview: ${k.aiOverview ? "yes" : "no"}` : "No keyword data.";
+const MAX_RELATED = 10;
+
+export const keywordText = (k: KeywordOverview | null, related: KeywordOverview[] = []) =>
+  [
+    k ? `Search volume: ${k.volume ?? "unknown"}; difficulty: ${k.difficulty ?? "unknown"}; intent: ${k.intent ?? "unknown"}; AI overview: ${k.aiOverview ? "yes" : "no"}` : "No keyword data.",
+    related.length ? `Related searches (monthly volume):\n${related.map((r) => `- ${r.keyword} (${r.volume ?? "unknown"})`).join("\n")}` : "",
+  ].filter(Boolean).join("\n\n");
+
+const STOP_WORDS = new Set(["the", "and", "for", "with", "how", "what", "why", "when", "best", "your", "you", "are", "can", "does", "from", "into", "that", "this", "vs", "versus"]);
+const words = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !STOP_WORDS.has(w));
+
+/** Related searches other than the topic itself that share a word with it, highest volume first. */
+export function relatedSearches(found: KeywordOverview[], topic: string): KeywordOverview[] {
+  const seen = new Set([topic.trim().toLowerCase()]);
+  const topicWords = new Set(words(topic));
+  return [...found]
+    .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
+    .filter((k) => {
+      const key = k.keyword.trim().toLowerCase();
+      // Broad matches ("vps hosting" for an n8n topic) share no word with the topic.
+      return key.length >= 2 && key.length <= 80 && words(key).some((w) => topicWords.has(w)) && !seen.has(key) && seen.add(key);
+    })
+    .slice(0, MAX_RELATED);
+}
 
 /** The analysis as brief-prompt text. Its words are model output over untrusted pages, so the caller fences it. */
 export function serpText(serp: SerpAnalysis | null | undefined, questions: string[] = [], target: number | null = null): string {
@@ -103,10 +125,15 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
   },
   async run(input, ctx: StageContext) {
     const { llm, dataForSeo, now } = ctx.deps;
-    // Deep mode only: one keyword lookup. A failure or an unknown keyword just means no keyword data.
+    // One keyword lookup and one related-searches lookup. A failure or an unknown keyword just means no keyword data.
     let keyword: KeywordOverview | null = null;
+    let related: KeywordOverview[] = [];
     if (input.keywordData && dataForSeo) {
-      keyword = await dataForSeo.keywordOverview(input.topic, { locale: input.locale, signal: ctx.signal }).catch(() => null);
+      const opts = { locale: input.locale, signal: ctx.signal };
+      [keyword, related] = await Promise.all([
+        dataForSeo.keywordOverview(input.topic, opts).catch(() => null),
+        dataForSeo.relatedKeywords(input.topic, { ...opts, limit: 30 }).then((found) => relatedSearches(found, input.topic)).catch(() => []),
+      ]);
     }
     const lindevo = input.profile === "lindevo";
     const target = planTarget(input.serp?.typicalLength);
@@ -132,10 +159,12 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       evidence: fenceData("evidence", evidenceText(input.evidence)),
       links: linksText(input.links),
       serp: fenceData("serp-analysis", serpText(input.serp, input.questions, target)),
-      search: fenceData("keyword-data", keywordText(keyword)),
+      search: fenceData("keyword-data", keywordText(keyword, related)),
       guidance: fenceData("editor-direction", input.guidance || "None."),
       today: now().toISOString().slice(0, 10),
     });
+    // Lowercased offer -> the keyword as DataForSEO spells it, so a recased pick neither duplicates nor drifts.
+    const offered = new Map(related.map((r) => [r.keyword.trim().toLowerCase(), r.keyword.trim()]));
     const check = { links: new Set(input.links.map((l) => l.url)), verifiedIds: new Set(input.evidence.map((e) => e.id)), minClaims: input.minClaims, profile: input.profile };
     const usage: NonNullable<Awaited<ReturnType<Stage<unknown, unknown>["run"]>>["usage"]> = [];
     let feedback = "";
@@ -151,14 +180,17 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
         signal: ctx.signal,
       });
       usage.push({ model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costUsd: r.costUsd });
-      const brief: Brief = repairBrief(fitLengthPlan(r.value, target));
+      const planned = repairBrief(fitLengthPlan(r.value, target));
+      // Only searches the keyword data offered: a secondary keyword the model made up has no demand behind it.
+      const brief: Brief = { ...planned, secondaryKeywords: [...new Set((planned.secondaryKeywords ?? []).flatMap((k) => offered.get(k.trim().toLowerCase()) ?? []))].slice(0, 5) };
       issues = validateBrief(brief, check).map(sanitizeText);
       if (issues.length === 0) {
         // Long topics rarely have search data; the chosen keyword usually does. Recorded for the reviewer, not the prompt.
         if (!keyword && input.keywordData && dataForSeo && brief.primaryKeyword.toLowerCase() !== input.topic.toLowerCase()) {
           keyword = await dataForSeo.keywordOverview(brief.primaryKeyword, { locale: input.locale, signal: ctx.signal }).catch(() => null);
         }
-        return { next: { type: "advance", to: "draft" }, output: { ...brief, keywordData: keyword }, usage };
+        const relatedKeywords = related.map((r) => ({ keyword: r.keyword, volume: r.volume }));
+        return { next: { type: "advance", to: "draft" }, output: { ...brief, keywordData: keyword, relatedKeywords }, usage };
       }
       // The problems quote model text that began as untrusted evidence, so the list is data too.
       feedback = `\n\n## Your previous brief had these problems. Fix every one and return the whole brief again.\n${fenceData("issues", issues.map((i) => `- ${i}`).join("\n"))}`;

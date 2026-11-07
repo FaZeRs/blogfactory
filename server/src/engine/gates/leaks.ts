@@ -94,11 +94,15 @@ const RULES: readonly LeakRule[] = [
 export function leaksGate(input: GateInput): GateResult[] {
   const text = `${input.title}\n${input.description}\n${input.markdown}`;
   const seen = new Set<string>();
+  // Spans of reported blockers: a warning inside one (the `pw@host` of a credential URL) would store part of the secret.
+  const spans: [number, number][] = [];
   const hits = (severity: "blocker" | "warning"): GateIssue[] =>
     RULES.filter((r) => r.severity === severity).flatMap((r) =>
       [...text.matchAll(r.re)].flatMap((m) => {
-        if (r.allow?.(m[0], input) || seen.has(m[0])) return [];
+        const start = m.index, end = start + m[0].length;
+        if (r.allow?.(m[0], input) || seen.has(m[0]) || spans.some(([s, e]) => start < e && end > s)) return [];
         seen.add(m[0]);
+        if (severity === "blocker") spans.push([start, end]);
         return [{ excerpt: mask(m[0]), hint: r.hint, message: r.message }];
       })
     );
