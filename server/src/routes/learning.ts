@@ -2,12 +2,13 @@ import { Hono } from "hono";
 import { waitUntil } from "@vercel/functions";
 import { and, count, eq, gte } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { learningSignals } from "../db/schema.js";
+import { learningSignals, styleRules } from "../db/schema.js";
 import { engineAiEndpoint } from "../engine/adapters/llm.js";
 import { ApiError, readJsonObject, safeError } from "../http/error-contract.js";
 import { getUserId } from "../middleware/auth.js";
 import { getOpenRouterKey } from "../services/api-keys.js";
 import { persistentBackgroundExecution } from "../services/background-drain.js";
+import { finishOperationEvent, startOperationEvent } from "../services/operation-events.js";
 import { DISTILL, distillSite } from "../services/learning/distill.js";
 import { beginRuleEval, runRuleEval } from "../services/learning/eval-check.js";
 import { approveRule, getLearning, listRules, ownedRuleForEval, rejectRule, retireRule, saveLearning } from "../services/learning/rules.js";
@@ -23,6 +24,21 @@ export type LearningRouteDeps = {
 };
 
 const inFlight = new Set<string>();
+
+/** One sanitized event per rule decision or settings change: ids only, never rule text, rationale or evidence. */
+async function logLearningEvent(input: { userId: string; siteId: string; action: string; objectType: "style_rule" | "site"; objectId: string }) {
+  try {
+    const id = await startOperationEvent({ ...input, origin: "web", clientName: "BlogFactory web" });
+    await finishOperationEvent({ id, status: "succeeded", durationMs: 0, siteId: input.siteId });
+  } catch {
+    console.error("[learning] Could not write the operation event");
+  }
+}
+
+async function logRuleEvent(userId: string, id: string, action: string) {
+  const [row] = await db.select({ siteId: styleRules.siteId }).from(styleRules).where(and(eq(styleRules.id, id), eq(styleRules.userId, userId))).limit(1);
+  if (row) await logLearningEvent({ userId, siteId: row.siteId, action, objectType: "style_rule", objectId: id });
+}
 
 export function createLearningRoutes(deps: LearningRouteDeps = {}) {
   const run = deps.run ?? ((p) => waitUntil(p));
@@ -53,17 +69,31 @@ export function createLearningRoutes(deps: LearningRouteDeps = {}) {
     const userId = getUserId(c);
     const body = await readJsonObject(c).catch(() => ({} as Record<string, unknown>));
     if (body.rule !== undefined && typeof body.rule !== "string") throw validation("rule", "rule must be text");
-    return c.json({ rule: await approveRule(userId, ruleId(c), body.rule as string | undefined) });
+    const id = ruleId(c);
+    const rule = await approveRule(userId, id, body.rule as string | undefined);
+    await logRuleEvent(userId, id, "learning.rule_approve");
+    return c.json({ rule });
   });
-  routes.post("/rules/:id/reject", async (c) => c.json({ rule: await rejectRule(getUserId(c), ruleId(c)) }));
-  routes.post("/rules/:id/retire", async (c) => c.json({ rule: await retireRule(getUserId(c), ruleId(c)) }));
+  routes.post("/rules/:id/reject", async (c) => {
+    const [userId, id] = [getUserId(c), ruleId(c)];
+    const rule = await rejectRule(userId, id);
+    await logRuleEvent(userId, id, "learning.rule_reject");
+    return c.json({ rule });
+  });
+  routes.post("/rules/:id/retire", async (c) => {
+    const [userId, id] = [getUserId(c), ruleId(c)];
+    const rule = await retireRule(userId, id);
+    await logRuleEvent(userId, id, "learning.rule_retire");
+    return c.json({ rule });
+  });
 
   routes.post("/rules/:id/eval", async (c) => {
     const userId = getUserId(c);
     const id = ruleId(c);
-    await ownedRuleForEval(userId, id);
+    const owned = await ownedRuleForEval(userId, id);
     await background(userId, "Testing a rule");
     if (!(await beginRuleEval(userId, id))) throw new ApiError(409, "conflict", "This rule is already being tested");
+    await logLearningEvent({ userId, siteId: owned.siteId, action: "learning.rule_eval", objectType: "style_rule", objectId: id });
     run(evalRule({ userId, ruleId: id }).catch((error) => { console.error("[learning] Eval failed", safeError(error)); }));
     return c.json({ started: true }, 202);
   });
@@ -93,7 +123,9 @@ export function createLearningRoutes(deps: LearningRouteDeps = {}) {
     const body = await readJsonObject(c);
     const { userId, siteId } = await ownedSite(c, c.req.query("siteId") ?? (typeof body.siteId === "string" ? body.siteId : undefined));
     if (typeof body.enabled !== "boolean") throw validation("enabled", "enabled must be true or false");
-    return c.json(await saveLearning(userId, siteId, { enabled: body.enabled }));
+    const saved = await saveLearning(userId, siteId, { enabled: body.enabled });
+    await logLearningEvent({ userId, siteId, action: "learning.settings", objectType: "site", objectId: siteId });
+    return c.json(saved);
   });
 
   return routes;

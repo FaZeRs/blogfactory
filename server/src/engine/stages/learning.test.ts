@@ -6,7 +6,7 @@ import { dbTestsEnabled } from "./test-db.js";
 const enabled = dbTestsEnabled("learning engine test");
 const t = await (enabled ? import("./test-db.js") : Promise.resolve(null));
 const { db } = enabled ? await import("../../db/index.js") : { db: null as never };
-const { styleRules } = enabled ? await import("../../db/schema.js") : ({} as never);
+const { generationLogs, styleRules } = enabled ? await import("../../db/schema.js") : ({} as never);
 const { eq } = await import("drizzle-orm");
 const rules = enabled ? await import("../../services/learning/rules.js") : (null as never);
 const { runRuleEval } = enabled ? await import("../../services/learning/eval-check.js") : ({} as never);
@@ -126,6 +126,23 @@ describe.skipIf(!enabled)("rule eval check", () => {
     const [stored] = await db.select().from(styleRules).where(eq(styleRules.id, row!.id));
     expect(stored!.status).toBe("proposed");
     expect((stored!.eval as { status: string }).status).toBe("done");
+  });
+
+  test("the spend is logged once per model: the writer's and the judge's", async () => {
+    const { user, site } = await t!.fixture("normal");
+    const [row] = await db.insert(styleRules).values({ userId: user.id, siteId: site.id, scope: "draft", rule: RULE_DRAFT }).returning();
+    const inner = createFakeLlm({ brief: [plan, plan], draft: [written, written], revise: Array(8).fill(written), judge: [worse, good, { reason: "r", winner: "A" }] });
+    // Writer calls cost 0.02, judge calls 0.005; the brief role is the writer's model too.
+    const llm = { calls: inner.calls, json: async (req: never) => ({ ...(await inner.json(req)), costUsd: (req as { model: string }).model === "judge/m" ? 0.005 : 0.02 }) };
+    const result = await runRuleEval({ userId: user.id, ruleId: row!.id, deps: { llm: llm as never, draftModel: "writer/m", judgeModel: "judge/m", briefs: (await loadEvalBriefs()).slice(0, 1) } });
+    expect(result.status).toBe("done");
+    const logs = await db.select().from(generationLogs).where(eq(generationLogs.userId, user.id));
+    const by = Object.fromEntries(logs.map((l) => [l.modelId, l.cost]));
+    const count = (m: string) => inner.calls.filter((c) => c.model === m).length;
+    expect(logs).toHaveLength(2);
+    expect(by["writer/m"]).toBeCloseTo(count("writer/m") * 0.02, 4);
+    expect(by["judge/m"]).toBeCloseTo(count("judge/m") * 0.005, 4);
+    expect(count("judge/m")).toBe(3);
   });
 
   test("a model failure is stored as a failed check", async () => {

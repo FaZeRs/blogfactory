@@ -51,16 +51,16 @@ export async function runRuleEval(input: { userId: string; ruleId: string; deps?
   const now = input.now ?? (() => new Date());
   const [row] = await db.select().from(styleRules).where(and(eq(styleRules.id, ruleId), eq(styleRules.userId, userId))).limit(1);
   if (!row) throw new Error("rule not found");
-  let spent = 0;
+  // Spend by the model each request named (draft writer and judge are different models), so each is logged under its own.
+  const spentByModel = new Map<string, number>();
+  const addSpend = (model: string, usd: number) => spentByModel.set(model, (spentByModel.get(model) ?? 0) + usd);
   let result: RuleEval;
-  let judgeModel: string | null = null;
   // Checked before the eval and before each brief: a test is 6 generations plus judging, and must stop once the account is blocked.
   const guard = async () => { const g = await checkAccountGuardrails(userId, now()); if (g.blocked) throw new Error(g.message); };
   try {
     await guard();
     const deps = input.deps ?? await loadEvalDeps(userId, (await getEffectiveSettings(userId, row.siteId)).engineSettings);
-    judgeModel = deps.draftModel;
-    const llm: EngineLlm = { async json(req) { try { const r = await deps.llm.json(req); spent += r.costUsd; return r; } catch (e) { spent += Number((e as { costUsd?: number })?.costUsd) || 0; throw e; } } };
+    const llm: EngineLlm = { async json(req) { try { const r = await deps.llm.json(req); addSpend(req.model, r.costUsd); return r; } catch (e) { addSpend(req.model, Number((e as { costUsd?: number })?.costUsd) || 0); throw e; } } };
     const briefs = (deps.briefs ?? await loadEvalBriefs()).slice(0, EVAL_BRIEFS);
     const block = rulesBlock([row.rule]);
     const verdicts: ("win" | "loss" | "tie")[] = [];
@@ -84,15 +84,16 @@ export async function runRuleEval(input: { userId: string; ruleId: string; deps?
     const dims = Object.fromEntries(RUBRIC_DIMENSIONS.map((d) => [d, round3(mean(deltas.map((x) => x[d])))])) as Record<RubricDimension, number>;
     result = {
       status: "done", winRate: round3((count("win") + count("tie") / 2) / verdicts.length), meanDelta: round3(mean(RUBRIC_DIMENSIONS.map((d) => dims[d]))), dims,
-      wins: count("win"), losses: count("loss"), ties: count("tie"), briefs: verdicts.length, costUsd: round3(spent), finishedAt: now().toISOString(),
+      wins: count("win"), losses: count("loss"), ties: count("tie"), briefs: verdicts.length, costUsd: round3([...spentByModel.values()].reduce((a, b) => a + b, 0)), finishedAt: now().toISOString(),
     };
   } catch (e) {
     result = { status: "failed", error: String((e as Error)?.message ?? "failed").slice(0, 200), finishedAt: now().toISOString() };
   }
   await db.update(styleRules).set({ eval: result }).where(and(eq(styleRules.id, ruleId), eq(styleRules.userId, userId)));
-  if (spent > 0 && judgeModel) {
-    const model = billedModel(judgeModel);
-    await db.insert(generationLogs).values({ userId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: result.status === "done" ? "success" : "failed", cost: spent, responseData: { learningEval: true } })
+  for (const [requested, cost] of spentByModel) {
+    if (cost <= 0) continue;
+    const model = billedModel(requested);
+    await db.insert(generationLogs).values({ userId, usageType: "text", modelId: model, provider: model.split("/")[0] ?? null, status: result.status === "done" ? "success" : "failed", cost, responseData: { learningEval: true } })
       .catch(() => console.error("[learning] Could not log spend"));
   }
   return result;
