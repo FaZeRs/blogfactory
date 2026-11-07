@@ -6,12 +6,12 @@ const mask = (s: string, label?: RegExp) => {
   return `${shown}${s.slice(shown.length, shown.length + 4)}…`;
 };
 // Up to 3 plain words before a hit (never before `floor`, the end of an earlier blocker), so the excerpt can be found in the article.
-// Words with digits or quotes are skipped: a quoted value (`secret: "CorrectHorse"`) may be a secret.
+// Words with digits or quotes, or over 20 characters, are skipped: they may be a secret (`secret: "CorrectHorse"`).
 const context = (text: string, start: number, floor: number) => {
   const words = text.slice(Math.max(0, floor, start - 60), start).split("\n").pop()!.split(/\s+/).filter(Boolean);
   const kept: string[] = [];
   for (const w of words.reverse()) {
-    if (kept.length === 3 || !/^[\p{L}`,.;:()!?-]+$/u.test(w)) break;
+    if (kept.length === 3 || w.length > 20 || !/^[\p{L}`,.;:()!?-]+$/u.test(w)) break;
     kept.unshift(w);
   }
   const lead = kept.join(" ");
@@ -55,16 +55,12 @@ const placeholderUrlCredentials = (m: string) => {
   const [, credentials = "", host = ""] = /^https?:\/\/([^@]+)@(.*)$/.exec(m) ?? [];
   return PLACEHOLDER_RE.test(credentials) || DEMO_PASSWORD_RE.test(credentials.slice(credentials.indexOf(":") + 1)) || RESERVED_HOST_RE.test(host);
 };
-// The jwt.io sample token (John Doe, iat 1516239022) is in every JWT tutorial.
-const sampleJwt = (m: string) => {
-  try {
-    const claims = JSON.parse(Buffer.from(m.split(".")[1]!, "base64url").toString("utf8"));
-    // the name alone is not enough: a real token can belong to someone called John Doe
-    return claims?.iat === 1516239022 || (claims?.sub === "1234567890" && /^(?:john|jane) doe$/i.test(String(claims?.name ?? "")));
-  } catch {
-    return false;
-  }
-};
+// The public jwt.io sample tokens, matched exactly: claims alone (a "John Doe" name, the sample `iat`) prove nothing.
+const SAMPLE_JWTS = new Set([
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30",
+]);
+const sampleJwt = (m: string) => SAMPLE_JWTS.has(m);
 
 const RULES: readonly LeakRule[] = [
   // Provider tokens. A bare `sk-` keeps its word boundary so `risk-assessment-…` is not a key.
@@ -124,17 +120,26 @@ const RULES: readonly LeakRule[] = [
 export function leaksGate(input: GateInput): GateResult[] {
   const text = `${input.title}\n${input.description}\n${input.markdown}`;
   const seen = new Set<string>();
-  // Spans of reported blockers: a warning inside one (the `pw@host` of a credential URL) would store part of the secret.
+  // Spans of every blocker match, repeats included: a warning inside one (the `pw@host` of a credential URL) would store
+  // part of the secret, and no excerpt's context may reach back into one. All are found before any excerpt is built.
   const spans: [number, number][] = [];
-  const hits = (severity: "blocker" | "warning"): GateIssue[] =>
+  const found = (severity: "blocker" | "warning") =>
     RULES.filter((r) => r.severity === severity).flatMap((r) =>
       [...text.matchAll(r.re)].flatMap((m) => {
         const start = m.index, end = start + m[0].length;
-        if (r.allow?.(m[0], input) || seen.has(m[0]) || spans.some(([s, e]) => start < e && end > s)) return [];
-        seen.add(m[0]);
+        if (r.allow?.(m[0], input) || spans.some(([s, e]) => start < e && end > s)) return [];
         if (severity === "blocker") spans.push([start, end]);
-        return [{ excerpt: `${context(text, start, Math.max(0, ...spans.map(([, e]) => (e <= start ? e : 0))))}${mask(m[0], r.label)}`, hint: r.hint, message: r.message }];
+        if (seen.has(m[0])) return [];
+        seen.add(m[0]);
+        return [{ r, match: m[0], start }];
       })
     );
-  return [gateResult("leaks", hits("blocker")), gateResult("leaks-warnings", hits("warning"), "warning")];
+  const blockers = found("blocker");
+  const warnings = found("warning");
+  const issue = ({ r, match, start }: (typeof blockers)[number]): GateIssue => ({
+    excerpt: `${context(text, start, Math.max(0, ...spans.map(([, e]) => (e <= start ? e : 0))))}${mask(match, r.label)}`,
+    hint: r.hint,
+    message: r.message,
+  });
+  return [gateResult("leaks", blockers.map(issue)), gateResult("leaks-warnings", warnings.map(issue), "warning")];
 }

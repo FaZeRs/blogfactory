@@ -27,18 +27,22 @@ const RELATED_PATH = "dataforseo_labs/google/related_keywords/live";
 
 type Env = Record<string, string | undefined>;
 export type DataForSeoSpend = {
-  /** Books `usd` against this month only if the month's total stays within `capUsd`; false when it would not. Must be atomic. */
-  reserve: (usd: number, capUsd: number) => Promise<boolean>;
-  /** Replaces a reservation with the billed cost (0 releases it). */
-  settle: (reservedUsd: number, usd: number) => Promise<void>;
+  /**
+   * Books `usd` against this month only if the month's total stays within `capUsd` (atomically); null when it would not.
+   * The returned settle replaces that reservation, in the month it was booked, with the billed cost (0 releases it).
+   */
+  reserve: (usd: number, capUsd: number) => Promise<((billedUsd: number) => Promise<void>) | null>;
 };
 type Deps = DataForSeoSpend & { fetchImpl?: typeof fetch };
 
 /** In-memory spend for tests and the eval CLI; the engine uses the shared Postgres one. */
 export function memorySpend(spentUsd = 0, onSettle?: (usd: number) => void): DataForSeoSpend & { spent: () => number } {
   return {
-    reserve: async (usd, capUsd) => (spentUsd + usd <= capUsd ? ((spentUsd += usd), true) : false),
-    settle: async (reservedUsd, usd) => { spentUsd += usd - reservedUsd; onSettle?.(usd); },
+    reserve: async (usd, capUsd) => {
+      if (spentUsd + usd > capUsd) return null;
+      spentUsd += usd;
+      return async (billedUsd) => { spentUsd += billedUsd - usd; onSettle?.(billedUsd); };
+    },
     spent: () => spentUsd,
   };
 }
@@ -165,14 +169,15 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
   /** Reserves the estimate first, so concurrent calls cannot all pass the cap; [] when the month's budget is spent. */
   async function call(path: string, body: Record<string, unknown>, estimate: number, signal?: AbortSignal): Promise<unknown[]> {
     signal?.throwIfAborted();
-    if (!(await deps.reserve(estimate, cap))) return [];
+    const settle = await deps.reserve(estimate, cap);
+    if (!settle) return [];
     let billed = 0;
     try {
       signal?.throwIfAborted(); // the reservation awaited; the run may have been cancelled meanwhile
       return await send(path, body, estimate, signal, (usd) => { billed = usd; });
     } finally {
       // a failed settle keeps the estimate booked (safe side) and must not replace the result or the original error
-      await deps.settle(estimate, billed).catch(() => {});
+      await settle(billed).catch(() => {});
     }
   }
 

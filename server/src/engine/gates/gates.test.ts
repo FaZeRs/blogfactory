@@ -243,6 +243,14 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
     expect(b?.issues[0]?.excerpt?.replace(/^(?:Use `)?(?:password=|secret: |api_key: '|https:\/\/|\?token=)?/, "").length).toBeLessThanOrEqual(5);
   }
   expect(blocked("Then set password=Hunter2isGreat in the file")[0]?.excerpt).toBe("Then set password=Hunt…");
+  // No excerpt carries an earlier secret as context, whatever the rule order, and repeats count as secrets too.
+  for (const md of ["sk-abcdefghijklmnopqrstuvwxyz ghp_abcdefghijklmnopqrstuvwxyz", "ghp_abcdefghijklmnopqrstuvwxyz sk-abcdefghijklmnopqrstuvwxyz", "sk-abcdefghijklmnopqrstuvwxyz and sk-abcdefghijklmnopqrstuvwxyz then ghp_abcdefghijklmnopqrstuvwxyz"]) {
+    const out = JSON.stringify(leak(md));
+    expect(out, md).not.toContain("abcdefghij");
+  }
+  // A real token for someone called John Doe still blocks; only the exact public samples pass.
+  const doe = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ sub: "u_42", name: "John Doe", iat: 1516239022 })).toString("base64url")}.realsignature1234567`;
+  expect(blocked(doe)).toHaveLength(1);
   // Words with digits may be part of a secret, so they never become context.
   expect(blocked("a1b2c3d4 sk-proj1234567890abcdefghij")[0]?.excerpt).toBe("sk-p…");
   // an earlier quoted secret never becomes context for the next hit

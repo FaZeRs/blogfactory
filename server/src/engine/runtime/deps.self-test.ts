@@ -16,13 +16,14 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
   try {
     // 20 concurrent 0.01 reservations against a 0.05 cap: exactly 5 land, never more.
     const results = await Promise.all(Array.from({ length: 20 }, () => dataForSeoSpend.reserve(0.01, 0.05)));
-    assert.equal(results.filter(Boolean).length, 5);
+    const landed = results.filter((r) => r !== null);
+    assert.equal(landed.length, 5);
     assert.ok(Math.abs((await spent()) - 0.05) < 1e-9);
     // settling swaps the estimate for the billed cost; 0 releases it
-    await dataForSeoSpend.settle(0.01, 0.004);
-    await dataForSeoSpend.settle(0.01, 0);
+    await landed[0]!(0.004);
+    await landed[1]!(0);
     assert.ok(Math.abs((await spent()) - 0.034) < 1e-9);
-    assert.equal(await dataForSeoSpend.reserve(1, 0.05), false, "an estimate above the cap never lands");
+    assert.equal(await dataForSeoSpend.reserve(1, 0.05), null, "an estimate above the cap never lands");
     console.log("dataforseo spend self-test ok");
   } finally {
     await db.delete(providerSpend).where(row);

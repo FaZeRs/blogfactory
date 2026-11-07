@@ -24,20 +24,21 @@ const month = () => new Date().toISOString().slice(0, 7);
 /** DataForSEO spend in Postgres, shared by every process; a reservation only lands while the month stays within the cap. */
 export const dataForSeoSpend: DataForSeoSpend = {
   async reserve(usd, capUsd) {
-    if (usd > capUsd) return false;
-    const rows = await db.insert(providerSpend).values({ provider: "dataforseo", month: month(), usd })
+    if (usd > capUsd) return null;
+    const booked = month(); // settled in this month even if the call ends after midnight UTC
+    const rows = await db.insert(providerSpend).values({ provider: "dataforseo", month: booked, usd })
       .onConflictDoUpdate({
         target: [providerSpend.provider, providerSpend.month],
         set: { usd: sql`${providerSpend.usd} + excluded.usd` },
         setWhere: sql`${providerSpend.usd} + excluded.usd <= ${capUsd}`,
       })
       .returning({ usd: providerSpend.usd });
-    return rows.length > 0;
-  },
-  async settle(reservedUsd, usd) {
-    if (usd === reservedUsd) return;
-    await db.update(providerSpend).set({ usd: sql`GREATEST(0, ${providerSpend.usd} + ${usd - reservedUsd})` })
-      .where(and(eq(providerSpend.provider, "dataforseo"), eq(providerSpend.month, month())));
+    if (!rows.length) return null;
+    return async (billedUsd) => {
+      if (billedUsd === usd) return;
+      await db.update(providerSpend).set({ usd: sql`GREATEST(0, ${providerSpend.usd} + ${billedUsd - usd})` })
+        .where(and(eq(providerSpend.provider, "dataforseo"), eq(providerSpend.month, booked)));
+    };
   },
 };
 
