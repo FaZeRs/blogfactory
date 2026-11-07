@@ -230,12 +230,6 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
     "password=Hunter2isGreat",
     "https://admin:s3cretpw@db.corp.net/x",
     "https://api.site.com/v1?token=abcdef1234567890abcd",
-    "192.168.1.20",
-    "10.0.0.5",
-    "http://localhost:3000",
-    "db01.internal",
-    "build.corp",
-    "nas.local",
   ];
   for (const s of secrets) {
     const [b] = leak(`Use \`${s}\` here.`);
@@ -244,6 +238,13 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
     expect(JSON.stringify(b)).not.toContain(s);
     expect(b?.issues[0]?.excerpt?.length).toBeLessThanOrEqual(5);
   }
+  // Setup guides show local addresses on purpose: a warning, not a blocker.
+  for (const host of ["192.168.1.20", "10.0.0.5", "http://localhost:3000", "db01.internal", "build.corp", "nas.local"]) {
+    const [b, w] = leak(`Open \`${host}\` in a browser.`);
+    expect(b?.passed, host).toBe(true);
+    expect(w?.passed, host).toBe(false);
+    expect(w?.severity).toBe("warning");
+  }
   const key = leak("-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----")[0];
   expect(key?.passed).toBe(false);
   expect(gateBlockers([key as never])[0]?.fix).toBe("Remove the private key");
@@ -251,7 +252,7 @@ test("leaks: every secret detector blocks, with a masked excerpt", () => {
 
 test("leaks: title, description and code blocks are scanned", () => {
   expect(leak("text", { title: "ghp_abcdefghijklmnopqrstuvwxyz1234" })[0]?.passed).toBe(false);
-  expect(leak("text", { description: "10.1.2.3" })[0]?.passed).toBe(false);
+  expect(leak("text", { description: "10.1.2.3" })[1]?.passed).toBe(false);
   expect(blocked("```\nAKIAQWERTYUIOPASDFGH\n```")).toHaveLength(1);
 });
 

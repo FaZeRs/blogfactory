@@ -47,8 +47,8 @@ const RULES: readonly LeakRule[] = [
     allow: (m) => PLACEHOLDER_RE.test(m) || (/^[?&]key=/i.test(m) && KEBAB_VALUE_RE.test(m.slice(m.indexOf("=") + 1))),
   },
   // Internal infrastructure.
-  { hint: "Remove the internal address", message: "contains a private IP address", re: /\b(?:10\.(?:\d{1,3}\.){2}\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|127\.(?:\d{1,3}\.){2}\d{1,3}|169\.254\.\d{1,3}\.\d{1,3})\b/g, severity: "blocker" },
-  { hint: "Remove the internal hostname", message: "contains an internal hostname", re: /\b(?:localhost\b|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:internal|local|corp|lan|localdomain)\b)/gi, severity: "blocker" },
+  { hint: "Remove the internal address", message: "contains a private IP address", re: /\b(?:10\.(?:\d{1,3}\.){2}\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|127\.(?:\d{1,3}\.){2}\d{1,3}|169\.254\.\d{1,3}\.\d{1,3})\b/g, severity: "warning" },
+  { hint: "Remove the internal hostname", message: "contains an internal hostname", re: /\b(?:localhost\b|[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:internal|local|corp|lan|localdomain)\b)/gi, severity: "warning" },
   // Personal data: a public contact can be legitimate, so these only warn.
   {
     hint: "Check this contact detail is meant to be public",
@@ -75,7 +75,8 @@ const RULES: readonly LeakRule[] = [
 
 /**
  * Secrets and private data in the title, description or markdown (code blocks included), reported as `leaks`
- * (secrets, keys, credentialed URLs, internal hosts: blockers) and `leaks-warnings` (emails, phone numbers).
+ * (secrets, keys, credentialed URLs: blockers) and `leaks-warnings` (emails, phone numbers, private IPs and internal hosts,
+ * which setup guides show on purpose, as in `localhost:5678`).
  * Excerpts are masked to 4 characters.
  */
 export function leaksGate(input: GateInput): GateResult[] {
