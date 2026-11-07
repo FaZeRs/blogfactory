@@ -88,7 +88,7 @@ const baseDeps: CollectorDeps = {
 };
 const all = await collectSignals(baseDeps);
 const bySource = Object.fromEntries(all.reports.map((r) => [r.source, r.count]));
-assert.deepEqual(bySource, { gsc: 1, news: 1, keywords: 1, paa: 1, rss: 1, competitor: 1, ai_gap: 1 });
+assert.deepEqual(bySource, { gsc: 1, news: 1, keywords: 1, paa: 1, rss: 1, competitor: 1, ai_gap: 1, feed: 0, hn: 0, reddit: 0, page: 0 });
 assert.match(all.signals.find((s) => s.source === "ai_gap")?.summary ?? "", /rival\.test, wiki\.test/);
 assert.equal(all.signals.find((s) => s.source === "gsc")?.metric?.position, 14.3);
 assert.equal(all.signals.find((s) => s.source === "keywords")?.metric?.volume, 900);

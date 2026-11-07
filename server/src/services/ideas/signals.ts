@@ -2,8 +2,9 @@ import type { SearchClient } from "../../engine/adapters/search.js";
 import type { DataForSeoClient } from "../../engine/adapters/types.js";
 import { sanitizeText, truncate } from "../../engine/util.js";
 import { tokens } from "./novelty.js";
+import type { IdeaSources } from "./settings.js";
 
-export const SIGNAL_SOURCES = ["gsc", "news", "keywords", "paa", "rss", "competitor", "ai_gap"] as const;
+export const SIGNAL_SOURCES = ["gsc", "news", "keywords", "paa", "rss", "competitor", "ai_gap", "feed", "hn", "reddit", "page"] as const;
 export type SignalSource = typeof SIGNAL_SOURCES[number];
 export type Signal = {
   id: string;
@@ -34,6 +35,12 @@ export type CollectorDeps = {
   fetchFeed: (url: string, limit: number, days: number) => Promise<FeedItem[]>;
   gscQueries: () => Promise<GscQueryRow[]>;
   feedUrls: () => Promise<string[]>;
+  /** The owner's idea sources; absent means none. */
+  sources?: IdeaSources;
+  /** A JSON GET that does not throw on an HTTP error status; the body is null when it is not JSON. */
+  fetchJson?: (url: string, signal?: AbortSignal) => Promise<{ status: number; body: unknown }>;
+  /** Receives a watched page's links after a successful read; discovery saves them as the next baseline. */
+  recordSeen?: (pageUrl: string, links: string[]) => void;
   /** AI-answer gaps the site could fill; absent means the source is skipped. */
   aiGaps?: () => Promise<{ question: string; competitorHosts: string[]; otherHosts: string[] }[]>;
 };
@@ -83,6 +90,87 @@ const daysAgo = (iso: string | undefined, now: Date) => {
   const t = iso ? Date.parse(iso) : NaN;
   return Number.isFinite(t) ? (now.getTime() - t) / 86_400_000 : null;
 };
+
+export const SEEN_LINKS_LIMIT = 300;
+const MAX_NEW_PAGE_LINKS = 15;
+const MAX_PAGE_SCAN = 2_000_000;
+
+/** Same-host `<a href>` links of a page whose URL contains `pattern` (a plain substring, case-insensitive), with their text. Forward scan: an unclosed tag stops it. */
+export function extractLinks(html: string, pageUrl: string, pattern?: string): { url: string; text: string }[] {
+  let base: URL;
+  try { base = new URL(pageUrl); } catch { return []; }
+  const host = base.hostname.replace(/^www\./, "").toLowerCase();
+  const needle = pattern?.toLowerCase();
+  const out = new Map<string, string>();
+  const open = /<a\s/gi;
+  const text = html.slice(0, MAX_PAGE_SCAN);
+  for (let m = open.exec(text); m; m = open.exec(text)) {
+    const tagEnd = text.indexOf(">", m.index);
+    const close = tagEnd === -1 ? -1 : text.indexOf("</a>", tagEnd);
+    if (close === -1) break;
+    const href = /href\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(text.slice(m.index, tagEnd))?.slice(1).find((v) => v !== undefined);
+    if (!href) continue;
+    let url: URL;
+    try { url = new URL(href.replace(/&amp;/g, "&"), base); } catch { continue; }
+    if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+    url.hash = "";
+    const abs = url.toString();
+    if (url.hostname.replace(/^www\./, "").toLowerCase() !== host || abs.replace(/\/$/, "") === base.toString().replace(/\/$/, "").replace(/#.*$/, "")) continue;
+    if (needle && !abs.toLowerCase().includes(needle)) continue;
+    const label = text.slice(tagEnd + 1, close).replace(/<[^>]*>/g, " ");
+    if (!out.has(abs)) out.set(abs, label);
+  }
+  return [...out].map(([url, label]) => ({ url, text: label }));
+}
+
+/** First run (no baseline) emits nothing; later runs emit links not in the baseline. The new baseline lists current links first, capped. */
+export function diffLinks(links: { url: string; text: string }[], seen: string[] | undefined): { fresh: { url: string; text: string }[]; baseline: string[] } {
+  const known = new Set(seen ?? []);
+  const baseline = [...new Set([...links.map((l) => l.url), ...(seen ?? [])])].slice(0, SEEN_LINKS_LIMIT);
+  return { fresh: seen ? links.filter((l) => !known.has(l.url)) : [], baseline };
+}
+
+const hostOf = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+export function parseHnHits(body: unknown, query: string, minPoints: number, now: Date): RawSignal[] {
+  const out: RawSignal[] = [];
+  for (const h of list(obj(body).hits).slice(0, 10)) {
+    const hit = obj(h);
+    const title = typeof hit.title === "string" ? hit.title : "";
+    const created = typeof hit.created_at === "string" ? hit.created_at : undefined;
+    const age = daysAgo(created, now);
+    if (!title || num(hit.points) < minPoints || (age !== null && age > FRESH_DAYS)) continue;
+    const id = typeof hit.objectID === "string" ? hit.objectID : "";
+    const url = typeof hit.url === "string" && hit.url ? hit.url : id ? `https://news.ycombinator.com/item?id=${encodeURIComponent(id)}` : undefined;
+    out.push({
+      source: "hn", title: clean(title, 200), url, publishedAt: created,
+      summary: `Hacker News: ${num(hit.points)} points, ${num(hit.num_comments)} comments (search "${clean(query, 80)}")`,
+      metric: { points: num(hit.points), comments: num(hit.num_comments) },
+    });
+  }
+  return out;
+}
+
+export function parseRedditPosts(body: unknown, subreddit: string, now: Date): RawSignal[] {
+  const out: RawSignal[] = [];
+  for (const c of list(obj(obj(body).data).children).slice(0, 10)) {
+    const post = obj(obj(c).data);
+    const title = typeof post.title === "string" ? post.title : "";
+    const created = num(post.created_utc) ? new Date(num(post.created_utc) * 1000).toISOString() : undefined;
+    const age = daysAgo(created, now);
+    if (!title || post.stickied === true || post.over_18 === true || (age !== null && age > FRESH_DAYS)) continue;
+    const permalink = typeof post.permalink === "string" && post.permalink.startsWith("/") ? `https://www.reddit.com${post.permalink}` : undefined;
+    out.push({
+      source: "reddit", title: clean(title, 200), url: permalink, publishedAt: created,
+      summary: `r/${subreddit}: ${num(post.score)} upvotes, ${num(post.num_comments)} comments this week`,
+      metric: { score: num(post.score), comments: num(post.num_comments) },
+    });
+  }
+  return out;
+}
 
 type Collector = (d: CollectorDeps, signal: AbortSignal) => Promise<RawSignal[]>;
 
@@ -140,6 +228,73 @@ const collectors: Record<SignalSource, Collector> = {
       signal.throwIfAborted();
       const items = await d.fetchFeed(url, 8, FRESH_DAYS).catch((e) => { if (signal.aborted) throw e; return []; });
       for (const i of items) out.push({ source: "rss", title: clean(i.title, 200), summary: "Item from a feed configured for this site", url: i.url, publishedAt: i.pubDate });
+    }
+    return out;
+  },
+
+  async feed(d, signal) {
+    const feeds = d.sources?.feeds ?? [];
+    const groups = await Promise.all(feeds.slice(0, 20).map(async (url) => {
+      const items = await d.fetchFeed(url, 8, FRESH_DAYS).catch((e) => { if (signal.aborted) throw e; return []; });
+      return items.slice(0, 8).map((i) => ({ source: "feed" as const, title: clean(i.title, 200), summary: `Item from an idea feed (${hostOf(url)})`, url: i.url, publishedAt: i.pubDate }));
+    }));
+    return groups.flat();
+  },
+
+  async hn(d, signal) {
+    const queries = d.sources?.hn.queries ?? [];
+    if (!queries.length || !d.fetchJson) return [];
+    const since = Math.floor((d.now().getTime() - FRESH_DAYS * 86_400_000) / 1000);
+    const out: RawSignal[] = [];
+    let failed = 0;
+    for (const q of queries.slice(0, 10)) {
+      signal.throwIfAborted();
+      try {
+        const filters = encodeURIComponent(`points>=${d.sources!.hn.minPoints},created_at_i>${since}`);
+        const res = await d.fetchJson(`https://hn.algolia.com/api/v1/search_by_date?query=${encodeURIComponent(q)}&tags=story&numericFilters=${filters}&hitsPerPage=10`, signal);
+        if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+        out.push(...parseHnHits(res.body, q, d.sources!.hn.minPoints, d.now()));
+      } catch (e) {
+        if (signal.aborted) throw e;
+        failed += 1;
+        if (failed === queries.length) throw e;
+      }
+    }
+    return out;
+  },
+
+  async reddit(d, signal) {
+    const out: RawSignal[] = [];
+    for (const name of (d.sources?.subreddits ?? []).slice(0, 10)) {
+      if (!d.fetchJson) break;
+      signal.throwIfAborted();
+      try {
+        const res = await d.fetchJson(`https://www.reddit.com/r/${encodeURIComponent(name)}/top.json?t=week&limit=10`, signal);
+        // Reddit answers 429 (or 403) fast when it wants fewer requests: stop asking this run, keep what we have.
+        if (res.status === 429 || res.status === 403) break;
+        if (res.status === 200) out.push(...parseRedditPosts(res.body, name, d.now()));
+      } catch (e) {
+        if (signal.aborted) throw e;
+      }
+    }
+    return out;
+  },
+
+  async page(d, signal) {
+    const out: RawSignal[] = [];
+    for (const page of (d.sources?.pages ?? []).slice(0, 10)) {
+      signal.throwIfAborted();
+      try {
+        const links = extractLinks(await d.fetchText(page.url, signal), page.url, page.pattern);
+        if (!links.length) continue; // a layout change must not wipe the baseline
+        const { fresh, baseline } = diffLinks(links, d.sources!.seen[page.url]);
+        d.recordSeen?.(page.url, baseline);
+        for (const l of fresh.slice(0, MAX_NEW_PAGE_LINKS)) {
+          out.push({ source: "page", title: clean(l.text.trim().length >= 3 ? l.text : slugTitle(l.url), 200), summary: `New link on a watched page (${hostOf(page.url)})`, url: l.url });
+        }
+      } catch (e) {
+        if (signal.aborted) throw e;
+      }
     }
     return out;
   },

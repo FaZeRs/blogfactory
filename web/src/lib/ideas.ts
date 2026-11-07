@@ -27,12 +27,21 @@ export interface CalendarSlot {
   idea: { id: string; title: string; status: IdeaStatus; score: number | null; mode: IdeaMode; jobId: string | null; error: string | null } | null;
   post: { id: string; title: string; status: string } | null;
 }
+export interface IdeaSources {
+  feeds: string[];
+  hn: { queries: string[]; minPoints: number };
+  subreddits: string[];
+  pages: { url: string; pattern?: string }[];
+  /** Written by discovery; saved back unchanged and ignored by the server. */
+  seen: Record<string, string[]>;
+}
 export interface IdeaSettings {
   cadence: { weekdays: number[]; time: string; timezone: string };
   leadDays: number; defaultMode: IdeaMode;
   autopilot: { enabled: boolean; approvePerWeek: number; minScore: number };
   weights: { trend: number; fit: number; demand: number; feasibility: number; novelty: number; gain: number };
   seedTopics: string[]; competitors: string[];
+  sources: IdeaSources;
   learnWeights: boolean; weightsLearnedMonth: string | null;
   weightHistory: { month: string; samples: number; weights: IdeaSettings["weights"] }[];
 }
