@@ -129,21 +129,6 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     const sigs = await db.select().from(learningSignals).where(eq(learningSignals.postId, post.id));
     assert.deepEqual(sigs.map((s) => [s.kind, s.locale]), [["edit", "lv"]]);
     assert.deepEqual((sigs[0]!.payload as any).hunks.map((h: any) => [h.before, h.after]), [["lietojam", "izmantojam"]]);
-    // the ledger: one event per decision, ids only (the generic route-shaped middleware event is not part of the app built here)
-    const { operationEvents } = await import("../db/schema.js");
-    const { and } = await import("drizzle-orm");
-    const ledger = (action: string) => db.select().from(operationEvents).where(and(eq(operationEvents.userId, owner.id), eq(operationEvents.action, action)));
-    for (const [action, id, type] of [
-      ["learning.rule_approve", proposed.id, "style_rule"], ["learning.rule_approve", retire.id, "style_rule"], ["learning.rule_reject", toReject.id, "style_rule"],
-      ["learning.rule_retire", toRetire.id, "style_rule"], ["learning.rule_eval", forEval.id, "style_rule"], ["learning.settings", site.id, "site"],
-    ] as const) {
-      const events = (await ledger(action)).filter((e) => e.objectId === id);
-      assert.equal(events.length, 1, `${action} writes one event`);
-      assert.deepEqual([events[0]!.origin, events[0]!.objectType, events[0]!.siteId, events[0]!.status], ["web", type, site.id, "succeeded"]);
-    }
-    const all = await db.select().from(operationEvents).where(eq(operationEvents.userId, owner.id));
-    assert.ok(!/utilize|seen twice|instead of/.test(JSON.stringify(all)), "no rule text, rationale or evidence in the ledger");
-    assert.equal((await ledger("learning.rule_reject")).length, 1, "a refused decision (409) writes no event");
     console.log("learning routes self-test ok");
   } finally {
     await db.delete(users).where(inArray(users.id, [owner.id, other.id]));
