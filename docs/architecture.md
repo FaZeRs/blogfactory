@@ -169,7 +169,7 @@ Research also reads the top-ranking pages for the topic (`article_sources.kind =
 ## Ideas and scheduling
 
 `server/src/services/ideas/` finds and schedules article ideas per site:
-- **Discovery** (`ideas.discovery`, the worker's `ideas` drain) collects signals from Search Console, SearXNG news, DataForSEO keyword ideas and People also ask, the site's RSS feeds, and competitor sitemaps.
+- **Discovery** (`ideas.discovery`, the worker's `ideas` drain) collects signals from Search Console, SearXNG news, DataForSEO keyword ideas and People also ask, the site's RSS feeds, competitor sitemaps, AI-answer gaps, and the owner's **idea sources** (`IdeaSettings.sources`: idea-only feeds, Hacker News searches, subreddits, and watched pages whose new same-host links become signals after a first baseline run). Each source has its own timeout; a failing one is logged by name and counted in the ledger, and the others continue. Unauthenticated Reddit is often refused (403/429) from server IPs.
 - **Scoring:** one model call turns the signals into candidates, and code scores them as a weighted geometric mean of trend, fit, demand, feasibility, novelty and information gain.
 - **Approval:** ideas wait in `ideas` (status `new`) for the owner. Approving books a cadence slot (`schedule.ts`, which never double-books).
 - **Generation:** `startDueIdeas` starts a normal or deep run `leadDays` before the slot. The delivered draft carries `posts.publish_at`, which the Send to CMS dialog pre-fills. Delivery stays draft-only.

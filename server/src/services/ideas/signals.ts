@@ -93,7 +93,7 @@ const daysAgo = (iso: string | undefined, now: Date) => {
 
 export const SEEN_LINKS_LIMIT = 300;
 const MAX_NEW_PAGE_LINKS = 15;
-const MAX_PAGE_SCAN = 2_000_000;
+const MAX_PAGE_SCAN = 5_000_000;
 
 /** Same-host `<a href>` links of a page whose URL contains `pattern` (a plain substring, case-insensitive), with their text. Forward scan: an unclosed tag stops it. */
 export function extractLinks(html: string, pageUrl: string, pattern?: string): { url: string; text: string }[] {
@@ -265,24 +265,32 @@ const collectors: Record<SignalSource, Collector> = {
 
   async reddit(d, signal) {
     const out: RawSignal[] = [];
+    let failure = "";
     for (const name of (d.sources?.subreddits ?? []).slice(0, 10)) {
       if (!d.fetchJson) break;
       signal.throwIfAborted();
       try {
         const res = await d.fetchJson(`https://www.reddit.com/r/${encodeURIComponent(name)}/top.json?t=week&limit=10`, signal);
         // Reddit answers 429 (or 403) fast when it wants fewer requests: stop asking this run, keep what we have.
-        if (res.status === 429 || res.status === 403) break;
+        if (res.status === 429 || res.status === 403) { failure = `Reddit refused (HTTP ${res.status})`; break; }
         if (res.status === 200) out.push(...parseRedditPosts(res.body, name, d.now()));
+        else failure ||= `r/${name}: HTTP ${res.status}`;
       } catch (e) {
         if (signal.aborted) throw e;
+        failure ||= `r/${name}: ${(e as Error)?.message ?? "failed"}`;
       }
     }
+    // Nothing collected and something failed: report it, so the owner sees why the source is empty.
+    if (!out.length && failure) throw new Error(failure);
     return out;
   },
 
   async page(d, signal) {
     const out: RawSignal[] = [];
-    for (const page of (d.sources?.pages ?? []).slice(0, 10)) {
+    let failed = 0;
+    let failure = "";
+    const pages = (d.sources?.pages ?? []).slice(0, 10);
+    for (const page of pages) {
       signal.throwIfAborted();
       try {
         const links = extractLinks(await d.fetchText(page.url, signal), page.url, page.pattern);
@@ -294,8 +302,11 @@ const collectors: Record<SignalSource, Collector> = {
         }
       } catch (e) {
         if (signal.aborted) throw e;
+        failed += 1;
+        failure ||= `${hostOf(page.url)}: ${(e as Error)?.message ?? "failed"}`;
       }
     }
+    if (pages.length && failed === pages.length) throw new Error(failure);
     return out;
   },
 

@@ -87,6 +87,10 @@ assert.deepEqual(redditCalls.length, 2, "a 429 stops further Reddit calls");
 assert.equal(count(reddit, "reddit")?.count, 1);
 assert.equal(count(reddit, "reddit")?.error, undefined, "a 429 is not fatal");
 assert.equal(reddit.signals.find((x) => x.source === "reddit")?.url, "https://www.reddit.com/r/x/comments/0/t/");
+const refused = await collectSignals(base({ sources: { ...base().sources!, subreddits: ["one"] }, fetchJson: async () => ({ status: 403, body: null }) }));
+assert.deepEqual([count(refused, "reddit")?.count, count(refused, "reddit")?.error], [0, "Reddit refused (HTTP 403)"], "a refusal with nothing collected is reported");
+const badPage = await collectSignals(base({ sources: { ...base().sources!, pages: [{ url: "https://p.test/blog" }] }, fetchText: async () => { throw new Error("Response is too large"); } }));
+assert.equal(count(badPage, "page")?.error, "p.test: Response is too large", "every watched page failing is reported");
 
 const feed = await collectSignals(base({
   sources: { ...base().sources!, feeds: ["https://a.test/feed", "https://b.test/feed"] },

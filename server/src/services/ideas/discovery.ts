@@ -190,7 +190,8 @@ export async function loadDiscoveryDeps(userId: string, engineSettings: unknown)
       search: createSearchClient(process.env, dataForSeo),
       dataForSeo,
       fetchText: async (url, signal) => {
-        const res = await safeFetch(url, { signal, timeoutMs: 15_000, maxResponseBytes: 2 * 1024 * 1024 });
+        // Watched pages (docs and changelog indexes) can be several megabytes.
+        const res = await safeFetch(url, { signal, timeoutMs: 15_000, maxResponseBytes: 5 * 1024 * 1024 });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
       },
@@ -272,6 +273,7 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
     });
     sources = reports.filter((r) => r.count > 0).map((r) => r.source).join(",");
     failedCollectors = reports.filter((r) => r.error).length;
+    for (const r of reports) if (r.error) console.warn(`[ideas] Discovery source ${r.source} failed: ${r.error}`);
     result.signalCount = signals.length;
 
     if (signals.length) {
