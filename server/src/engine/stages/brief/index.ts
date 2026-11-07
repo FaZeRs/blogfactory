@@ -163,7 +163,8 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       guidance: fenceData("editor-direction", input.guidance || "None."),
       today: now().toISOString().slice(0, 10),
     });
-    const relatedSet = new Set(related.map((r) => r.keyword.toLowerCase()));
+    // Lowercased offer -> the keyword as DataForSEO spells it, so a recased pick neither duplicates nor drifts.
+    const offered = new Map(related.map((r) => [r.keyword.trim().toLowerCase(), r.keyword.trim()]));
     const check = { links: new Set(input.links.map((l) => l.url)), verifiedIds: new Set(input.evidence.map((e) => e.id)), minClaims: input.minClaims, profile: input.profile };
     const usage: NonNullable<Awaited<ReturnType<Stage<unknown, unknown>["run"]>>["usage"]> = [];
     let feedback = "";
@@ -181,7 +182,7 @@ export const briefStage: Stage<BriefInput, BriefOutput> = {
       usage.push({ model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, costUsd: r.costUsd });
       const planned = repairBrief(fitLengthPlan(r.value, target));
       // Only searches the keyword data offered: a secondary keyword the model made up has no demand behind it.
-      const brief: Brief = { ...planned, secondaryKeywords: [...new Set((planned.secondaryKeywords ?? []).filter((k) => relatedSet.has(k.trim().toLowerCase())).map((k) => k.trim()))].slice(0, 5) };
+      const brief: Brief = { ...planned, secondaryKeywords: [...new Set((planned.secondaryKeywords ?? []).flatMap((k) => offered.get(k.trim().toLowerCase()) ?? []))].slice(0, 5) };
       issues = validateBrief(brief, check).map(sanitizeText);
       if (issues.length === 0) {
         // Long topics rarely have search data; the chosen keyword usually does. Recorded for the reviewer, not the prompt.

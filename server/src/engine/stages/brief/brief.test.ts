@@ -80,7 +80,7 @@ test("related searches reach the prompt; secondary keywords outside them are dro
   const kw = (keyword: string, volume: number | null) => ({ keyword, volume, difficulty: null, intent: null, aiOverview: false });
   const dataForSeo = { serp: async () => [], peopleAlsoAsk: async () => [], keywordOverview: async () => null, keywordIdeas: async () => [],
     relatedKeywords: async () => [kw("solar panels", 9000), kw("solar panel cost", 2400), kw("best solar panels", 5000), kw("Solar Panel Cost", 10), kw("vps hosting", 8100)] };
-  const { ctx, llm } = fakeCtx({ llm: { brief: [good({ secondaryKeywords: ["best solar panels", " solar panel cost", "made up phrase"] })] }, dataForSeo });
+  const { ctx, llm } = fakeCtx({ llm: { brief: [good({ secondaryKeywords: ["best solar panels", " solar panel cost", "Solar Panel COST", "made up phrase"] })] }, dataForSeo });
   const out = await briefStage.run({ ...input, keywordData: true }, ctx);
   expect(llm.calls[0]?.user).toContain("- best solar panels (5000)\n- solar panel cost (2400)");
   expect(llm.calls[0]?.user).not.toContain("- solar panels (9000)");

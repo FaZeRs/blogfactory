@@ -42,7 +42,7 @@ export const reviseStage: Stage<ReviseInput, DraftOutput> = {
     const problems = input.blockers
       .map((b) => `- [${b.gate}] ${sanitizeText(b.message)}${b.excerpt ? `\n    text: "${sanitizeText(b.excerpt)}"` : ""}${b.fix ? `\n    hint: ${sanitizeText(b.fix)}` : ""}`)
       .join("\n");
-    const { keywordData: _k, ...brief } = input.brief;
+    const { keywordData: _k, relatedKeywords: _r, ...brief } = input.brief;
     const prompt = await preparePrompt("revise", {
       dataRule: DATA_RULE,
       ...componentVars(input),

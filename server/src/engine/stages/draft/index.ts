@@ -47,8 +47,8 @@ export function componentVars(input: Pick<DraftInput, "brief" | "profile">) {
   };
 }
 
-/** The brief as the writer reads it: the keyword lookup is code data, not part of the plan. */
-const briefForPrompt = ({ keywordData: _k, ...brief }: BriefOutput) => JSON.stringify(brief, null, 2);
+/** The brief as the writer reads it: the keyword lookups are code data, not part of the plan. */
+const briefForPrompt = ({ keywordData: _k, relatedKeywords: _r, ...brief }: BriefOutput) => JSON.stringify(brief, null, 2);
 
 /** What the writer stages (draft, revise) read: the brief, verified evidence and the sources to cite. */
 export async function loadWriterContext(run: ArticleRunRow): Promise<DraftInput> {

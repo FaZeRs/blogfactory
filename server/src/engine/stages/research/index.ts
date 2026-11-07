@@ -82,20 +82,20 @@ const hostOf = (url: string) => new URL(url).hostname.replace(/^www\./, "");
 
 /** Each query's top hit first, then each one's second, and so on, with at most two pages per site: the page budget spreads over queries and sites. */
 export function diverseUrls(perQuery: string[][]): string[] {
-  const urls: string[] = [];
+  const urls = new Set<string>();
   const perHost = new Map<string, number>();
   const depth = Math.max(0, ...perQuery.map((q) => q.length));
   for (let i = 0; i < depth; i += 1) {
     for (const hits of perQuery) {
       const url = hits[i];
-      if (!url || urls.includes(url)) continue;
+      if (!url || urls.has(url)) continue;
       const host = hostOf(url);
       if ((perHost.get(host) ?? 0) >= MAX_PAGES_PER_HOST) continue;
       perHost.set(host, (perHost.get(host) ?? 0) + 1);
-      urls.push(url);
+      urls.add(url);
     }
   }
-  return urls;
+  return [...urls];
 }
 
 const usage = (r: { model: string; promptTokens: number; completionTokens: number; costUsd: number }) => ({

@@ -292,4 +292,6 @@ test("leaks: emails and phones only warn; own-domain role address is allowed", (
   expect(cb?.passed).toBe(false);
   expect(cw?.issues).toHaveLength(1);
   expect(JSON.stringify(cw)).not.toContain("s3cr");
+  // A password with a character outside the email's local part must not leak either.
+  expect(JSON.stringify(leak("See https://admin:pa!ss@db.acme.io/x")[1])).not.toContain("ss@");
 });

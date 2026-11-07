@@ -75,7 +75,7 @@ const OverviewItem = z.object({
   serp_info: z.object({ serp_item_types: z.array(z.string()).nullish().catch(null) }).nullish().catch(null),
 });
 
-const RelatedItem = z.object({ keyword_data: z.unknown() });
+const RelatedItem = z.object({ keyword_data: OverviewItem });
 
 /** Items that fit `schema`; one that does not is dropped, never fatal. */
 function parseItems<T>(items: readonly unknown[] | null | undefined, schema: z.ZodType<T>): T[] {
@@ -261,8 +261,7 @@ export function createDataForSeoClient(env: Env, deps: Deps): DataForSeoClient |
       );
       return parseItems(result, OverviewResult)
         .flatMap((r) => parseItems(r.items, RelatedItem))
-        .flatMap((i) => parseItems([i.keyword_data], OverviewItem))
-        .map(toOverview)
+        .map((i) => toOverview(i.keyword_data))
         .filter((k) => (k.volume ?? 0) > 0);
     },
 
