@@ -103,6 +103,45 @@ if (process.env.POSTGRES_INTEGRATION_ALLOW_WRITES !== "1") {
     assert.equal(failedRow.status, "failed");
     assert.ok(failedRow.error);
     assert.deepEqual(await drainIdeaDiscoveries(1, deps as never), { processed: 0, failed: 0 });
+
+    // idea sources: signals reach the candidate call as fenced data, the baseline is saved by discovery only
+    const [src] = await db.insert(sites).values({ userId: user.id, name: "Src", domain: "src.example.test", topics: ["widgets"] }).returning();
+    const pageUrl = "https://watch.example.test/blog";
+    await saveIdeaSettings(user.id, src.id, { sources: {
+      feeds: ["https://feed.example.test/rss"], hn: { queries: ["widgets"], minPoints: 10 }, subreddits: ["widgets"],
+      pages: [{ url: pageUrl, pattern: "/blog/" }], seen: { [pageUrl]: ["https://forged.example.test/"] },
+    } });
+    assert.equal((await getIdeaSettings(user.id, src.id)).sources.seen[pageUrl], undefined, "a save never sets the seen links");
+    const srcDeps = (links: string[], llm: ReturnType<typeof createFakeLlm>) => ({
+      ...deps, llm,
+      collectors: {
+        ...deps.collectors, search: createFakeSearch({}),
+        fetchText: async () => links.map((l) => `<a href="/blog/${l}">Post ${l}</a>`).join(""),
+        fetchFeed: async () => [{ title: "Feed idea about widgets", url: "https://feed.example.test/1" }],
+        fetchJson: async (url: string) => ({ status: 200, body: url.includes("reddit")
+          ? { data: { children: [{ data: { title: "Reddit widget thread", permalink: "/r/widgets/comments/1/t/", created_utc: Date.now() / 1000 } }] } }
+          : { hits: [{ title: "HN widget story", url: "https://hn.example.test/1", points: 30, num_comments: 4, created_at: new Date().toISOString(), objectID: "9" }] } }),
+      },
+    });
+    const llmSrc = createFakeLlm({ brief: [{ ideas: [idea("Widget idea one", "widget one")] }] });
+    await queueDiscovery(user.id, src.id);
+    await drainIdeaDiscoveries(1, srcDeps(["a", "b"], llmSrc) as never);
+    const prompt = String(llmSrc.calls[0].user);
+    for (const t of ["Feed idea about widgets", "HN widget story", "Reddit widget thread"]) assert.ok(prompt.includes(t), t);
+    assert.ok(!prompt.includes("Post a"), "the first run of a watched page only records the baseline");
+    assert.deepEqual((await getIdeaSettings(user.id, src.id)).sources.seen[pageUrl]?.sort(), ["https://watch.example.test/blog/a", "https://watch.example.test/blog/b"]);
+    const [srcEvent] = await db.select().from(operationEvents).where(and(eq(operationEvents.userId, user.id), eq(operationEvents.siteId, src.id)));
+    assert.match((srcEvent.metadata as { sources: string }).sources, /feed.*hn.*reddit/);
+    // the owner's save keeps the baseline, and the second run emits only the new link
+    const current = await getIdeaSettings(user.id, src.id);
+    await saveIdeaSettings(user.id, src.id, { ...current, sources: { ...current.sources, seen: {} } });
+    assert.equal((await getIdeaSettings(user.id, src.id)).sources.seen[pageUrl]?.length, 2);
+    const llmSrc2 = createFakeLlm({ brief: [{ ideas: [] }] });
+    await queueDiscovery(user.id, src.id);
+    await drainIdeaDiscoveries(1, srcDeps(["a", "b", "c"], llmSrc2) as never);
+    const prompt2 = String(llmSrc2.calls[0].user);
+    assert.ok(prompt2.includes("Post c") && !prompt2.includes("Post a"));
+    assert.equal((await getIdeaSettings(other.id, foreign.id)).sources.seen[pageUrl], undefined, "another user's site is untouched");
   } finally {
     await db.delete(users).where(eq(users.id, user.id));
     await db.delete(users).where(eq(users.id, other.id));

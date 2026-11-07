@@ -1,8 +1,24 @@
+import { BUILT_IN_SOURCES, SEEN_LINKS_LIMIT, type BuiltInSource } from "./signals.js";
 import { getEffectiveSettings, updateSiteSettings } from "../user-settings.js";
 
 export const SCORE_FACTORS = ["trend", "fit", "demand", "feasibility", "novelty", "gain"] as const;
 export type ScoreFactor = typeof SCORE_FACTORS[number];
 export type ScoreWeights = Record<ScoreFactor, number>;
+
+/** Where discovery looks besides Search Console and the site's own feeds. */
+export type IdeaSources = {
+  /** Idea-only feeds; they never generate articles. */
+  feeds: string[];
+  hn: { queries: string[]; minPoints: number };
+  /** Subreddit names without "r/". */
+  subreddits: string[];
+  /** `pattern` is a plain substring of the link URL, not a regex. */
+  pages: { url: string; pattern?: string }[];
+  /** Built-in sources the owner switched off; discovery skips them. */
+  off: BuiltInSource[];
+  /** Links already seen per page URL (the baseline); written by discovery only. */
+  seen: Record<string, string[]>;
+};
 
 export type IdeaSettings = {
   /** Weekdays use JS numbering: 0 Sunday ... 6 Saturday. */
@@ -15,6 +31,7 @@ export type IdeaSettings = {
   seedTopics: string[];
   /** Competitor domains whose sitemaps are scanned for new pages. */
   competitors: string[];
+  sources: IdeaSources;
   /** Monthly weight learning from search results; off freezes the weights. */
   learnWeights: boolean;
   /** UTC month (YYYY-MM) the weights last moved; written by learning only. */
@@ -36,6 +53,7 @@ export const DEFAULT_IDEA_SETTINGS: IdeaSettings = {
   weights: DEFAULT_WEIGHTS,
   seedTopics: [],
   competitors: [],
+  sources: { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], off: [], seen: {} },
   learnWeights: true,
   weightsLearnedMonth: null,
   weightHistory: [],
@@ -59,6 +77,36 @@ export function bareDomain(v: unknown): string | null {
 export function isValidTimezone(tz: unknown): tz is string {
   if (typeof tz !== "string" || !tz) return false;
   try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; }
+}
+
+const httpUrl = (v: unknown): string | null => {
+  if (typeof v !== "string") return null;
+  try {
+    const u = new URL(v.trim());
+    return (u.protocol === "http:" || u.protocol === "https:") && v.trim().length <= 500 ? u.toString() : null;
+  } catch { return null; }
+};
+
+function sourcesOf(raw: unknown): IdeaSources {
+  const r = obj(raw);
+  const hn = obj(r.hn);
+  const pages: IdeaSources["pages"] = [];
+  for (const p of Array.isArray(r.pages) ? r.pages : []) {
+    const url = httpUrl(obj(p).url);
+    const pattern = typeof obj(p).pattern === "string" ? (obj(p).pattern as string).trim().slice(0, 100) : "";
+    if (url && !pages.some((x) => x.url === url) && pages.length < 10) pages.push(pattern ? { url, pattern } : { url });
+  }
+  const seen: IdeaSources["seen"] = {};
+  const rawSeen = obj(r.seen);
+  for (const { url } of pages) if (Array.isArray(rawSeen[url])) seen[url] = strings(rawSeen[url], SEEN_LINKS_LIMIT, 500);
+  return {
+    feeds: [...new Set(strings(r.feeds, 40, 500).flatMap((u) => httpUrl(u) ?? []))].slice(0, 20),
+    hn: { queries: strings(hn.queries, 10, 80), minPoints: int(hn.minPoints, 0, 1000, DEFAULT_IDEA_SETTINGS.sources.hn.minPoints) },
+    subreddits: [...new Set(strings(r.subreddits, 20, 30).flatMap((n) => { const name = n.replace(/^\/?r\//i, ""); return /^[A-Za-z0-9_]{2,21}$/.test(name) ? [name] : []; }))].slice(0, 10),
+    pages,
+    off: BUILT_IN_SOURCES.filter((s) => Array.isArray(r.off) && r.off.includes(s)),
+    seen,
+  };
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -106,6 +154,7 @@ export function normalizeIdeaSettings(raw: unknown): IdeaSettings {
     weights: weightsOf(r.weights),
     seedTopics: strings(r.seedTopics, 20, 120),
     competitors: [...new Set(strings(r.competitors, 20, 300).flatMap((d) => bareDomain(d) ?? []))].slice(0, 10),
+    sources: sourcesOf(r.sources),
     learnWeights: r.learnWeights !== false,
     weightsLearnedMonth: typeof r.weightsLearnedMonth === "string" && MONTH.test(r.weightsLearnedMonth) ? r.weightsLearnedMonth : null,
     weightHistory: history,
@@ -116,12 +165,23 @@ export async function getIdeaSettings(userId: string, siteId: string): Promise<I
   return normalizeIdeaSettings((await getEffectiveSettings(userId, siteId)).ideaSettings);
 }
 
-/** The web save: learning's own fields (month, history) always keep their stored values. */
+/** The web save: learning's own fields (month, history) and the watched pages' seen links always keep their stored values. */
 export async function saveIdeaSettings(userId: string, siteId: string, input: unknown): Promise<IdeaSettings> {
   const stored = await getIdeaSettings(userId, siteId);
-  const ideaSettings = { ...normalizeIdeaSettings(input), weightsLearnedMonth: stored.weightsLearnedMonth, weightHistory: stored.weightHistory };
+  const next = normalizeIdeaSettings(input);
+  // Re-normalizing the stored seen links against the submitted pages drops those of removed pages; a changed pattern restarts its baseline.
+  const patternOf = (pages: IdeaSources["pages"], url: string) => pages.find((p) => p.url === url)?.pattern;
+  const seen = Object.fromEntries(Object.entries(stored.sources.seen).filter(([url]) => patternOf(stored.sources.pages, url) === patternOf(next.sources.pages, url)));
+  const sources = sourcesOf({ ...next.sources, seen });
+  const ideaSettings = { ...next, sources, weightsLearnedMonth: stored.weightsLearnedMonth, weightHistory: stored.weightHistory };
   await updateSiteSettings(userId, siteId, { ideaSettings });
   return ideaSettings;
+}
+
+/** Discovery's own write: only the seen links change, on top of whatever the owner saved meanwhile. */
+export async function saveSeenLinks(userId: string, siteId: string, seen: IdeaSources["seen"]): Promise<void> {
+  const stored = await getIdeaSettings(userId, siteId);
+  await updateSiteSettings(userId, siteId, { ideaSettings: { ...stored, sources: sourcesOf({ ...stored.sources, seen: { ...stored.sources.seen, ...seen } }) } });
 }
 
 /** The site's own topics plus the settings' extras, deduped, for discovery. */

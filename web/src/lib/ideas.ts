@@ -27,12 +27,33 @@ export interface CalendarSlot {
   idea: { id: string; title: string; status: IdeaStatus; score: number | null; mode: IdeaMode; jobId: string | null; error: string | null } | null;
   post: { id: string; title: string; status: string } | null;
 }
+export const BUILT_IN_SOURCES = [
+  { key: "gsc", label: "Search Console", hint: "searches your site already appears for" },
+  { key: "news", label: "News", hint: "recent news on your topics" },
+  { key: "keywords", label: "Keyword ideas", hint: "DataForSEO keyword data" },
+  { key: "paa", label: "People also ask", hint: "questions searchers ask" },
+  { key: "rss", label: "Site feeds", hint: "feeds in Sources → RSS" },
+  { key: "competitor", label: "Competitor pages", hint: "new pages in competitor sitemaps" },
+  { key: "ai_gap", label: "AI answer gaps", hint: "questions where AI cites others" },
+] as const;
+export type BuiltInSource = typeof BUILT_IN_SOURCES[number]["key"];
+export interface IdeaSources {
+  feeds: string[];
+  hn: { queries: string[]; minPoints: number };
+  subreddits: string[];
+  pages: { url: string; pattern?: string }[];
+  /** Built-in sources switched off. */
+  off: BuiltInSource[];
+  /** Written by discovery; saved back unchanged and ignored by the server. */
+  seen: Record<string, string[]>;
+}
 export interface IdeaSettings {
   cadence: { weekdays: number[]; time: string; timezone: string };
   leadDays: number; defaultMode: IdeaMode;
   autopilot: { enabled: boolean; approvePerWeek: number; minScore: number };
   weights: { trend: number; fit: number; demand: number; feasibility: number; novelty: number; gain: number };
   seedTopics: string[]; competitors: string[];
+  sources: IdeaSources;
   learnWeights: boolean; weightsLearnedMonth: string | null;
   weightHistory: { month: string; samples: number; weights: IdeaSettings["weights"] }[];
 }

@@ -20,7 +20,7 @@ import { visibilitySummary } from "../ai-visibility/summary.js";
 import { assessNovelty, similarity, IDEA_REPEAT_SIMILARITY, REJECT_SIMILARITY } from "./novelty.js";
 import { runAutopilot } from "./schedule.js";
 import { combineScore, demandFactor, feasibilityFactor, trendFactor, type Factors } from "./score.js";
-import { effectiveSeedTopics, getIdeaSettings, type IdeaSettings } from "./settings.js";
+import { effectiveSeedTopics, getIdeaSettings, saveSeenLinks, type IdeaSettings } from "./settings.js";
 import { collectSignals, signalAgeDays, type CollectorDeps, type Signal } from "./signals.js";
 import { billedModel, resolveEngineModel, userEngineLlm } from "../engine-llm.js";
 
@@ -28,7 +28,7 @@ export type DiscoveryDeps = {
   llm: EngineLlm;
   /** Model id for the candidate call (the normal-mode brief model). */
   model: string;
-  collectors: Omit<CollectorDeps, "seeds" | "competitors" | "locale" | "gscQueries" | "feedUrls" | "aiGaps">;
+  collectors: Omit<CollectorDeps, "seeds" | "competitors" | "locale" | "gscQueries" | "feedUrls" | "aiGaps" | "sources" | "recordSeen">;
   /** Adds its spend to the discovery's cost; the engine's monthly DataForSEO cap is shared. */
   dataForSeo: DataForSeoClient | null;
   dataForSeoSpent: () => number;
@@ -190,9 +190,14 @@ export async function loadDiscoveryDeps(userId: string, engineSettings: unknown)
       search: createSearchClient(process.env, dataForSeo),
       dataForSeo,
       fetchText: async (url, signal) => {
-        const res = await safeFetch(url, { signal, timeoutMs: 15_000, maxResponseBytes: 2 * 1024 * 1024 });
+        // Watched pages (docs and changelog indexes) can be several megabytes.
+        const res = await safeFetch(url, { signal, timeoutMs: 15_000, maxResponseBytes: 5 * 1024 * 1024 });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
+      },
+      fetchJson: async (url, signal) => {
+        const res = await safeFetch(url, { signal, timeoutMs: 10_000, maxResponseBytes: 1024 * 1024, headers: { Accept: "application/json", "User-Agent": "BlogFactory idea sources (+https://blogfactory.io)" } });
+        return { status: res.status, body: await res.json().catch(() => null) };
       },
       fetchFeed: async (url, limit, days) => (await fetchRssArticles(url, limit, days)).map((a) => ({ title: a.title, url: a.url, pubDate: a.pubDate })),
     },
@@ -253,9 +258,12 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
     const seeds = effectiveSeedTopics(settings, site);
     const now = deps.collectors.now();
 
+    const seen: Record<string, string[]> = {};
     const { signals, reports } = await collectSignals({
       ...deps.collectors,
       locale, seeds, competitors: settings.competitors,
+      sources: settings.sources,
+      recordSeen: (url, links) => { seen[url] = links; },
       gscQueries: () => readGscQueries(userId, siteId, now),
       feedUrls: () => readFeedUrls(userId, siteId),
       aiGaps: async () => {
@@ -265,6 +273,7 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
     });
     sources = reports.filter((r) => r.count > 0).map((r) => r.source).join(",");
     failedCollectors = reports.filter((r) => r.error).length;
+    for (const r of reports) if (r.error) console.warn(`[ideas] Discovery source ${r.source} failed: ${r.error}`);
     result.signalCount = signals.length;
 
     if (signals.length) {
@@ -312,6 +321,8 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
       }
       result.ideaCount = scored.length;
     }
+    // The baseline moves only once the ideas are saved, so a failed run does not swallow new links.
+    if (Object.keys(seen).length) await saveSeenLinks(userId, siteId, seen).catch(() => console.error("[ideas] Could not save the watched pages' links"));
     // A failed autopilot step must not fail a discovery whose ideas are saved; the ideas stay in the inbox.
     await runAutopilot(userId, siteId, settings).catch(() => console.error("[ideas] Autopilot step failed"));
     result.costUsd = llmCost + (deps.dataForSeoSpent?.() ?? 0);
