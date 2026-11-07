@@ -20,7 +20,8 @@ assert.deepEqual(s.subreddits, ["webdev", "ab", "ok_name"]);
 assert.deepEqual(s.pages.map((p) => p.url), ["https://p.test/blog", "https://q.test/"]);
 assert.equal(s.pages[1].pattern?.length, 100);
 assert.deepEqual(Object.keys(s.seen), ["https://p.test/blog"], "seen links of unlisted pages are dropped");
-assert.deepEqual(normalizeIdeaSettings({}).sources, { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], seen: {} });
+assert.deepEqual(normalizeIdeaSettings({}).sources, { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], off: [], seen: {} });
+assert.deepEqual(normalizeIdeaSettings({ sources: { off: ["news", "bogus", "hn", "gsc", "news"] } }).sources.off, ["gsc", "news"], "only built-in sources can be switched off");
 assert.equal(normalizeIdeaSettings({ sources: { hn: { minPoints: "x" } } }).sources.hn.minPoints, 20);
 
 // link extraction: same host, pattern is a plain substring (regex characters are literal), slug and text
@@ -49,7 +50,7 @@ const calls: string[] = [];
 const base = (over: Partial<CollectorDeps> = {}): CollectorDeps => ({
   now: () => NOW, locale: "en", seeds: [], competitors: [], search: { name: "fake", search: async () => [] } as never, dataForSeo: dfs,
   fetchText: async () => "", fetchFeed: async () => [], gscQueries: async () => [], feedUrls: async () => [],
-  sources: { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], seen: {} },
+  sources: { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], off: [], seen: {} },
   ...over,
 });
 const count = (r: Awaited<ReturnType<typeof collectSignals>>, source: string) => r.reports.find((x) => x.source === source);
@@ -99,6 +100,14 @@ const feed = await collectSignals(base({
 assert.equal(count(feed, "feed")?.count, 8, "at most 8 items per feed; a failing feed is skipped");
 const feedDown = await collectSignals(base({ sources: { ...base().sources!, feeds: ["https://a.test/feed"] }, fetchFeed: async () => { throw new Error("boom"); } }));
 assert.equal(count(feedDown, "feed")?.error, "a.test: boom", "every idea feed failing is reported");
+
+// built-in sources switched off are not collected at all
+{
+  let read = 0;
+  const offRun = await collectSignals(base({ sources: { ...base().sources!, off: ["rss", "competitor"] }, feedUrls: async () => { read += 1; return ["https://f.test/rss"]; } }));
+  assert.equal(read, 0, "a switched-off source is never called");
+  assert.ok(!offRun.reports.some((r) => r.source === "rss" || r.source === "competitor"), "and has no report");
+}
 
 // pages: first run records a baseline only, the second emits the new link; a failing page does not stop the others
 const seen: Record<string, string[]> = {};

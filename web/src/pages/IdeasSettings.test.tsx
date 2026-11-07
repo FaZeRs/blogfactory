@@ -6,7 +6,7 @@ import type { IdeaSources } from "@/lib/ideas";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const empty: IdeaSources = { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], seen: { "https://p.test/blog": ["https://p.test/blog/a"] } };
+const empty: IdeaSources = { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], off: [], seen: { "https://p.test/blog": ["https://p.test/blog/a"] } };
 let latest: IdeaSources;
 
 function Harness({ initial }: { initial: IdeaSources }) {
@@ -54,5 +54,17 @@ describe("IdeaSourcesCard", () => {
     expect(latest.hn.minPoints).toBe(50);
     act(() => host.querySelector<HTMLButtonElement>("[aria-label='Remove https://a.test/feed.xml']")!.click());
     expect(latest.feeds).toEqual([]);
+  });
+
+  it("switches built-in sources off and on", () => {
+    act(() => root.render(<Harness initial={{ ...empty, off: ["gsc"] }} />));
+    const gsc = host.querySelector<HTMLButtonElement>("#src-on-gsc")!;
+    const news = host.querySelector<HTMLButtonElement>("#src-on-news")!;
+    expect(gsc.getAttribute("aria-checked")).toBe("false");
+    expect(news.getAttribute("aria-checked")).toBe("true");
+    act(() => news.click());
+    expect(latest.off).toEqual(["gsc", "news"]);
+    act(() => gsc.click());
+    expect(latest.off).toEqual(["news"]);
   });
 });

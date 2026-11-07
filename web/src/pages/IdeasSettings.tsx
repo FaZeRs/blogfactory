@@ -14,7 +14,7 @@ import { TagInput } from "@/components/ui/tag-input";
 import { api } from "@/lib/api";
 import { bareDomain, normalizeHttpUrl, stripHttpProtocol, validateSourceUrl } from "@/lib/url-validation";
 import { useSites } from "@/hooks/useSites";
-import { FACTORS, ideasKey, type IdeaSettings, type IdeaSources } from "@/lib/ideas";
+import { BUILT_IN_SOURCES, FACTORS, ideasKey, type IdeaSettings, type IdeaSources } from "@/lib/ideas";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const num = (v: string) => (v === "" ? 0 : Number(v));
@@ -82,7 +82,15 @@ export function IdeaSourcesCard({ value, onChange }: { value: IdeaSources; onCha
   const set = (p: Partial<IdeaSources>) => onChange({ ...value, ...p });
   return <BywordCard className="space-y-3 p-4">
     <h2 className="type-panel-title">Idea sources</h2>
-    <p className="text-xs text-muted-foreground">Extra places discovery reads for ideas. Nothing here writes articles on its own.</p>
+    <p className="text-xs text-muted-foreground">Where discovery looks for ideas. Nothing here writes articles on its own.</p>
+    <fieldset><legend className="mb-1 text-sm font-medium">Built-in sources</legend>
+      <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2">{BUILT_IN_SOURCES.map((b) => {
+        const on = !(value.off ?? []).includes(b.key);
+        return <div key={b.key} className="flex items-center justify-between gap-2">
+          <Label htmlFor={`src-on-${b.key}`} className="text-xs font-normal">{b.label} <span className="text-muted-foreground">- {b.hint}</span></Label>
+          <Switch id={`src-on-${b.key}`} checked={on} onCheckedChange={(v) => set({ off: v ? (value.off ?? []).filter((k) => k !== b.key) : [...(value.off ?? []), b.key] })} />
+        </div>;
+      })}</div></fieldset>
     <div><Label htmlFor="src-feeds">Feeds</Label>
       <SourceUrlField id="src-feeds" max={MAX_FEEDS} items={value.feeds.map((url) => ({ url }))} onChange={(v) => set({ feeds: v.map((i) => i.url) })} /></div>
     <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">

@@ -6,6 +6,9 @@ import type { IdeaSources } from "./settings.js";
 
 export const SIGNAL_SOURCES = ["gsc", "news", "keywords", "paa", "rss", "competitor", "ai_gap", "feed", "hn", "reddit", "page"] as const;
 export type SignalSource = typeof SIGNAL_SOURCES[number];
+/** The sources BlogFactory provides; the owner can switch each off. The owner's own sources are on while they list something. */
+export const BUILT_IN_SOURCES = ["gsc", "news", "keywords", "paa", "rss", "competitor", "ai_gap"] as const satisfies readonly SignalSource[];
+export type BuiltInSource = typeof BUILT_IN_SOURCES[number];
 export type Signal = {
   id: string;
   source: SignalSource;
@@ -369,7 +372,8 @@ export type CollectorReport = { source: SignalSource; count: number; error?: str
 
 /** Each collector gets its own time limit; a failure is recorded and the others continue. */
 export async function collectSignals(d: CollectorDeps, timeoutMs = COLLECTOR_TIMEOUT_MS): Promise<{ signals: Signal[]; reports: CollectorReport[] }> {
-  const settled = await Promise.all(SIGNAL_SOURCES.map(async (source) => {
+  const off = new Set<string>(d.sources?.off ?? []);
+  const settled = await Promise.all(SIGNAL_SOURCES.filter((s) => !off.has(s)).map(async (source) => {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(new Error("timed out")), timeoutMs);
     try {

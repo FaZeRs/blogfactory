@@ -1,4 +1,4 @@
-import { SEEN_LINKS_LIMIT } from "./signals.js";
+import { BUILT_IN_SOURCES, SEEN_LINKS_LIMIT, type BuiltInSource } from "./signals.js";
 import { getEffectiveSettings, updateSiteSettings } from "../user-settings.js";
 
 export const SCORE_FACTORS = ["trend", "fit", "demand", "feasibility", "novelty", "gain"] as const;
@@ -14,6 +14,8 @@ export type IdeaSources = {
   subreddits: string[];
   /** `pattern` is a plain substring of the link URL, not a regex. */
   pages: { url: string; pattern?: string }[];
+  /** Built-in sources the owner switched off; discovery skips them. */
+  off: BuiltInSource[];
   /** Links already seen per page URL (the baseline); written by discovery only. */
   seen: Record<string, string[]>;
 };
@@ -51,7 +53,7 @@ export const DEFAULT_IDEA_SETTINGS: IdeaSettings = {
   weights: DEFAULT_WEIGHTS,
   seedTopics: [],
   competitors: [],
-  sources: { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], seen: {} },
+  sources: { feeds: [], hn: { queries: [], minPoints: 20 }, subreddits: [], pages: [], off: [], seen: {} },
   learnWeights: true,
   weightsLearnedMonth: null,
   weightHistory: [],
@@ -102,6 +104,7 @@ function sourcesOf(raw: unknown): IdeaSources {
     hn: { queries: strings(hn.queries, 10, 80), minPoints: int(hn.minPoints, 0, 1000, DEFAULT_IDEA_SETTINGS.sources.hn.minPoints) },
     subreddits: [...new Set(strings(r.subreddits, 20, 30).flatMap((n) => { const name = n.replace(/^\/?r\//i, ""); return /^[A-Za-z0-9_]{2,21}$/.test(name) ? [name] : []; }))].slice(0, 10),
     pages,
+    off: BUILT_IN_SOURCES.filter((s) => Array.isArray(r.off) && r.off.includes(s)),
     seen,
   };
 }
