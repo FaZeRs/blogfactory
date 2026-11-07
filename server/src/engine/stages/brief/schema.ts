@@ -35,8 +35,8 @@ export const BriefModelSchema = z.object({
   faq: z.array(z.object({ question: z.string().min(10).max(160), answerPoints: z.array(z.string().min(3)).min(1).max(4) })).max(12),
   takeaways: z.array(z.string().min(10).max(200)).min(1).max(8),
   internalLinks: z.array(z.object({ url: z.string(), anchorText: z.string().min(2).max(80) })).max(12),
-  /** Related searches the article should also answer, picked from the keyword data; none without it. */
-  secondaryKeywords: z.array(z.string().min(2).max(80)).max(8).optional(),
+  /** Related searches the article should also answer, picked from the keyword data; none without it. Unbounded here: code keeps at most 5 it offered. */
+  secondaryKeywords: z.array(z.string()).optional(),
   /** The call to action's service and pain point, or "none". Required (checked in `validateBrief`) for the Lindevo profile. */
   service: z.enum([...SERVICE_IDS, "none"]).optional(),
   painPoint: z.enum([...PAIN_POINT_IDS, "none"]).optional(),

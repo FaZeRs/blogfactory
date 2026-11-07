@@ -15,6 +15,7 @@ import { StatusBadge, type StatusType } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { PublishDialog } from "@/components/posts/PublishDialog";
 import { ReviseWithCommentsDialog } from "@/components/posts/ReviseWithCommentsDialog";
+import { ShareKitPanel } from "@/components/posts/ShareKitPanel";
 import { EditorialSafetyPanel, type EditorialState, type PostRevision } from "@/components/posts/EditorialSafetyPanel";
 import type { OrtakAlanMetadata } from "@/components/posts/ortak-alan-publishing";
 import { BywordCard, BywordPageShell, WorkspaceBackground } from "@/components/layout/BywordSurface";
@@ -515,6 +516,8 @@ export default function PostEditorPage() {
               <p className="mt-5 border-t border-byword-border pt-4 text-sm text-muted-foreground">No canonical values have been saved yet. Open “SEO / Publish” to generate or enter them.</p>
             )}
           </BywordCard>
+
+          <ShareKitPanel postId={id!} unsaved={Boolean(hasChanges)} />
 
           {/* Metadata Section */}
           {post && (

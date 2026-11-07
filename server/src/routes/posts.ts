@@ -31,9 +31,11 @@ import { recordPostEditSignal } from "../services/learning/signals.js";
 import { scoreRevisions } from "../services/post-scorecard.js";
 import { getEffectiveSettings } from "../services/user-settings.js";
 import { createPostReviseRoutes } from "./post-revise.js";
+import { createShareKitRoutes } from "./share-kit.js";
 
 export const postsRoutes = new Hono();
 postsRoutes.route("/", createPostReviseRoutes());
+postsRoutes.route("/", createShareKitRoutes());
 
 postsRoutes.get("/", async (c) => {
   const userId = getUserId(c);
