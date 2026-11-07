@@ -115,6 +115,7 @@ export function extractLinks(html: string, pageUrl: string, pattern?: string): {
     if (url.protocol !== "http:" && url.protocol !== "https:") continue;
     url.hash = "";
     const abs = url.toString();
+    if (abs.length > 500) continue; // stored seen links are capped at 500 characters, so a longer one would read as new every run
     if (url.hostname.replace(/^www\./, "").toLowerCase() !== host || abs.replace(/\/$/, "") === base.toString().replace(/\/$/, "").replace(/#.*$/, "")) continue;
     if (needle && !abs.toLowerCase().includes(needle)) continue;
     const label = text.slice(tagEnd + 1, close).replace(/<[^>]*>/g, " ");
@@ -124,7 +125,9 @@ export function extractLinks(html: string, pageUrl: string, pattern?: string): {
 }
 
 /** First run (no baseline) emits nothing; later runs emit links not in the baseline. The new baseline lists current links first, capped. */
-export function diffLinks(links: { url: string; text: string }[], seen: string[] | undefined): { fresh: { url: string; text: string }[]; baseline: string[] } {
+export function diffLinks(all: { url: string; text: string }[], seen: string[] | undefined): { fresh: { url: string; text: string }[]; baseline: string[] } {
+  // Only the first links fit the baseline; links past the cap would otherwise read as new on every run.
+  const links = all.slice(0, SEEN_LINKS_LIMIT);
   const known = new Set(seen ?? []);
   const baseline = [...new Set([...links.map((l) => l.url), ...(seen ?? [])])].slice(0, SEEN_LINKS_LIMIT);
   return { fresh: seen ? links.filter((l) => !known.has(l.url)) : [], baseline };
@@ -233,11 +236,19 @@ const collectors: Record<SignalSource, Collector> = {
   },
 
   async feed(d, signal) {
-    const feeds = d.sources?.feeds ?? [];
-    const groups = await Promise.all(feeds.slice(0, 20).map(async (url) => {
-      const items = await d.fetchFeed(url, 8, FRESH_DAYS).catch((e) => { if (signal.aborted) throw e; return []; });
+    const feeds = (d.sources?.feeds ?? []).slice(0, 20);
+    let failure = "";
+    let failed = 0;
+    const groups = await Promise.all(feeds.map(async (url) => {
+      const items = await d.fetchFeed(url, 8, FRESH_DAYS).catch((e) => {
+        if (signal.aborted) throw e;
+        failed += 1;
+        failure ||= `${hostOf(url)}: ${(e as Error)?.message ?? "failed"}`;
+        return [];
+      });
       return items.slice(0, 8).map((i) => ({ source: "feed" as const, title: clean(i.title, 200), summary: `Item from an idea feed (${hostOf(url)})`, url: i.url, publishedAt: i.pubDate }));
     }));
+    if (feeds.length && failed === feeds.length) throw new Error(failure);
     return groups.flat();
   },
 
@@ -287,16 +298,17 @@ const collectors: Record<SignalSource, Collector> = {
 
   async page(d, signal) {
     const out: RawSignal[] = [];
+    const baselines: [string, string[]][] = [];
     let failed = 0;
     let failure = "";
     const pages = (d.sources?.pages ?? []).slice(0, 10);
-    for (const page of pages) {
-      signal.throwIfAborted();
+    // In parallel: ten sequential page reads would outlast the collector timeout.
+    await Promise.all(pages.map(async (page) => {
       try {
         const links = extractLinks(await d.fetchText(page.url, signal), page.url, page.pattern);
-        if (!links.length) continue; // a layout change must not wipe the baseline
+        if (!links.length) return; // a layout change must not wipe the baseline
         const { fresh, baseline } = diffLinks(links, d.sources!.seen[page.url]);
-        d.recordSeen?.(page.url, baseline);
+        baselines.push([page.url, baseline]);
         for (const l of fresh.slice(0, MAX_NEW_PAGE_LINKS)) {
           out.push({ source: "page", title: clean(l.text.trim().length >= 3 ? l.text : slugTitle(l.url), 200), summary: `New link on a watched page (${hostOf(page.url)})`, url: l.url });
         }
@@ -305,7 +317,10 @@ const collectors: Record<SignalSource, Collector> = {
         failed += 1;
         failure ||= `${hostOf(page.url)}: ${(e as Error)?.message ?? "failed"}`;
       }
-    }
+    }));
+    // Baselines move only when these signals are returned; a timed-out run must not mark its new links as seen.
+    signal.throwIfAborted();
+    for (const [url, baseline] of baselines) d.recordSeen?.(url, baseline);
     if (pages.length && failed === pages.length) throw new Error(failure);
     return out;
   },

@@ -166,8 +166,10 @@ export async function getIdeaSettings(userId: string, siteId: string): Promise<I
 export async function saveIdeaSettings(userId: string, siteId: string, input: unknown): Promise<IdeaSettings> {
   const stored = await getIdeaSettings(userId, siteId);
   const next = normalizeIdeaSettings(input);
-  // Re-normalizing the stored seen links against the submitted pages drops those of removed pages.
-  const sources = sourcesOf({ ...next.sources, seen: stored.sources.seen });
+  // Re-normalizing the stored seen links against the submitted pages drops those of removed pages; a changed pattern restarts its baseline.
+  const patternOf = (pages: IdeaSources["pages"], url: string) => pages.find((p) => p.url === url)?.pattern;
+  const seen = Object.fromEntries(Object.entries(stored.sources.seen).filter(([url]) => patternOf(stored.sources.pages, url) === patternOf(next.sources.pages, url)));
+  const sources = sourcesOf({ ...next.sources, seen });
   const ideaSettings = { ...next, sources, weightsLearnedMonth: stored.weightsLearnedMonth, weightHistory: stored.weightHistory };
   await updateSiteSettings(userId, siteId, { ideaSettings });
   return ideaSettings;

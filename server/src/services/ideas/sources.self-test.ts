@@ -97,6 +97,8 @@ const feed = await collectSignals(base({
   fetchFeed: async (url) => { if (url.includes("b.test")) throw new Error("boom"); return Array.from({ length: 12 }, (_, i) => ({ title: `Feed story number ${i}`, url: `https://a.test/${i}` })); },
 }));
 assert.equal(count(feed, "feed")?.count, 8, "at most 8 items per feed; a failing feed is skipped");
+const feedDown = await collectSignals(base({ sources: { ...base().sources!, feeds: ["https://a.test/feed"] }, fetchFeed: async () => { throw new Error("boom"); } }));
+assert.equal(count(feedDown, "feed")?.error, "a.test: boom", "every idea feed failing is reported");
 
 // pages: first run records a baseline only, the second emits the new link; a failing page does not stop the others
 const seen: Record<string, string[]> = {};
@@ -115,4 +117,14 @@ const r2 = await run(["a", "b", "c"], { ...seen });
 assert.equal(count(r2, "page")?.count, 1);
 assert.equal(r2.signals.find((x) => x.source === "page")?.title, "c", "the slug is the title when the link has no text");
 assert.equal(r2.signals.find((x) => x.source === "page")?.url, "https://p.test/blog/c");
+// a timed-out page read records no baseline, so its new links are not lost
+const lateSeen: Record<string, string[]> = {};
+const slow = await collectSignals(base({
+  sources: { ...base().sources!, pages: [{ url: "https://p.test/blog" }, { url: "https://slow.test/" }], seen: {} },
+  fetchText: async (url) => { if (url.includes("slow")) await new Promise((r) => setTimeout(r, 50)); return pageHtml(["a"]); },
+  recordSeen: (u, l) => { lateSeen[u] = l; },
+}), 10);
+assert.equal(count(slow, "page")?.error, "timed out");
+await new Promise((r) => setTimeout(r, 80));
+assert.deepEqual(lateSeen, {}, "no baseline is recorded after a timeout");
 console.log("idea sources self-test passed");

@@ -321,8 +321,8 @@ async function execute(row: typeof ideaDiscoveries.$inferSelect, injected?: Disc
       }
       result.ideaCount = scored.length;
     }
-    // The baseline moves only once the ideas are saved, so a failed run does not swallow new links. Late recordings from timed-out collectors are not saved.
-    if (Object.keys(seen).length) await saveSeenLinks(userId, siteId, { ...seen }).catch(() => console.error("[ideas] Could not save the watched pages' links"));
+    // The baseline moves only once the ideas are saved, so a failed run does not swallow new links.
+    if (Object.keys(seen).length) await saveSeenLinks(userId, siteId, seen).catch(() => console.error("[ideas] Could not save the watched pages' links"));
     // A failed autopilot step must not fail a discovery whose ideas are saved; the ideas stay in the inbox.
     await runAutopilot(userId, siteId, settings).catch(() => console.error("[ideas] Autopilot step failed"));
     result.costUsd = llmCost + (deps.dataForSeoSpent?.() ?? 0);
